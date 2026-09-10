@@ -13,7 +13,7 @@ export interface DbOptions {
 }
 
 /** 当前 schema 版本;结构变更时递增,V0.1 阶段直接重建(尚无需要保留的存量数据) */
-const SCHEMA_VERSION = 2
+const SCHEMA_VERSION = 3
 
 /** 打开 SQLite 并确保表结构存在(版本不匹配时重建) */
 export function openDatabase(options: DbOptions = {}): Db {
@@ -38,6 +38,7 @@ function ensureSchema(sqlite: Database.Database): void {
       DROP TABLE IF EXISTS runs;
       DROP TABLE IF EXISTS workspace_bindings;
       DROP TABLE IF EXISTS workspaces;
+      DROP TABLE IF EXISTS case_branches;
       DROP TABLE IF EXISTS cases;
       DROP TABLE IF EXISTS environments;
       DROP TABLE IF EXISTS projects;
@@ -63,6 +64,7 @@ function ensureSchema(sqlite: Database.Database): void {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       project_id INTEGER NOT NULL REFERENCES projects(id),
       name TEXT NOT NULL,
+      branch TEXT,
       base_url TEXT,
       vars_json TEXT,
       created_at TEXT NOT NULL
@@ -82,6 +84,18 @@ function ensureSchema(sqlite: Database.Database): void {
       checked_at TEXT NOT NULL
     );
     CREATE UNIQUE INDEX IF NOT EXISTS cases_project_file_unique ON cases (project_id, file_path);
+
+    CREATE TABLE IF NOT EXISTS case_branches (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      case_row_id INTEGER NOT NULL REFERENCES cases(id),
+      project_id INTEGER NOT NULL REFERENCES projects(id),
+      branch TEXT NOT NULL,
+      commit_sha TEXT,
+      status TEXT NOT NULL DEFAULT 'active',
+      checked_at TEXT NOT NULL
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS case_branch_unique ON case_branches (case_row_id, branch);
+    CREATE INDEX IF NOT EXISTS case_branch_project_branch ON case_branches (project_id, branch, status);
 
     CREATE TABLE IF NOT EXISTS workspaces (
       id INTEGER PRIMARY KEY AUTOINCREMENT,

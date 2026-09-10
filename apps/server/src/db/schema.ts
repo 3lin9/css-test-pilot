@@ -31,6 +31,8 @@ export const environments = sqliteTable('environments', {
     .notNull()
     .references(() => projects.id),
   name: text('name').notNull(),
+  /** 该环境对应的 Git 分支:分支即测试环境(如 TEST→main,STAGING→release) */
+  branch: text('branch'),
   baseUrl: text('base_url'),
   /** 任意 JSON 变量 */
   varsJson: text('vars_json'),
@@ -56,13 +58,36 @@ export const cases = sqliteTable(
     tagsJson: text('tags_json').notNull().default('[]'),
     /** 最近一次校验是否通过(0/1) */
     valid: integer('valid').notNull().default(1),
-    /** active | deleted */
+    /** active | deleted;分支维度的成员状态聚合(active = 至少存在于一个已同步分支) */
     status: text('status').notNull().default('active'),
     branch: text('branch'),
     commit: text('commit_sha'),
     checkedAt: text('checked_at').notNull(),
   },
   (table) => [unique('cases_project_file_unique').on(table.projectId, table.filePath)],
+)
+
+/**
+ * Case 的分支成员表:同一个 Case 可同时存在于多个分支(分支即测试环境)。
+ * 快照同步按分支作用域更新——main 的同步不影响 release 上的成员状态。
+ */
+export const caseBranches = sqliteTable(
+  'case_branches',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    caseRowId: integer('case_row_id')
+      .notNull()
+      .references(() => cases.id),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id),
+    branch: text('branch').notNull(),
+    commit: text('commit_sha'),
+    /** active | deleted(仅表示该 Case 在此分支上是否存在) */
+    status: text('status').notNull().default('active'),
+    checkedAt: text('checked_at').notNull(),
+  },
+  (table) => [unique('case_branch_unique').on(table.caseRowId, table.branch)],
 )
 
 /**

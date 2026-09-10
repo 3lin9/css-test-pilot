@@ -192,8 +192,8 @@ describe('server:control-plane', () => {
       },
     })
     expect(second.statusCode).toBe(200)
-    // case-a 指向新 commit 计入 updated;B 消失计入 deleted;C 新增
-    expect(second.json()).toMatchObject({ added: 1, updated: 1, deleted: 1, activeTotal: 2 })
+    // case-a 内容未变不算修改(commit 变化记录在分支成员表);B 消失计入 deleted;C 新增
+    expect(second.json()).toMatchObject({ added: 1, updated: 0, deleted: 1, activeTotal: 2 })
 
     // Case Index:A active / B deleted / C active
     const casesRes = await server.app.inject({
@@ -233,6 +233,53 @@ describe('server:control-plane', () => {
       payload: { cases: [] },
     })
     expect(res.statusCode).toBe(400)
+  })
+
+  test('多分支同步:分支即测试环境,main 与 release 互不影响', async () => {
+    const projectId = server.ctx.defaultProject.id
+
+    // release 分支只同步 case-b:case-b 在 main 上已 deleted,但在 release 上存在 -> 整体恢复 active
+    const syncRes = await server.app.inject({
+      method: 'POST',
+      url: `/api/projects/${projectId}/cases/sync`,
+      payload: {
+        repository: 'git@github.com:company/mall.git',
+        branch: 'release',
+        commit: 'c11ce02',
+        cases: [{ id: 'case-b', title: '用例 B', file: 'tests/e2e/cases/case-b.yaml' }],
+      },
+    })
+    expect(syncRes.statusCode).toBe(200)
+    expect(syncRes.json()).toMatchObject({ added: 0, updated: 1, deleted: 0, activeTotal: 3 })
+
+    // case-b:main 成员 deleted + release 成员 active -> 整体 active,branches 仅 release
+    const caseBRes = await server.app.inject({
+      method: 'GET',
+      url: `/api/projects/${projectId}/cases/case-b`,
+    })
+    expect(caseBRes.json().status).toBe('active')
+    expect(caseBRes.json().branches).toEqual(['release'])
+
+    // case-a 不受 release 同步影响:仍在 main 上
+    const caseARes = await server.app.inject({
+      method: 'GET',
+      url: `/api/projects/${projectId}/cases/case-a`,
+    })
+    expect(caseARes.json().status).toBe('active')
+    expect(caseARes.json().branches).toEqual(['main'])
+
+    // sync-status:按分支聚合的同步状态(分支即测试环境)
+    const statusRes = await server.app.inject({
+      method: 'GET',
+      url: `/api/projects/${projectId}/sync-status`,
+    })
+    const branches = statusRes.json().branches
+    expect(branches).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ branch: 'main', caseCount: 2 }),
+        expect.objectContaining({ branch: 'release', caseCount: 1 }),
+      ]),
+    )
   })
 
   test('Workspace:创建 / 绑定环境 / Case 声明解析到 Run 快照', async () => {
@@ -311,6 +358,37 @@ describe('server:control-plane', () => {
       payload: { paths: ['tests/e2e/cases/broken.yaml'] },
     })
     expect(res.statusCode).toBe(422)
+  })
+
+  test('run summary 与 artifacts:列举 / 读取 / 路径穿越防护', async () => {
+    const createRes = await server.app.inject({ method: 'POST', url: '/api/runs', payload: {} })
+    expect(createRes.statusCode).toBe(202)
+    const runId = createRes.json().id as string
+    await server.ctx.orchestrator.wait(runId)
+
+    const summaryRes = await server.app.inject({ method: 'GET', url: `/api/runs/${runId}/summary` })
+    expect(summaryRes.statusCode).toBe(200)
+    expect(summaryRes.json().status).toBe('passed')
+    expect(summaryRes.json().cases[0].steps.length).toBeGreaterThan(0)
+
+    const listRes = await server.app.inject({ method: 'GET', url: `/api/runs/${runId}/artifacts` })
+    const paths = listRes.json().files.map((file: { path: string }) => file.path)
+    expect(paths).toContain('result.json')
+    expect(paths).toContain('events.ndjson')
+
+    const fileRes = await server.app.inject({
+      method: 'GET',
+      url: `/api/runs/${runId}/artifacts/result.json`,
+    })
+    expect(fileRes.statusCode).toBe(200)
+    expect(fileRes.json().runId).toBe(runId)
+
+    // 越出 run 目录的相对路径必须被拒绝
+    const evil = await server.app.inject({
+      method: 'GET',
+      url: `/api/runs/${runId}/artifacts/..%5C..%5Ctestpilot.yaml`,
+    })
+    expect([400, 404]).toContain(evil.statusCode)
   })
 
   test('项目并发运行 409;运行中取消 -> cancelled;重复取消 409', async () => {

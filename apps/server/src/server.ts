@@ -1,8 +1,13 @@
+import { existsSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import Fastify, { type FastifyInstance, type FastifyReply } from 'fastify'
+import fastifyStatic from '@fastify/static'
 import { resolveRoot } from '@testpilot/sdk'
 import type { AdapterFactory } from '@testpilot/adapter-core'
 import { openDatabase, type Db } from './db'
 import { RunOrchestrator } from './orchestrator/run-orchestrator'
+import { registerArtifactRoutes } from './routes/artifacts'
 import { registerCaseRoutes } from './routes/cases'
 import { registerHealthRoutes } from './routes/health'
 import { registerIntegrationRoutes } from './routes/integrations'
@@ -59,6 +64,20 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Tes
   registerReportRoutes(app, ctx)
   registerIntegrationRoutes(app, ctx)
   registerWorkspaceRoutes(app, ctx)
+  registerArtifactRoutes(app, ctx)
+
+  // Web 控制台(生产形态):静态托管 apps/web/dist,SPA 路由回退 index.html
+  const serverFile = fileURLToPath(import.meta.url)
+  const webDist = join(dirname(serverFile), '..', '..', 'web', 'dist')
+  if (existsSync(join(webDist, 'index.html'))) {
+    await app.register(fastifyStatic, { root: webDist })
+    app.setNotFoundHandler((request, reply) => {
+      if (request.raw.url?.startsWith('/api/')) {
+        return reply.code(404).send({ error: 'not found' })
+      }
+      return reply.sendFile('index.html')
+    })
+  }
 
   return {
     app,

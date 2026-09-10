@@ -6,6 +6,8 @@ import {
   findCaseByCaseId,
   getCaseRow,
   insertCase,
+  listActiveCaseBranchRowsByProject,
+  listCaseBranchRows,
   listCaseRows,
   type CaseRow,
   type CaseStatus,
@@ -21,12 +23,14 @@ export interface CaseView {
   valid: boolean
   /** active | deleted;快照同步中消失的 Case 保留为 deleted,历史 Run 仍可引用 */
   status: CaseStatus
+  /** 该 Case 存在的分支列表(分支即测试环境) */
+  branches: string[]
   branch: string | null
   commit: string | null
   checkedAt: string
 }
 
-function toView(row: CaseRow): CaseView {
+function toView(row: CaseRow, branches: string[]): CaseView {
   return {
     id: row.id,
     projectId: row.projectId,
@@ -36,6 +40,7 @@ function toView(row: CaseRow): CaseView {
     tags: JSON.parse(row.tagsJson) as string[],
     valid: row.valid === 1,
     status: row.status as CaseStatus,
+    branches,
     branch: row.branch,
     commit: row.commit,
     checkedAt: row.checkedAt,
@@ -50,6 +55,18 @@ async function requireProject(db: Db, projectId: number): Promise<ProjectRow> {
   return row
 }
 
+/** Case 视图的分支聚合:一次查询项目全部分支成员,按 Case 分组 */
+async function branchMap(db: Db, projectId: number): Promise<Map<number, string[]>> {
+  const rows = await listActiveCaseBranchRowsByProject(db, projectId)
+  const map = new Map<number, string[]>()
+  for (const row of rows) {
+    const list = map.get(row.caseRowId) ?? []
+    list.push(row.branch)
+    map.set(row.caseRowId, list)
+  }
+  return map
+}
+
 /**
  * 读取 Case Index(只查库,不同步文件系统)。
  * Git 是 Case 的 Source of Truth;索引进唯一入口是 POST /api/projects/:id/cases/sync。
@@ -60,7 +77,10 @@ export async function listCaseViews(
   filter: { status?: CaseStatus } = {},
 ): Promise<CaseView[]> {
   await requireProject(db, projectId)
-  return (await listCaseRows(db, projectId, filter)).map(toView)
+  const branches = await branchMap(db, projectId)
+  return (await listCaseRows(db, projectId, filter)).map((row) =>
+    toView(row, branches.get(row.id) ?? []),
+  )
 }
 
 export async function getCaseViewById(db: Db, id: number): Promise<CaseView> {
@@ -68,7 +88,11 @@ export async function getCaseViewById(db: Db, id: number): Promise<CaseView> {
   if (!row) {
     throw Object.assign(new Error(`Case 不存在:${id}`), { statusCode: 404 })
   }
-  return toView(row)
+  const memberships = await listCaseBranchRows(db, row.id)
+  return toView(
+    row,
+    memberships.filter((m) => m.status === 'active').map((m) => m.branch),
+  )
 }
 
 /** 按 DSL case id 查询(project 内唯一) */
@@ -81,7 +105,11 @@ export async function getCaseViewByCaseId(
   if (!row) {
     throw Object.assign(new Error(`Case 不存在:${caseId}`), { statusCode: 404 })
   }
-  return toView(row)
+  const memberships = await listCaseBranchRows(db, row.id)
+  return toView(
+    row,
+    memberships.filter((m) => m.status === 'active').map((m) => m.branch),
+  )
 }
 
 /** 读取 Case DSL 原文(仅限有本地根目录的项目;Web 不修改 Case 源文件) */
@@ -123,5 +151,6 @@ export async function scanLocalCases(db: Db, projectId: number): Promise<CaseVie
       checkedAt: now,
     })
   }
-  return (await listCaseRows(db, projectId)).map(toView)
+  const branches = await branchMap(db, projectId)
+  return (await listCaseRows(db, projectId)).map((row) => toView(row, branches.get(row.id) ?? []))
 }
