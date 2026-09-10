@@ -66,10 +66,18 @@ export function makeSyncMetadataCommand(): Command {
         }))
       const skipped = infos.length - cases.length
 
-      // 5. 快照同步
+      // 5. 快照同步(projectId 形如 proj_2,Server 使用数字 ID)
+      const numericId = /(\d+)$/.exec(link.projectId ?? '')?.[1]
+      if (!numericId) {
+        console.error(
+          `项目关联 ${link.projectId} 不是 Server 注册的项目(本地模式);请重新运行 npx csspilot init 并配置 server.baseUrl`,
+        )
+        process.exitCode = 1
+        return
+      }
       try {
         const res = await fetch(
-          `${serverUrl.replace(/\/$/, '')}/api/projects/${encodeURIComponent(link.projectId)}/cases/sync`,
+          `${serverUrl.replace(/\/$/, '')}/api/projects/${numericId}/cases/sync`,
           {
             method: 'POST',
             headers: { 'content-type': 'application/json' },

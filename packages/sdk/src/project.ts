@@ -69,6 +69,14 @@ export interface ProjectLink {
   serverUrl?: string
   repositoryUrl?: string
   branch?: string
+  /** project.json 结构版本(csspilot init >= 0.2 生成为 1) */
+  version?: number
+  /** 测试根目录(如 tests/e2e) */
+  testDir?: string
+  /** 用例目录(如 tests/e2e/cases) */
+  caseDir?: string
+  /** 默认执行端(playwright / wechatide) */
+  defaultAdapter?: string
 }
 
 const PROJECT_LINK_FILE = join(TESTPILOT_DIR, 'project.json')

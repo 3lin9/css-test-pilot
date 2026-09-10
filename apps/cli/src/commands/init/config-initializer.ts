@@ -1,0 +1,153 @@
+import { access, mkdir, writeFile } from 'node:fs/promises'
+import { basename, join } from 'node:path'
+import { readProjectLink, writeProjectLink, type ProjectLink } from '@testpilot/sdk'
+import type { AdapterInfo } from './adapter-detector'
+import { adaptersFor, defaultAdapterFor, type ProjectInfo } from './project-detector'
+
+export interface ConfigInitResult {
+  yaml: 'created' | 'reused'
+  runtimeDir: string
+  projectLink: ProjectLink
+  projectLinkFile: string
+}
+
+async function exists(path: string): Promise<boolean> {
+  try {
+    await access(path)
+    return true
+  } catch {
+    return false
+  }
+}
+
+const TEST_DIR = 'tests/e2e'
+const CASE_DIR = 'tests/e2e/cases'
+
+/** 生成 testpilot.yaml 模板(含环境配置;敏感值用 ${VAR} 引用,不落明文) */
+export function renderTestpilotYaml(info: ProjectInfo): string {
+  const adapters = adaptersFor(info.type)
+    .map((item) => `  - ${item}`)
+    .join('\n')
+  return `# TestPilot 项目配置(Source of Truth)
+version: 1
+
+project:
+  name: ${info.name}
+
+test:
+  directory: ${TEST_DIR}
+  caseDirectory: ${CASE_DIR}
+
+# 环境配置:Case 用 environment: <名称> 引用;baseUrl 由环境变量注入,禁止写明文
+environment:
+  default: test
+  test:
+    baseUrl: \${TEST_BASE_URL}
+  staging:
+    baseUrl: \${STAGING_BASE_URL}
+
+# 项目声明的执行端(实际可用性以 csspilot doctor 检测为准)
+adapters:
+${adapters}
+
+# 默认 Workspace(多系统环境组合);Case 也可用 workspace 字段按需声明
+# workspace:
+#   default: my-workspace
+
+# TestPilot Server(Control Plane)地址;init 关联项目与 sync-metadata 使用
+# 也可用环境变量 TESTPILOT_SERVER_URL 覆盖
+# server:
+#   baseUrl: http://127.0.0.1:3000
+
+# Web 端:navigate 相对 url 的基准地址
+# web:
+#   baseUrl: http://127.0.0.1:8080
+
+# 小程序端:填入小程序项目目录后即可执行 target: miniapp 的步骤
+# miniapp:
+#   projectPath: path/to/miniprogram
+#   cliPath: C:/Program Files (x86)/Tencent/微信web开发者工具/cli.bat
+`
+}
+
+/** 初始化 testpilot.yaml + .testpilot/ 运行时目录 + project.json(设计文档 §9;全部幂等) */
+export async function initTestPilotConfig(
+  root: string,
+  info: ProjectInfo,
+  adapters: AdapterInfo[],
+): Promise<ConfigInitResult> {
+  // 1. testpilot.yaml(已存在则保留,绝不覆盖)
+  const yamlPath = join(root, 'testpilot.yaml')
+  let yaml: 'created' | 'reused' = 'reused'
+  if (!(await exists(yamlPath))) {
+    await writeFile(yamlPath, renderTestpilotYaml(info), 'utf8')
+    yaml = 'created'
+  }
+
+  // 2. Runtime 目录
+  const runtimeDir = join(root, '.testpilot', 'artifacts')
+  await mkdir(runtimeDir, { recursive: true })
+  const keep = join(runtimeDir, '.gitkeep')
+  if (!(await exists(keep))) {
+    await writeFile(keep, '', 'utf8')
+  }
+
+  // 3. project.json:已有链接只补缺失字段,不重置 projectId(设计文档 §17)
+  const existing = await readProjectLink(root)
+  const defaultAdapter = defaultAdapterFor(info.type)
+  const serverUrl = process.env.TESTPILOT_SERVER_URL ?? undefined
+  const link: ProjectLink = existing
+    ? { ...existing, version: existing.version ?? 1 }
+    : {
+        ...(await createProjectOnServer(root, info, adapters, serverUrl)),
+        version: 1,
+        testDir: TEST_DIR,
+        caseDir: CASE_DIR,
+        defaultAdapter,
+      }
+  // 旧版 init 生成的链接补齐新字段
+  if (link.testDir === undefined || link.caseDir === undefined || link.defaultAdapter === undefined) {
+    link.testDir ??= TEST_DIR
+    link.caseDir ??= CASE_DIR
+    link.defaultAdapter ??= defaultAdapter
+  }
+  if (link.serverUrl === undefined && serverUrl) link.serverUrl = serverUrl
+  const projectLinkFile = await writeProjectLink(link, root)
+
+  return { yaml, runtimeDir: join(root, '.testpilot'), projectLink: link, projectLinkFile }
+}
+
+/** 在 Server 上注册项目并返回 projectId;Server 不可达时退化为本地模式 ID */
+async function createProjectOnServer(
+  root: string,
+  info: ProjectInfo,
+  _adapters: AdapterInfo[],
+  serverUrl: string | undefined,
+): Promise<ProjectLink> {
+  const git = info.git
+  const base: Pick<ProjectLink, 'repositoryUrl' | 'branch'> = { repositoryUrl: git.repositoryUrl, branch: git.branch }
+  if (!serverUrl) return { ...base, projectId: `proj_${randomId()}` }
+
+  try {
+    const res = await fetch(`${serverUrl.replace(/\/$/, '')}/api/projects`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        name: info.name || basename(root),
+        rootPath: root,
+        repositoryUrl: git.repositoryUrl,
+        defaultBranch: git.branch,
+      }),
+    })
+    if (!res.ok) throw new Error(`${res.status} ${await res.text()}`)
+    const project = (await res.json()) as { id: number }
+    return { ...base, serverUrl, projectId: `proj_${project.id}` }
+  } catch (err) {
+    console.error(`✗ 项目关联               Server(${serverUrl})不可达:${err instanceof Error ? err.message : err}`)
+    return { ...base, serverUrl, projectId: `proj_${randomId()}` }
+  }
+}
+
+function randomId(): string {
+  return Math.random().toString(16).slice(2, 10)
+}
