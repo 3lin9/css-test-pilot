@@ -1,0 +1,51 @@
+# 跨端黄金路径:小程序创建订单 -> extract 订单号 -> Web 后台 assert 该订单
+# 注意:
+#   1. 业务 Case 属于业务项目 tests/e2e/cases/,本文件仅作为 DSL 书写示例
+#   2. 小程序端只能用 css 定位(class/id),示例中的类名需按真实 WXML 调整
+#   3. 运行前先启动 mock 业务后端:node examples/mock-backend/server.js
+id: order-create
+name: 用户创建订单
+tags:
+  - smoke
+  - golden
+
+steps:
+  # 小程序端:下单
+  - target: miniapp
+    action: launch
+
+  - target: miniapp
+    action: navigate
+    url: /pages/index/index
+
+  - target: miniapp
+    action: click
+    locator:
+      css: ".submit-btn"
+
+  # 等待下单完成(orderId 渲染后 .order-id 才出现)
+  - target: miniapp
+    action: wait
+    locator:
+      css: ".order-id"
+
+  # 提取订单号,存入 ExecutionContext
+  - target: miniapp
+    action: extract
+    locator:
+      css: ".order-id"
+    variable: orderId
+
+  # Web 端:后台验证该订单存在(locator 同样支持 ${var})
+  - target: web
+    action: navigate
+    url: /orders
+
+  - target: web
+    action: assert
+    locator:
+      css: ".order-row-${orderId}"
+    expected: "${orderId}"
+
+  - target: web
+    action: screenshot

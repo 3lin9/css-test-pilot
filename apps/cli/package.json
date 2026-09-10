@@ -1,0 +1,41 @@
+{
+  "name": "testpilot",
+  "version": "0.1.0",
+  "description": "TestPilot — AI Native 跨端业务测试基础设施 CLI",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "bin": {
+    "testpilot": "dist/bin.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "node build.mjs",
+    "dev": "tsx src/bin.ts",
+    "start": "tsx src/bin.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "miniprogram-automator": "^0.12.0",
+    "playwright": "^1.53.0"
+  },
+  "devDependencies": {
+    "@testpilot/adapter-core": "workspace:^",
+    "@testpilot/adapter-playwright": "workspace:^",
+    "@testpilot/adapter-wechatide": "workspace:^",
+    "@testpilot/core": "workspace:^",
+    "@testpilot/dsl": "workspace:^",
+    "@testpilot/evidence": "workspace:^",
+    "@testpilot/execution-engine": "workspace:^",
+    "@testpilot/reporter": "workspace:^",
+    "@types/node": "^22.0.0",
+    "commander": "^12.0.0",
+    "esbuild": "^0.25.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.5.0"
+  }
+}

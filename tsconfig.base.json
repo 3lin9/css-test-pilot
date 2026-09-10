@@ -1,0 +1,31 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "noImplicitOverride": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "skipLibCheck": true,
+    "baseUrl": ".",
+    "paths": {
+      "@testpilot/core": ["packages/core/src/index.ts"],
+      "@testpilot/dsl": ["packages/dsl/src/index.ts"],
+      "@testpilot/execution-engine": ["packages/execution-engine/src/index.ts"],
+      "@testpilot/adapter-core": ["packages/adapter-core/src/index.ts"],
+      "@testpilot/adapter-playwright": ["packages/adapter-playwright/src/index.ts"],
+      "@testpilot/adapter-wechatide": ["packages/adapter-wechatide/src/index.ts"],
+      "@testpilot/evidence": ["packages/evidence/src/index.ts"],
+      "@testpilot/reporter": ["packages/reporter/src/index.ts"]
+    }
+  }
+}

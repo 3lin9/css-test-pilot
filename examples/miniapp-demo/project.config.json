@@ -1,0 +1,7 @@
+{
+  "appid": "touristappid",
+  "compileType": "miniprogram",
+  "projectname": "testpilot-demo",
+  "setting": { "es6": true, "postcss": false, "minified": false, "urlCheck": false },
+  "libVersion": "2.30.2"
+}

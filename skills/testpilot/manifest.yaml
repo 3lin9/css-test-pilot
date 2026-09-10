@@ -1,0 +1,37 @@
+# TestPilot Skill 清单(源文件)
+# `npx testpilot init` 会把整个 skills/testpilot/ 安装到业务项目 .ai/skills/testpilot/
+id: testpilot
+name: TestPilot
+version: 0.1.0
+
+description: >
+  AI Native cross-platform testing skill.
+
+capabilities:
+  - create-case
+  - validate
+  - run
+  - list
+  - report
+
+runtime:
+  cli: testpilot
+
+permissions:
+  filesystem:
+    read:
+      - src/**
+      - pages/**
+      - tests/**
+      - testpilot.yaml
+
+    write:
+      - tests/e2e/**
+      - .testpilot/**
+
+  shell:
+    allow:
+      - npx
+      - pnpm
+      - npm
+      - testpilot

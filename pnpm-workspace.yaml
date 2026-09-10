@@ -1,0 +1,7 @@
+packages:
+  - "apps/cli"
+  - "packages/*"
+
+# pnpm 10 默认不执行依赖的构建脚本,这里放行需要构建二进制的包
+onlyBuiltDependencies:
+  - esbuild

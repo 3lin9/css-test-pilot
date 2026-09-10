@@ -1,0 +1,14 @@
+# TestPilot 项目配置示例(跨端黄金路径)
+# 用法:复制到业务项目根目录并按需修改
+
+casesDir: tests/e2e/cases
+
+web:
+  # navigate 相对 url 的基准地址(mock 后端)
+  baseUrl: http://127.0.0.1:8080
+
+miniapp:
+  # 小程序项目目录(包含 project.config.json)
+  projectPath: path/to/miniprogram
+  # 微信开发者工具 cli(不填则在常见安装位置自动探测,或用环境变量 WECHAT_DEVTOOLS_CLI)
+  # cliPath: C:/Program Files (x86)/Tencent/微信web开发者工具/cli.bat
