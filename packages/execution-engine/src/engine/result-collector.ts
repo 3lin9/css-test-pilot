@@ -1,7 +1,12 @@
 import type { CaseResult, RunSummary } from '@testpilot/core'
 
-/** 汇总用例结果为 RunSummary */
-export function buildRunSummary(runId: string, startedAt: Date, cases: CaseResult[]): RunSummary {
+/** 汇总用例结果为 RunSummary;cancelled 表示因取消信号提前结束 */
+export function buildRunSummary(
+  runId: string,
+  startedAt: Date,
+  cases: CaseResult[],
+  options: { cancelled?: boolean } = {},
+): RunSummary {
   const finishedAt = new Date()
   const totals = {
     cases: cases.length,
@@ -27,6 +32,7 @@ export function buildRunSummary(runId: string, startedAt: Date, cases: CaseResul
     finishedAt: finishedAt.toISOString(),
     durationMs: finishedAt.getTime() - startedAt.getTime(),
     status: totals.failed > 0 ? 'failed' : 'passed',
+    ...(options.cancelled ? { cancelled: true } : {}),
     cases,
     totals,
   }

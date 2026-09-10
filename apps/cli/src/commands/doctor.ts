@@ -2,8 +2,8 @@ import { existsSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import { Command } from 'commander'
-import { findWechatDevToolsCli } from '@testpilot/core'
-import { collectCaseFiles, DEFAULT_CASES_DIR } from '../lib/cases'
+import { findWechatDevToolsCli, DEFAULT_CASES_DIR } from '@testpilot/core'
+import { collectCaseFiles } from '@testpilot/sdk'
 
 interface PlaywrightLike {
   chromium: { executablePath(): string }
@@ -30,14 +30,14 @@ export function makeDoctorCommand(): Command {
       ok('TestPilot CLI (0.1.0)')
 
       if (existsSync('testpilot.yaml')) ok('testpilot.yaml')
-      else fail('testpilot.yaml', '运行 npx testpilot init 生成')
+      else fail('testpilot.yaml', '运行 npx csspilot init 生成')
 
       const caseFiles = await collectCaseFiles([DEFAULT_CASES_DIR]).catch(() => [])
       if (caseFiles.length > 0) ok(`${DEFAULT_CASES_DIR} (${caseFiles.length} 个用例)`)
       else fail(DEFAULT_CASES_DIR, '未找到用例')
 
-      if (existsSync('.ai/skills/testpilot/manifest.yaml')) ok('TestPilot Skill (.ai/skills/testpilot)')
-      else fail('TestPilot Skill', '运行 npx testpilot init 安装')
+      if (existsSync('.agents/skills/testpilot/manifest.yaml')) ok('TestPilot Skill (.agents/skills/testpilot)')
+      else fail('TestPilot Skill', '运行 npx csspilot init 安装')
 
       // Web
       console.log('')

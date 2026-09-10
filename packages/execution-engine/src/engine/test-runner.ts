@@ -1,11 +1,10 @@
 import { writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
-import { RESULT_FILE, type RunSummary } from '@testpilot/core'
+import { RESULT_FILE, type CaseResult, type RunSummary } from '@testpilot/core'
 import type { TestCase } from '@testpilot/dsl'
 import { ArtifactManager } from '../artifacts'
 import { EventBus, ndjsonSubscriber, type RunEventSubscriber } from '../events'
 import { allocateRunId, ensureRunDir } from '../lifecycle'
-import { runSequential } from '../scheduler'
 import type { AdapterResolver } from './adapter-resolver'
 import { ExecutionEngine } from './execution-engine'
 import { buildRunSummary } from './result-collector'
@@ -19,25 +18,33 @@ export interface TestRunnerOptions {
   resolver: AdapterResolver
   /** 运行产物根目录,默认 <cwd>/.testpilot/artifacts/runs */
   runsRoot?: string
+  /** 外部指定的 runId(如 Control Plane 先行落库);缺省时按 yyyymmdd-NNN 自动分配 */
+  runId?: string
   /** 额外的事件订阅者(CLI 控制台输出) */
   onEvent?: RunEventSubscriber
+  /** 取消信号:abort 后当前用例执行完即停止,未开始的用例不再执行 */
+  signal?: AbortSignal
 }
 
 /** 编排一次运行:分配 runId -> 逐用例执行 -> 汇总写盘 -> 关闭 adapter */
 export class TestRunner {
   private readonly resolver: AdapterResolver
   private readonly runsRoot: string
+  private readonly customRunId: string | undefined
   private readonly extraSubscriber: RunEventSubscriber | undefined
+  private readonly signal: AbortSignal | undefined
 
   constructor(options: TestRunnerOptions) {
     this.resolver = options.resolver
     this.runsRoot = resolve(options.runsRoot ?? join(process.cwd(), '.testpilot', 'artifacts', 'runs'))
+    this.customRunId = options.runId
     this.extraSubscriber = options.onEvent
+    this.signal = options.signal
   }
 
   async run(cases: readonly TestCaseInput[]): Promise<RunSummary> {
     const startedAt = new Date()
-    const runId = await allocateRunId(this.runsRoot)
+    const runId = this.customRunId ?? (await allocateRunId(this.runsRoot))
     const runDir = await ensureRunDir(this.runsRoot, runId)
     const artifacts = new ArtifactManager(runDir)
     await artifacts.prepare()
@@ -50,18 +57,27 @@ export class TestRunner {
     await artifacts.logger.info(`run ${runId} started with ${cases.length} case(s)`)
 
     const engine = new ExecutionEngine()
-    const results = await runSequential(cases, (item) =>
-      engine.runCase(item.data, {
-        runId,
-        file: item.file,
-        artifacts,
-        bus,
-        resolver: this.resolver,
-      }),
-    )
+    const results: CaseResult[] = []
+    for (const item of cases) {
+      if (this.signal?.aborted) {
+        await artifacts.logger.info(`run ${runId} cancelled before case ${item.data.id}`)
+        break
+      }
+      results.push(
+        await engine.runCase(item.data, {
+          runId,
+          file: item.file,
+          artifacts,
+          bus,
+          resolver: this.resolver,
+        }),
+      )
+    }
+    // 取消请求可能在最后一个用例执行期间到达,循环内不一定检查到
+    const cancelled = this.signal?.aborted === true
 
     await this.resolver.closeAll()
-    const summary = buildRunSummary(runId, startedAt, results)
+    const summary = buildRunSummary(runId, startedAt, results, { cancelled })
     await bus.emit({
       type: 'run-finished',
       runId,

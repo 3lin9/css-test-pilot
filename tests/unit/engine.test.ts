@@ -13,6 +13,8 @@ class MockAdapter implements TestAdapter {
   readonly navigated: string[] = []
   readonly filled: Array<{ locator: string; value: string }> = []
   readonly clicked: string[] = []
+  readonly evidenceStarted: string[] = []
+  readonly evidenceStopped: string[] = []
 
   async launch(): Promise<void> {
     this.launched++
@@ -48,6 +50,15 @@ class MockAdapter implements TestAdapter {
 
   async screenshot(): Promise<Buffer> {
     return Buffer.from('fake-png')
+  }
+
+  async startEvidence(caseId: string): Promise<void> {
+    this.evidenceStarted.push(caseId)
+  }
+
+  async stopEvidence(caseId: string): Promise<{ video: Buffer; trace: Buffer }> {
+    this.evidenceStopped.push(caseId)
+    return { video: Buffer.from('fake-video'), trace: Buffer.from('fake-trace') }
   }
 
   async close(): Promise<void> {}
@@ -117,6 +128,14 @@ describe('TestRunner(引擎编排)', () => {
     expect(bad?.steps[0]?.error).toContain('element not found')
     expect(bad?.steps[0]?.screenshot).toBeDefined()
     expect(bad?.steps[1]?.status).toBe('skipped')
+
+    // 用例级取证:video/trace 落盘并写入 CaseResult
+    expect(ok?.video).toContain('videos/')
+    expect(ok?.trace).toContain('traces/')
+    const videoBytes = await readFile(join(root, 'runs', summary.runId, ok!.video!))
+    expect(videoBytes.toString()).toBe('fake-video')
+    expect(adapter.evidenceStarted).toEqual(['extract-assert', 'failing'])
+    expect(adapter.evidenceStopped).toEqual(['extract-assert', 'failing'])
 
     // 用例 3:未注册 miniapp adapter -> 步骤失败并给出原因
     const mini = summary.cases.find((item) => item.caseId === 'no-miniapp')

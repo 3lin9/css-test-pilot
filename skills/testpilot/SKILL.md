@@ -23,9 +23,9 @@ Use TestPilot when the user wants to:
 2. Inspect project
 3. Identify test target
 4. Create TestPilot Case (`tests/e2e/cases/*.yaml`)
-5. Validate Case (`npx testpilot validate`)
-6. Run Case (`npx testpilot run`)
-7. Analyze result (`npx testpilot report`)
+5. Validate Case (`npx csspilot validate`)
+6. Run Case (`npx csspilot run`)
+7. Analyze result (`npx csspilot report`)
 
 ## Important rules
 
@@ -40,17 +40,17 @@ Use TestPilot when the user wants to:
 ## CLI
 
 ```bash
-npx testpilot init      # install TestPilot into the current project
-npx testpilot validate  # validate cases against the DSL
-npx testpilot list      # list cases (--tag smoke)
-npx testpilot run       # run cases (file paths / --tag)
-npx testpilot report    # generate JSON + HTML report
-npx testpilot doctor    # check environment
+npx csspilot init      # install TestPilot into the current project
+npx csspilot validate  # validate cases against the DSL
+npx csspilot list      # list cases (--tag smoke)
+npx csspilot run       # run cases (file paths / --tag)
+npx csspilot report    # generate JSON + HTML report
+npx csspilot doctor    # check environment
 ```
 
 ## Directory map (business project)
 
-- `.ai/skills/testpilot/` — this skill (AI usage spec)
+- `.agents/skills/testpilot/` — this skill (AI usage spec)
 - `.testpilot/` — TestPilot runtime state and artifacts
 - `tests/e2e/cases/` — business cases
 - `testpilot.yaml` — project-level TestPilot config

@@ -25,7 +25,7 @@ TestPilot
                          AI
                           │
                           ▼
-                .ai/skills/testpilot
+                .agents/skills/testpilot
                           │ 规范 / 能力
                           ▼
                     TestPilot CLI
@@ -58,20 +58,20 @@ TestPilot
 
 ## 一句话定义
 
-| 东西 | 定义 |
-| --- | --- |
-| TestPilot | 测试基础设施 |
-| CLI | TestPilot 的统一入口 |
-| Skill | AI 使用 TestPilot 的能力规范 |
-| DSL | 测试描述语言 |
-| Case | 业务项目中的测试资产 |
-| Execution Engine | 执行 DSL 的核心 |
-| Adapter | 对接具体平台 |
-| Evidence | 测试证据 |
-| Reporter | 测试结果输出 |
-| `.ai/skills` | AI Skill 安装位置 |
-| `.testpilot` | TestPilot Runtime 数据 |
-| `tests/e2e` | 业务项目测试目录 |
+| 东西             | 定义                         |
+| ---------------- | ---------------------------- |
+| TestPilot        | 测试基础设施                 |
+| CLI              | TestPilot 的统一入口         |
+| Skill            | AI 使用 TestPilot 的能力规范 |
+| DSL              | 测试描述语言                 |
+| Case             | 业务项目中的测试资产         |
+| Execution Engine | 执行 DSL 的核心              |
+| Adapter          | 对接具体平台                 |
+| Evidence         | 测试证据                     |
+| Reporter         | 测试结果输出                 |
+| `.agents/skills` | AI Skill 安装位置            |
+| `.testpilot`     | TestPilot Runtime 数据       |
+| `tests/e2e`      | 业务项目测试目录             |
 
 ## V0.1 范围
 

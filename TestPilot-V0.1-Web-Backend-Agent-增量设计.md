@@ -65,20 +65,20 @@ tests/
 └── e2e/
     └── cases/
 
-.ai/
+.agents/
 └── skills/
     └── testpilot/
 
 .testpilot/
 ```
 
-| 目录 | 职责 |
-|---|---|
-| `.ai/skills/testpilot/` | AI 使用 TestPilot 的规范 |
-| `.testpilot/` | TestPilot Runtime 配置、运行产物 |
-| `tests/e2e/` | 业务测试资产 |
-| `tests/e2e/cases/` | 业务 Case |
-| `testpilot.yaml` | 项目级 TestPilot 配置 |
+| 目录                        | 职责                             |
+| --------------------------- | -------------------------------- |
+| `.agents/skills/testpilot/` | AI 使用 TestPilot 的规范         |
+| `.testpilot/`               | TestPilot Runtime 配置、运行产物 |
+| `tests/e2e/`                | 业务测试资产                     |
+| `tests/e2e/cases/`          | 业务 Case                        |
+| `testpilot.yaml`            | 项目级 TestPilot 配置            |
 
 ## 3. Monorepo 增量结构
 
@@ -154,12 +154,12 @@ Agent  → Playwright
 现有 CLI 保持：
 
 ```bash
-npx testpilot init
-npx testpilot validate
-npx testpilot list
-npx testpilot run
-npx testpilot report
-npx testpilot doctor
+npx csspilot init
+npx csspilot validate
+npx csspilot list
+npx csspilot run
+npx csspilot report
+npx csspilot doctor
 ```
 
 ### init 增强
@@ -177,7 +177,7 @@ npx testpilot doctor
    ↓
 安装 TestPilot Skill
    ↓
-.ai/skills/testpilot/
+.agents/skills/testpilot/
    ↓
 初始化 .testpilot/
    ↓
@@ -191,7 +191,7 @@ npx testpilot doctor
 Skill 必须安装到：
 
 ```text
-.ai/skills/testpilot/
+.agents/skills/testpilot/
 ```
 
 不要使用：
@@ -225,7 +225,7 @@ skills/
 安装到业务项目：
 
 ```text
-.ai/
+.agents/
 └── skills/
     └── testpilot/
 ```
@@ -598,7 +598,7 @@ logs
 
 ```text
 my-project/
-├── .ai/
+├── .agents/
 │   └── skills/
 │       └── testpilot/
 ├── .testpilot/
@@ -611,7 +611,7 @@ my-project/
 用户：
 
 ```text
-npx testpilot init
+npx csspilot init
 ```
 
 然后：
@@ -674,8 +674,8 @@ CLI
 跑通：
 
 ```bash
-npx testpilot validate
-npx testpilot run
+npx csspilot validate
+npx csspilot run
 ```
 
 ### Phase 2：Adapters
@@ -696,7 +696,7 @@ MiniApp → Web
 实现：
 
 ```text
-.ai/skills/testpilot/
+.agents/skills/testpilot/
 ```
 
 跑通：

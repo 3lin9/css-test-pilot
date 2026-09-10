@@ -1,0 +1,5 @@
+id: order-create
+name: 创建订单
+steps:
+  - target: web
+    action: launch

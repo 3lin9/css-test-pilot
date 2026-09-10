@@ -22,10 +22,20 @@ export interface TestAdapter {
   screenshot(): Promise<Buffer>
   /** 释放底层资源(浏览器 / IDE 连接) */
   close(): Promise<void>
+  /** [可选能力] 开始用例级取证(video/trace);不支持的可不实现 */
+  startEvidence?(caseId: string): Promise<void>
+  /** [可选能力] 结束取证并返回产物字节;与 startEvidence 成对调用 */
+  stopEvidence?(caseId: string): Promise<AdapterEvidence>
 }
 
 /** adapter 工厂:引擎按需调用 create(),运行结束后统一 close */
 export interface AdapterFactory {
   readonly target: StepTarget
   create(): Promise<TestAdapter>
+}
+
+/** 用例级取证产物(video/trace 字节,由引擎落盘到 run 目录) */
+export interface AdapterEvidence {
+  video?: Buffer
+  trace?: Buffer
 }

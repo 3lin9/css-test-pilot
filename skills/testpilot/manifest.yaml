@@ -1,8 +1,8 @@
 # TestPilot Skill 清单(源文件)
-# `npx testpilot init` 会把整个 skills/testpilot/ 安装到业务项目 .ai/skills/testpilot/
+# `npx csspilot init` 会把整个 skills/testpilot/ 安装到业务项目 .agents/skills/testpilot/
 id: testpilot
 name: TestPilot
-version: 0.1.0
+version: 0.1.1
 
 description: >
   AI Native cross-platform testing skill.
@@ -15,7 +15,7 @@ capabilities:
   - report
 
 runtime:
-  cli: testpilot
+  cli: csspilot
 
 permissions:
   filesystem:

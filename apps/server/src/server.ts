@@ -1,0 +1,71 @@
+import Fastify, { type FastifyInstance, type FastifyReply } from 'fastify'
+import { resolveRoot } from '@testpilot/sdk'
+import type { AdapterFactory } from '@testpilot/adapter-core'
+import { openDatabase, type Db } from './db'
+import { RunOrchestrator } from './orchestrator/run-orchestrator'
+import { registerCaseRoutes } from './routes/cases'
+import { registerHealthRoutes } from './routes/health'
+import { registerIntegrationRoutes } from './routes/integrations'
+import { registerProjectRoutes } from './routes/projects'
+import { registerReportRoutes } from './routes/reports'
+import { registerRunRoutes } from './routes/runs'
+import { registerWorkspaceRoutes } from './routes/workspaces'
+import { registerProject, type ProjectRow } from './services/project-service'
+
+export interface ServerContext {
+  db: Db
+  orchestrator: RunOrchestrator
+  /** 默认项目(服务启动时按根目录注册) */
+  defaultProject: ProjectRow
+}
+
+export interface BuildServerOptions {
+  /** 业务项目根目录,默认 TESTPILOT_PROJECT_ROOT 或 process.cwd() */
+  root?: string
+  dbPath?: string
+  /** 注入自定义 adapter(测试);缺省用 SDK 默认组合 */
+  adapters?: readonly AdapterFactory[]
+  logger?: boolean
+}
+
+export interface TestPilotServer {
+  app: FastifyInstance
+  ctx: ServerContext
+  /** 等待所有后台运行结束并关闭数据库(测试与优雅退出用) */
+  close(): Promise<void>
+}
+
+/** 组装 Control Plane API;注册默认项目并挂载全部路由 */
+export async function buildServer(options: BuildServerOptions = {}): Promise<TestPilotServer> {
+  const root = resolveRoot(options.root ?? process.env.TESTPILOT_PROJECT_ROOT ?? undefined)
+  const db = openDatabase({ root, dbPath: options.dbPath })
+  const defaultProject = await registerProject(db, root)
+  const orchestrator = new RunOrchestrator(db, { adapters: options.adapters })
+
+  const app = Fastify({ logger: options.logger ?? false })
+
+  // 服务层抛出的 statusCode 优先;其余一律 500
+  app.setErrorHandler((error: Error & { statusCode?: number }, _request, reply: FastifyReply) => {
+    const statusCode = error.statusCode ?? 500
+    if (statusCode >= 500) app.log.error(error)
+    void reply.code(statusCode).send({ error: error.message })
+  })
+
+  const ctx: ServerContext = { db, orchestrator, defaultProject }
+  registerHealthRoutes(app, ctx)
+  registerProjectRoutes(app, ctx)
+  registerCaseRoutes(app, ctx)
+  registerRunRoutes(app, ctx)
+  registerReportRoutes(app, ctx)
+  registerIntegrationRoutes(app, ctx)
+  registerWorkspaceRoutes(app, ctx)
+
+  return {
+    app,
+    ctx,
+    async close() {
+      await orchestrator.waitAll()
+      await app.close()
+    },
+  }
+}

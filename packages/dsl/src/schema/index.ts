@@ -46,6 +46,8 @@ export const caseSchema = z.strictObject({
   id: z.string().regex(/^[a-z0-9][a-z0-9-]*$/, 'id 需为 kebab-case(小写字母、数字、连字符)'),
   name: z.string().min(1, 'name 不能为空'),
   description: z.string().optional(),
+  /** 引用 Test Workspace(多系统环境组合);Case 只表达测试意图,环境由 Workspace 提供 */
+  workspace: z.string().min(1).optional(),
   tags: z.array(z.string().min(1)).optional(),
   steps: z.array(stepSchema).min(1, 'Case 至少包含一个 step'),
 })

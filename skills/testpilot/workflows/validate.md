@@ -3,8 +3,8 @@
 任何 Case 在 run 之前必须先 validate。
 
 ```bash
-npx testpilot validate              # 全量
-npx testpilot validate <file>       # 指定文件
+npx csspilot validate              # 全量
+npx csspilot validate <file>       # 指定文件
 ```
 
 检查内容:

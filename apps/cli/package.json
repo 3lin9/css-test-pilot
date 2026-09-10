@@ -1,14 +1,18 @@
 {
-  "name": "testpilot",
-  "version": "0.1.0",
+  "name": "csspilot",
+  "version": "0.1.1",
   "description": "TestPilot — AI Native 跨端业务测试基础设施 CLI",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/3lin9/css-test-pilot.git"
+  },
   "type": "module",
   "engines": {
     "node": ">=22"
   },
   "bin": {
-    "testpilot": "dist/bin.js"
+    "csspilot": "dist/bin.js"
   },
   "files": [
     "dist"
@@ -24,14 +28,8 @@
     "playwright": "^1.53.0"
   },
   "devDependencies": {
-    "@testpilot/adapter-core": "workspace:^",
-    "@testpilot/adapter-playwright": "workspace:^",
-    "@testpilot/adapter-wechatide": "workspace:^",
     "@testpilot/core": "workspace:^",
-    "@testpilot/dsl": "workspace:^",
-    "@testpilot/evidence": "workspace:^",
-    "@testpilot/execution-engine": "workspace:^",
-    "@testpilot/reporter": "workspace:^",
+    "@testpilot/sdk": "workspace:^",
     "@types/node": "^22.0.0",
     "commander": "^12.0.0",
     "esbuild": "^0.25.0",

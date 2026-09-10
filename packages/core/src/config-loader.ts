@@ -6,6 +6,8 @@ import { DEFAULT_CASES_DIR } from './constants'
 
 const configSchema = z.strictObject({
   casesDir: z.string().min(1).optional(),
+  /** TestPilot Control Plane 地址(sync-metadata / init 关联项目时使用) */
+  server: z.strictObject({ baseUrl: z.string().min(1).optional() }).optional(),
   web: z.strictObject({ baseUrl: z.string().min(1).optional() }).optional(),
   miniapp: z
     .strictObject({
@@ -17,6 +19,7 @@ const configSchema = z.strictObject({
 
 export interface TestpilotConfig {
   casesDir: string
+  server?: { baseUrl?: string }
   web?: { baseUrl?: string }
   miniapp?: { projectPath?: string; cliPath?: string }
 }
@@ -43,6 +46,7 @@ export async function loadTestpilotConfig(cwd: string = process.cwd()): Promise<
   }
   return {
     casesDir: result.data.casesDir ?? DEFAULT_CASES_DIR,
+    server: result.data.server,
     web: result.data.web,
     miniapp: result.data.miniapp,
   }

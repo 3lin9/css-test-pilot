@@ -1,5 +1,6 @@
 import type { CaseResult } from '@testpilot/core'
-import type { TestCase } from '@testpilot/dsl'
+import type { TestCase, StepTarget } from '@testpilot/dsl'
+import type { TestAdapter } from '@testpilot/adapter-core'
 import type { ArtifactManager } from '../artifacts'
 import { ExecutionContext } from '../context'
 import type { EventBus } from '../events'
@@ -21,6 +22,7 @@ export class ExecutionEngine {
     const startedAt = new Date()
     const context = new ExecutionContext()
     const steps: CaseResult['steps'] = []
+    const evidenceAdapters = new Map<StepTarget, TestAdapter>()
     let caseError: string | undefined
 
     await bus.emit({ type: 'case-started', runId, caseId: data.id, file, ts: startedAt.toISOString() })
@@ -40,6 +42,17 @@ export class ExecutionEngine {
       let result: CaseResult['steps'][number]
       try {
         const adapter = await (await resolver.session(step.target)).get()
+        // 每个 target 首次使用时开始用例级取证(video/trace,可选能力)
+        if (adapter.startEvidence && !evidenceAdapters.has(step.target)) {
+          try {
+            await adapter.startEvidence(data.id)
+            evidenceAdapters.set(step.target, adapter)
+          } catch (err) {
+            await artifacts.logger.info(
+              `evidence start failed for ${step.target}: ${err instanceof Error ? err.message : String(err)}`,
+            )
+          }
+        }
         result = await executeStep(step, index, adapter, context, artifacts, {
           screenshotName: `${data.id}-step-${String(index).padStart(2, '0')}`,
         })
@@ -88,16 +101,6 @@ export class ExecutionEngine {
 
     const finishedAt = new Date()
     const status = caseError ? 'failed' : 'passed'
-    await bus.emit({
-      type: 'case-finished',
-      runId,
-      caseId: data.id,
-      status,
-      durationMs: finishedAt.getTime() - startedAt.getTime(),
-      ts: finishedAt.toISOString(),
-    })
-    await artifacts.logger.info(`case ${data.id} ${status}`)
-
     const caseResult: CaseResult = {
       caseId: data.id,
       caseName: data.name,
@@ -109,6 +112,34 @@ export class ExecutionEngine {
       durationMs: finishedAt.getTime() - startedAt.getTime(),
     }
     if (caseError) caseResult.error = caseError
+
+    // 收尾用例级取证(video/trace),失败不影响测试结果
+    for (const [target, adapter] of evidenceAdapters) {
+      if (!adapter.stopEvidence) continue
+      try {
+        const evidence = await adapter.stopEvidence(data.id)
+        if (evidence.video) {
+          caseResult.video = await artifacts.saveVideo(`${data.id}-${target}.webm`, evidence.video)
+        }
+        if (evidence.trace) {
+          caseResult.trace = await artifacts.saveTrace(`${data.id}-${target}.zip`, evidence.trace)
+        }
+      } catch (err) {
+        await artifacts.logger.info(
+          `evidence stop failed for ${target}: ${err instanceof Error ? err.message : String(err)}`,
+        )
+      }
+    }
+
+    await bus.emit({
+      type: 'case-finished',
+      runId,
+      caseId: data.id,
+      status,
+      durationMs: finishedAt.getTime() - startedAt.getTime(),
+      ts: finishedAt.toISOString(),
+    })
+    await artifacts.logger.info(`case ${data.id} ${status}`)
     return caseResult
   }
 }

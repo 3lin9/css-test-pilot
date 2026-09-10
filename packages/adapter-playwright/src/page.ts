@@ -1,48 +1,94 @@
-import type { TestAdapter } from '@testpilot/adapter-core'
+import { existsSync } from 'node:fs'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import type { AdapterEvidence, TestAdapter } from '@testpilot/adapter-core'
 import type { CaseLocator, StepTarget } from '@testpilot/dsl'
-import type { Locator, Page } from 'playwright'
+import type { BrowserContext, Locator, Page } from 'playwright'
 import type { BrowserBundle, PlaywrightAdapterOptions } from './browser'
+import { openCaseContext } from './browser'
 
-/** web 端适配器:把 TestAdapter 原语映射到 Playwright API */
+interface CurrentContext {
+  context: BrowserContext
+  page: Page
+  /** 存在时表示该用例正在录制 video/trace */
+  evidenceTmpDir?: string
+}
+
+/** web 端适配器:把 TestAdapter 原语映射到 Playwright API;上下文按用例创建以支持录屏与 trace */
 export class PlaywrightAdapter implements TestAdapter {
   readonly target: StepTarget = 'web'
+  private current: CurrentContext | undefined
 
   constructor(
     private readonly bundle: BrowserBundle,
     private readonly options: PlaywrightAdapterOptions = {},
   ) {}
 
-  /** 浏览器与页面在 create() 时已打开;launch 保持幂等 */
+  /** 浏览器在 create() 时已启动;context/page 按用例惰性创建,launch 保持幂等 */
   async launch(): Promise<void> {}
 
+  /** 开始用例级取证:为本用例创建独立 context(录屏 + trace) */
+  async startEvidence(_caseId: string): Promise<void> {
+    await this.closeContextQuietly()
+    const evidenceTmpDir = await mkdtemp(join(tmpdir(), 'testpilot-pw-'))
+    this.current = {
+      ...(await openCaseContext(this.bundle, this.options, evidenceTmpDir)),
+      evidenceTmpDir,
+    }
+  }
+
+  /** 结束取证:trace 落 zip、录屏在 context 关闭后完成,返回二者字节 */
+  async stopEvidence(_caseId: string): Promise<AdapterEvidence> {
+    if (!this.current) return {}
+    const { context, page, evidenceTmpDir } = this.current
+    this.current = undefined
+
+    const traceZipPath = join(evidenceTmpDir ?? tmpdir(), 'trace.zip')
+    await context.tracing.stop({ path: traceZipPath }).catch(() => undefined)
+    const recordedVideoPath = await page
+      .video()
+      ?.path()
+      .catch(() => undefined)
+    await context.close().catch(() => undefined)
+
+    const video = recordedVideoPath && existsSync(recordedVideoPath) ? await readFile(recordedVideoPath) : undefined
+    const trace = evidenceTmpDir && existsSync(traceZipPath) ? await readFile(traceZipPath) : undefined
+    if (evidenceTmpDir) await rm(evidenceTmpDir, { recursive: true, force: true }).catch(() => undefined)
+    return { video, trace }
+  }
+
   async navigate(url: string): Promise<void> {
+    const options = this.options
+    const page = await this.ensurePage()
     const target =
-      this.options.baseUrl && !/^https?:\/\//i.test(url) ? new URL(url, this.options.baseUrl).toString() : url
-    await this.page.goto(target)
+      options.baseUrl && !/^https?:\/\//i.test(url) ? new URL(url, options.baseUrl).toString() : url
+    await page.goto(target)
   }
 
   async click(locator: CaseLocator): Promise<void> {
-    await this.toLocator(locator).click()
+    await (await this.toLocator(locator)).click()
   }
 
   async input(locator: CaseLocator, value: string): Promise<void> {
-    await this.toLocator(locator).fill(value)
+    await (await this.toLocator(locator)).fill(value)
   }
 
   async select(locator: CaseLocator, value: string): Promise<void> {
-    await this.toLocator(locator).selectOption(value)
+    await (await this.toLocator(locator)).selectOption(value)
   }
 
   async wait(locator: CaseLocator | undefined, timeoutMs: number | undefined): Promise<void> {
+    const page = await this.ensurePage()
     if (locator) {
-      await this.toLocator(locator).waitFor({ state: 'visible', timeout: timeoutMs })
+      await this.toLocatorOn(page, locator).waitFor({ state: 'visible', timeout: timeoutMs })
       return
     }
-    await this.page.waitForTimeout(timeoutMs ?? 1_000)
+    await page.waitForTimeout(timeoutMs ?? 1_000)
   }
 
   async assert(locator: CaseLocator, expected: string): Promise<void> {
-    const target = this.toLocator(locator)
+    const target = await this.toLocator(locator)
     await target.waitFor({ state: 'visible' })
     const actual = (await target.innerText()).trim()
     const wanted = expected.trim()
@@ -52,29 +98,43 @@ export class PlaywrightAdapter implements TestAdapter {
   }
 
   async extract(locator: CaseLocator): Promise<string> {
-    return (await this.toLocator(locator).innerText()).trim()
+    return (await this.toLocator(locator)).innerText().then((text) => text.trim())
   }
 
   async screenshot(): Promise<Buffer> {
-    return this.page.screenshot()
+    return (await this.ensurePage()).screenshot()
   }
 
   async close(): Promise<void> {
-    await this.bundle.context.close().catch(() => undefined)
+    await this.closeContextQuietly()
     await this.bundle.browser.close().catch(() => undefined)
   }
 
-  private get page(): Page {
-    return this.bundle.page
+  private async ensurePage(): Promise<Page> {
+    if (!this.current) {
+      this.current = await openCaseContext(this.bundle, this.options)
+    }
+    return this.current.page
   }
 
-  private toLocator(locator: CaseLocator): Locator {
+  private async toLocator(locator: CaseLocator): Promise<Locator> {
+    return this.toLocatorOn(await this.ensurePage(), locator)
+  }
+
+  private toLocatorOn(page: Page, locator: CaseLocator): Locator {
     if (locator.text !== undefined) {
-      return this.page.getByText(locator.text, { exact: true })
+      return page.getByText(locator.text, { exact: true })
     }
     if (locator.css !== undefined) {
-      return this.page.locator(locator.css)
+      return page.locator(locator.css)
     }
     throw new Error(`无效的 locator:${JSON.stringify(locator)}`)
+  }
+
+  private async closeContextQuietly(): Promise<void> {
+    if (!this.current) return
+    const { context } = this.current
+    this.current = undefined
+    await context.close().catch(() => undefined)
   }
 }

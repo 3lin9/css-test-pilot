@@ -25,7 +25,8 @@
       "@testpilot/adapter-playwright": ["packages/adapter-playwright/src/index.ts"],
       "@testpilot/adapter-wechatide": ["packages/adapter-wechatide/src/index.ts"],
       "@testpilot/evidence": ["packages/evidence/src/index.ts"],
-      "@testpilot/reporter": ["packages/reporter/src/index.ts"]
+      "@testpilot/reporter": ["packages/reporter/src/index.ts"],
+      "@testpilot/sdk": ["packages/sdk/src/index.ts"]
     }
   }
 }

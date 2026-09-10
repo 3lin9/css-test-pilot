@@ -4,7 +4,7 @@ import { DEFAULT_STEP_TIMEOUT_MS } from '@testpilot/core'
 export interface PlaywrightAdapterOptions {
   /** 相对 url 的基准,navigate 时解析 */
   baseUrl?: string
-  /** 默认 true;环境变量 TESTPILOT_HEADLESS=false 可覆盖为有头模式 */
+  /** 默认 true,TESTPILOT_HEADLESS=false 可覆盖为有头模式 */
   headless?: boolean
   /** 单步操作超时毫秒;环境变量 TESTPILOT_STEP_TIMEOUT 可覆盖 */
   timeout?: number
@@ -12,8 +12,6 @@ export interface PlaywrightAdapterOptions {
 
 export interface BrowserBundle {
   browser: Browser
-  context: BrowserContext
-  page: Page
 }
 
 export function resolveHeadless(options: PlaywrightAdapterOptions): boolean {
@@ -27,10 +25,24 @@ export function stepTimeout(options: PlaywrightAdapterOptions): number {
   return Number.isFinite(fromEnv) && fromEnv > 0 ? fromEnv : DEFAULT_STEP_TIMEOUT_MS
 }
 
+/** 浏览器整个运行期共享;context/page 按用例创建以支持录屏与 trace */
 export async function launchBrowser(options: PlaywrightAdapterOptions = {}): Promise<BrowserBundle> {
   const browser = await chromium.launch({ headless: resolveHeadless(options) })
-  const context = await browser.newContext()
+  return { browser }
+}
+
+export async function openCaseContext(
+  bundle: BrowserBundle,
+  options: PlaywrightAdapterOptions,
+  evidenceTmpDir?: string,
+): Promise<{ context: BrowserContext; page: Page }> {
+  const context = await bundle.browser.newContext({
+    ...(evidenceTmpDir ? { recordVideo: { dir: evidenceTmpDir } } : {}),
+  })
   context.setDefaultTimeout(stepTimeout(options))
+  if (evidenceTmpDir) {
+    await context.tracing.start({ screenshots: true, snapshots: true })
+  }
   const page = await context.newPage()
-  return { browser, context, page }
+  return { context, page }
 }

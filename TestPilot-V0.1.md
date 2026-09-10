@@ -32,7 +32,7 @@ Business Project
 ├── testpilot.yaml
 ├── tests/e2e/
 │   └── cases/
-└── .ai/skills/
+└── .agents/skills/
     └── testpilot/
 ```
 
@@ -156,12 +156,12 @@ TestPilot 定义：
 
 ---
 
-# 3. 用户第一体验：npx testpilot init
+# 3. 用户第一体验：npx csspilot init
 
 V0.1 最重要的命令：
 
 ```bash
-npx testpilot init
+npx csspilot init
 ```
 
 它的定义不是：
@@ -175,7 +175,7 @@ npx testpilot init
 执行流程：
 
 ```text
-npx testpilot init
+npx csspilot init
         │
         ├── 检测项目
         │
@@ -183,7 +183,7 @@ npx testpilot init
         │
         ├── 安装 TestPilot Skill
         │       ↓
-        │   .ai/skills/testpilot/
+        │   .agents/skills/testpilot/
         │
         ├── 初始化 TestPilot Runtime
         │       ↓
@@ -215,7 +215,7 @@ my-project/
 │       ├── fixtures/
 │       └── data/
 │
-├── .ai/
+├── .agents/
 │   └── skills/
 │       └── testpilot/
 │           ├── SKILL.md
@@ -243,7 +243,7 @@ my-project/
 职责：
 
 ```text
-.ai/skills/testpilot/
+.agents/skills/testpilot/
     AI 使用规范
 
 .testpilot/
@@ -268,7 +268,7 @@ V0.1 CLI 保持极简。
 ## 5.1 init
 
 ```bash
-npx testpilot init
+npx csspilot init
 ```
 
 职责：
@@ -285,13 +285,13 @@ npx testpilot init
 ## 5.2 validate
 
 ```bash
-npx testpilot validate
+npx csspilot validate
 ```
 
 或者：
 
 ```bash
-npx testpilot validate tests/e2e/cases/order.yaml
+npx csspilot validate tests/e2e/cases/order.yaml
 ```
 
 职责：
@@ -324,7 +324,7 @@ ValidationResult
 ## 5.3 list
 
 ```bash
-npx testpilot list
+npx csspilot list
 ```
 
 输出：
@@ -345,7 +345,7 @@ TestPilot Cases
 支持：
 
 ```bash
-npx testpilot list --tag smoke
+npx csspilot list --tag smoke
 ```
 
 ---
@@ -353,7 +353,7 @@ npx testpilot list --tag smoke
 ## 5.4 run
 
 ```bash
-npx testpilot run
+npx csspilot run
 ```
 
 默认运行项目配置中的 Case。
@@ -361,13 +361,13 @@ npx testpilot run
 也支持：
 
 ```bash
-npx testpilot run tests/e2e/cases/order.yaml
+npx csspilot run tests/e2e/cases/order.yaml
 ```
 
 以及：
 
 ```bash
-npx testpilot run --tag smoke
+npx csspilot run --tag smoke
 ```
 
 执行：
@@ -393,7 +393,7 @@ Reporter
 ## 5.5 report
 
 ```bash
-npx testpilot report
+npx csspilot report
 ```
 
 生成：
@@ -414,7 +414,7 @@ npx testpilot report
 ## 5.6 doctor
 
 ```bash
-npx testpilot doctor
+npx csspilot doctor
 ```
 
 用于检查环境。
@@ -488,7 +488,7 @@ testpilot/
 安装到业务项目：
 
 ```text
-.ai/
+.agents/
 └── skills/
     └── testpilot/
 ```
@@ -501,7 +501,7 @@ TestPilot Repository
         │ install
         ▼
 Business Project
-.ai/skills/testpilot/
+.agents/skills/testpilot/
 ```
 
 ---
@@ -765,9 +765,9 @@ wechat-devtools ...
 而应该：
 
 ```bash
-npx testpilot validate
-npx testpilot run
-npx testpilot report
+npx csspilot validate
+npx csspilot run
+npx csspilot report
 ```
 
 因此 AI 和执行层之间只有一个稳定入口：
@@ -1143,7 +1143,7 @@ assert
 最后再完善：
 
 ```text
-.ai/skills/testpilot/
+.agents/skills/testpilot/
 ```
 
 让 AI 真正做到：
@@ -1211,7 +1211,7 @@ payment
                          AI
                           │
                           ▼
-                .ai/skills/testpilot
+                .agents/skills/testpilot
                           │
                           │ 规范 / 能力
                           ▼
@@ -1268,7 +1268,7 @@ tests/e2e/cases/
 | Adapter          | 对接具体平台                 |
 | Evidence         | 测试证据                     |
 | Reporter         | 测试结果输出                 |
-| `.ai/skills`     | AI Skill 安装位置            |
+| `.agents/skills` | AI Skill 安装位置            |
 | `.testpilot`     | TestPilot Runtime 数据       |
 | `tests/e2e`      | 业务项目测试目录             |
 

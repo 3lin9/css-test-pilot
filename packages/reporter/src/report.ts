@@ -1,5 +1,5 @@
 import { writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import type { CaseResult, RunSummary, StepResult } from '@testpilot/core'
 import { toSummaryView } from './summary'
 
@@ -10,8 +10,9 @@ export interface WrittenReports {
 
 /** 在 run 目录内生成 report.json + report.html,返回文件绝对路径 */
 export async function writeReports(runDir: string, summary: RunSummary): Promise<WrittenReports> {
-  const jsonPath = join(runDir, 'report.json')
-  const htmlPath = join(runDir, 'report.html')
+  const dir = resolve(runDir)
+  const jsonPath = join(dir, 'report.json')
+  const htmlPath = join(dir, 'report.html')
   const payload = { generatedAt: new Date().toISOString(), summary }
 
   await writeFile(jsonPath, JSON.stringify(payload, null, 2), 'utf8')
@@ -51,9 +52,14 @@ ${casesHtml}
 function caseHtml(item: CaseResult): string {
   const rows = item.steps.map((step) => stepHtml(step)).join('\n')
   const errorLine = item.error ? `<p class="error">${escapeHtml(item.error)}</p>` : ''
+  const links: string[] = []
+  if (item.video) links.push(`<a href="${escapeHtml(item.video)}">视频</a>`)
+  if (item.trace) links.push(`<a href="${escapeHtml(item.trace)}">Trace</a>`)
+  const linksLine = links.length > 0 ? `<p>${links.join(' · ')}</p>` : ''
   return `
 <h2>${escapeHtml(item.caseId)} · ${escapeHtml(item.caseName)} <span class="badge ${item.status}">${item.status}</span></h2>
 ${errorLine}
+${linksLine}
 <table>
   <tr><th>#</th><th>target</th><th>action</th><th>状态</th><th>耗时</th><th>详情</th></tr>
   ${rows}

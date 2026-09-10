@@ -31,6 +31,10 @@ export interface CaseResult {
   durationMs: number
   /** 用例级错误(如 adapter 缺失) */
   error?: string
+  /** 相对 run 目录的用例录屏(仅支持录制的 adapter 产出) */
+  video?: string
+  /** 相对 run 目录的 trace 包(如 Playwright trace.zip) */
+  trace?: string
 }
 
 export interface RunTotals {
@@ -49,6 +53,8 @@ export interface RunSummary {
   finishedAt: string
   durationMs: number
   status: RunStatus
+  /** 因取消信号提前结束:已完成用例保留,未开始的用例不再执行 */
+  cancelled?: boolean
   cases: CaseResult[]
   totals: RunTotals
 }
