@@ -445,7 +445,7 @@ Environment looks good.
 最终先做：
 
 ```text
-testpilot
+csspilot
 │
 ├── init
 ├── validate
@@ -575,12 +575,12 @@ Use TestPilot when the user wants to:
 
 ## CLI
 
-testpilot init
-testpilot validate
-testpilot list
+csspilot init
+csspilot validate
+csspilot list
 testpilot run
-testpilot report
-testpilot doctor
+csspilot report
+csspilot doctor
 ```
 
 ---
@@ -802,7 +802,7 @@ capabilities:
   - report
 
 runtime:
-  cli: testpilot
+  cli: csspilot
 
 permissions:
   filesystem:
@@ -1044,12 +1044,12 @@ Vitest
 先实现：
 
 ```bash
-testpilot init
-testpilot validate
-testpilot list
+csspilot init
+csspilot validate
+csspilot list
 testpilot run
-testpilot report
-testpilot doctor
+csspilot report
+csspilot doctor
 ```
 
 CLI 必须可以独立工作。
