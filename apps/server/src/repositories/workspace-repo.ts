@@ -1,6 +1,6 @@
 import { and, asc, eq } from 'drizzle-orm'
 import type { Db } from '../db'
-import { environments, workspaceBindings, workspaces } from '../db/schema'
+import { environments, projects, workspaceBindings, workspaces } from '../db/schema'
 
 export type WorkspaceRow = typeof workspaces.$inferSelect
 export type WorkspaceInsert = typeof workspaces.$inferInsert
@@ -64,20 +64,27 @@ export async function insertWorkspace(
 
 export interface BindingView {
   projectId: number
+  projectName: string
   environmentId: number
   environmentName: string
+  branch: string | null
+  baseUrl: string | null
 }
 
-/** Workspace 的全部绑定(含环境名,供快照与展示) */
+/** Workspace 的全部绑定(含项目与环境信息,供快照与展示) */
 export async function listBindings(db: Db, workspaceId: number): Promise<BindingView[]> {
   const rows = await db
     .select({
       projectId: workspaceBindings.projectId,
+      projectName: projects.name,
       environmentId: workspaceBindings.environmentId,
       environmentName: environments.name,
+      branch: environments.branch,
+      baseUrl: environments.baseUrl,
     })
     .from(workspaceBindings)
     .innerJoin(environments, eq(workspaceBindings.environmentId, environments.id))
+    .innerJoin(projects, eq(workspaceBindings.projectId, projects.id))
     .where(eq(workspaceBindings.workspaceId, workspaceId))
     .orderBy(asc(workspaceBindings.id))
   return rows

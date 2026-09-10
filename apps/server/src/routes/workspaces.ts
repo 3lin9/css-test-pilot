@@ -25,13 +25,14 @@ export function registerWorkspaceRoutes(app: FastifyInstance, ctx: ServerContext
   app.post('/api/projects/:projectId/environments', async (request, reply) => {
     const { projectId } = request.params as { projectId: string }
     await getProjectOrThrow(ctx.db, Number(projectId))
-    const body = (request.body ?? {}) as { name?: string; baseUrl?: string }
+    const body = (request.body ?? {}) as { name?: string; branch?: string; baseUrl?: string }
     if (!body.name) {
       return reply.code(400).send({ error: '环境名称不能为空' })
     }
     const environment = await insertEnvironment(ctx.db, {
       projectId: Number(projectId),
       name: body.name,
+      branch: body.branch ?? null,
       baseUrl: body.baseUrl ?? null,
       createdAt: new Date().toISOString(),
     })
@@ -41,7 +42,16 @@ export function registerWorkspaceRoutes(app: FastifyInstance, ctx: ServerContext
   // ---- workspaces ----
 
   app.get('/api/workspaces', async () => {
-    return { workspaces: await listWorkspaces(ctx.db) }
+    // 列表直接带绑定信息,Web 卡片无需逐个请求详情
+    const rows = await listWorkspaces(ctx.db)
+    return {
+      workspaces: await Promise.all(
+        rows.map(async (workspace) => ({
+          ...workspace,
+          bindings: await listBindings(ctx.db, workspace.id),
+        })),
+      ),
+    }
   })
 
   app.post('/api/workspaces', async (request, reply) => {

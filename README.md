@@ -69,7 +69,7 @@ pnpm lint                              # ESLint(eslint.config.js)
 pnpm test                              # Vitest(vitest.config.ts)
 pnpm e2e                               # Playwright(playwright.config.ts)
 
-pnpm --filter testpilot dev --help     # 本地运行 CLI(源码)
+pnpm --filter testpilot dev --help      # 本地运行 CLI(源码)
 pnpm build                             # 打包 CLI(esbuild -> apps/cli/dist)
 node apps/cli/dist/bin.js --help       # 运行打包产物
 ```
@@ -89,7 +89,7 @@ Phase 8  TestPilot Skill 完善(✓ rules/workflows 与实现对齐,随真实使
 增量(Web / Backend / Agent,见 TestPilot-V0.1-Web-Backend-Agent-增量设计-v4.md):
 Phase 9  SDK @testpilot/sdk(✓ client/project/cases/runs/reports;CLI 已改为统一走 SDK;引擎支持取消)
 Phase 10 Backend Control Plane + Git Metadata Sync(✓ Fastify + SQLite + Drizzle;快照式 Case 同步 + Run 编排)
-Phase 11 Web 测试控制台(待实现:项目概览/Case Index/Run 详情/同步状态)
+Phase 11 Web 测试控制台(✓ Vue 3 + Vite:项目概览 / Case Index / Run 详情(Step 级结果 + 截图/日志/Trace)/ 同步状态;Server 静态托管)
 Phase 12 Agent(待实现:需求 → 发现 → 生成 Case → validate → run → 分析)
 ```
 
@@ -99,6 +99,8 @@ Phase 12 Agent(待实现:需求 → 发现 → 生成 Case → validate → run 
 
 ```bash
 pnpm --filter @testpilot/server dev     # 启动 Control Plane API(默认 127.0.0.1:3000)
+pnpm --filter @testpilot/web dev        # Web 控制台开发模式(5173,/api 代理到 3000)
+pnpm --filter @testpilot/web build      # 构建控制台;Server 会自动静态托管 apps/web/dist
 TESTPILOT_PROJECT_ROOT=/path/to/project pnpm --filter @testpilot/server start
 ```
 
@@ -123,8 +125,12 @@ GET  /api/workspaces/:id           POST /api/workspaces/:id/bindings
 POST /api/runs                   GET  /api/runs
 GET  /api/runs/:id               GET  /api/runs/:id/events
 POST /api/runs/:id/cancel        GET  /api/runs/:id/report
+GET  /api/runs/:id/summary       GET  /api/runs/:id/artifacts[/*]
 ```
 
+- **Web 控制台**(apps/web,Vue 3 + Vite):仪表盘、项目列表/概览(Git 同步状态)、Case Index(active/deleted 过滤,可查看 DSL 源文件)、运行列表、Run 详情(Step 级结果、失败原因、截图内联预览、日志 / Trace / video 下载)、报告按需生成。生产形态由 Server 静态托管 `apps/web/dist`,单进程部署。
+
+- **分支即测试环境**:同一 Case 可同时存在于多个分支(main→TEST、release→STAGING...);快照同步按分支作用域执行,互不影响;环境可绑定分支,Case Index 按环境(分支)筛选。
 - **Workspace**:一次运行所需的多系统环境组合;绑定的是 Project Environment(不是 Project 本身)。Case 用 `workspace: <名称>` 声明,不硬编码各系统 URL/账号。
 - **Run 可追溯**:每次 Run 记录 branch / commit / workspace 运行时快照——Workspace 后续可改,历史 Run 仍能还原当时的环境组合。
 - **数据边界**:SQLite 只存元数据(projects / cases index / runs / run_events / reports);截图、视频、trace 留在业务项目 `.testpilot/artifacts/`;`testpilot.yaml` 仍是测试配置的 Source of Truth。

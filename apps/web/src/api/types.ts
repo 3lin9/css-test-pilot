@@ -1,0 +1,161 @@
+/** 与 Control Plane API 对应的类型(Web 只读,不定义写模型) */
+
+export interface Project {
+  id: number
+  name: string
+  rootPath: string | null
+  casesDir: string | null
+  skillInstalled: number
+  repositoryUrl: string | null
+  defaultBranch: string | null
+  lastSyncedCommit: string | null
+  lastSyncedAt: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ProjectWithCount extends Project {
+  caseCount: number
+}
+
+export interface CaseView {
+  id: number
+  projectId: number
+  caseId: string
+  name: string | null
+  filePath: string
+  tags: string[]
+  valid: boolean
+  status: 'active' | 'deleted'
+  /** 该 Case 存在的分支(分支即测试环境) */
+  branches: string[]
+  branch: string | null
+  commit: string | null
+  checkedAt: string
+}
+
+export interface BranchSyncStatus {
+  branch: string
+  commit: string | null
+  caseCount: number
+  lastSyncedAt: string
+}
+
+export interface SyncStatus {
+  projectId: number
+  branch: string | null
+  lastSyncedCommit: string | null
+  lastSyncedAt: string | null
+  caseCount: number
+  /** 按分支聚合的同步状态(分支即测试环境) */
+  branches: BranchSyncStatus[]
+}
+
+export type RunStatus = 'running' | 'passed' | 'failed' | 'cancelled'
+
+export interface Run {
+  id: string
+  projectId: number
+  status: RunStatus
+  trigger: string
+  branch: string | null
+  commit: string | null
+  workspaceId: number | null
+  workspaceSnapshotJson: string | null
+  startedAt: string
+  finishedAt: string | null
+  durationMs: number | null
+  totalsJson: string | null
+  message: string | null
+}
+
+export interface RunEvent {
+  seq: number
+  type: string
+  ts: string
+  event: Record<string, unknown> & { type: string }
+}
+
+export interface StepResult {
+  index: number
+  target: string
+  action: string
+  status: 'passed' | 'failed' | 'skipped'
+  durationMs: number
+  error?: string
+  screenshot?: string
+  extracted?: Record<string, string>
+}
+
+export interface CaseResult {
+  caseId: string
+  caseName: string
+  file: string
+  status: 'passed' | 'failed'
+  steps: StepResult[]
+  startedAt: string
+  finishedAt: string
+  durationMs: number
+  error?: string
+  video?: string
+  trace?: string
+}
+
+export interface RunSummary {
+  runId: string
+  startedAt: string
+  finishedAt: string
+  durationMs: number
+  status: 'passed' | 'failed'
+  cancelled?: boolean
+  cases: CaseResult[]
+  totals: {
+    cases: number
+    passed: number
+    failed: number
+    steps: number
+    stepsPassed: number
+    stepsFailed: number
+    stepsSkipped: number
+  }
+}
+
+export interface ArtifactFile {
+  path: string
+  size: number
+}
+
+/** Workspace 绑定:一个项目在此 Workspace 中使用的环境 */
+export interface WorkspaceBinding {
+  projectId: number
+  projectName: string
+  environmentId: number
+  environmentName: string
+  /** 环境绑定的 Git 分支(分支即测试环境) */
+  branch: string | null
+  baseUrl: string | null
+}
+
+export interface Workspace {
+  id: number
+  name: string
+  description: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface WorkspaceWithBindings extends Workspace {
+  bindings: WorkspaceBinding[]
+}
+
+export type WorkspaceDetail = WorkspaceWithBindings
+
+export interface Environment {
+  id: number
+  projectId: number
+  name: string
+  /** 该环境对应的 Git 分支(分支即测试环境) */
+  branch: string | null
+  baseUrl: string | null
+  createdAt: string
+}
