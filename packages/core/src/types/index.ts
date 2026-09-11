@@ -18,6 +18,18 @@ export interface StepResult {
   screenshot?: string
   /** extract 步骤捕获的变量 */
   extracted?: Record<string, string>
+  /** api target 的请求取证(敏感头已脱敏) */
+  http?: HttpEvidence
+}
+
+/** api target:request 步骤的取证信息(体积截断,凭据脱敏) */
+export interface HttpEvidence {
+  method: string
+  url: string
+  status: number
+  requestHeaders?: Record<string, string>
+  requestBody?: string
+  responseSnippet?: string
 }
 
 export interface CaseResult {

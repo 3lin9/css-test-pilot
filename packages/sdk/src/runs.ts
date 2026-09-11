@@ -16,6 +16,7 @@ import {
 } from '@testpilot/execution-engine'
 import { playwrightAdapterFactory } from '@testpilot/adapter-playwright'
 import { wechatideAdapterFactory } from '@testpilot/adapter-wechatide'
+import { apiAdapterFactory } from '@testpilot/adapter-api'
 import type { AdapterFactory } from '@testpilot/adapter-core'
 import { collectCases, type CaseInfo } from './cases'
 import { loadProjectConfig, resolveRoot, type ProjectOptions } from './project'
@@ -31,8 +32,10 @@ export interface RunOptions extends ProjectOptions {
   onEvent?: RunEventSubscriber
   /** 取消信号:abort 后当前用例执行完即停止,未开始的用例不再执行 */
   signal?: AbortSignal
-  /** 覆盖默认 adapter 注入(playwright + wechatide);测试与自定义运行环境使用 */
+  /** 覆盖默认 adapter 注入(playwright + wechatide + api);测试与自定义运行环境使用 */
   adapters?: readonly AdapterFactory[]
+  /** accountRef -> 凭据原文;Case 声明 accountRef 时注入为 ${account.*} 变量(值可为 JSON) */
+  accounts?: Record<string, string>
 }
 
 export interface RunResult {
@@ -41,6 +44,8 @@ export interface RunResult {
   invalid: CaseInfo[]
   /** 被 --tag 过滤掉的用例数 */
   tagFiltered: number
+  /** Case 声明了 accountRef 但 accounts 未提供对应条目的引用(仍会执行,${account.*} 保持字面量) */
+  missingAccounts: string[]
 }
 
 export class RunError extends Error {
@@ -53,7 +58,7 @@ export class RunError extends Error {
   }
 }
 
-/** V0.1 默认 adapter 组合:Playwright(Web)+ WeChatIDE(小程序),按项目配置注册 */
+/** V0.1 默认 adapter 组合:Playwright(Web)+ WeChatIDE(小程序)+ API(HTTP),按项目配置注册 */
 export function createDefaultAdapters(config: TestpilotConfig): AdapterFactory[] {
   return [
     playwrightAdapterFactory({ baseUrl: config.web?.baseUrl }),
@@ -61,6 +66,7 @@ export function createDefaultAdapters(config: TestpilotConfig): AdapterFactory[]
       projectPath: config.miniapp?.projectPath,
       cliPath: config.miniapp?.cliPath,
     }),
+    apiAdapterFactory({ baseUrl: config.api?.baseUrl, timeoutMs: config.api?.timeoutMs }),
   ]
 }
 
@@ -109,17 +115,27 @@ export async function runCases(options: RunOptions = {}): Promise<RunResult> {
   const resolver = new AdapterResolver()
   for (const factory of factories) resolver.register(factory)
 
+  // 声明了 accountRef 但运行方未提供凭据的引用:不阻塞执行,返回给调用方告警
+  const missingAccounts = [
+    ...new Set(
+      runnable
+        .map((item) => item.case?.accountRef)
+        .filter((ref): ref is string => !!ref && options.accounts?.[ref] === undefined),
+    ),
+  ]
+
   const runner = new TestRunner({
     resolver,
     runsRoot: join(root, RUNS_DIR),
     runId: options.runId,
     onEvent: options.onEvent,
     signal: options.signal,
+    accounts: options.accounts,
   })
   const summary = await runner.run(
     runnable.map((item): { data: TestCase; file: string } => ({ data: item.case!, file: item.file })),
   )
-  return { summary, invalid, tagFiltered }
+  return { summary, invalid, tagFiltered, missingAccounts }
 }
 
 export interface RunMeta {

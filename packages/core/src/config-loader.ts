@@ -27,6 +27,13 @@ const configSchema = z.strictObject({
   /** TestPilot Control Plane 地址(sync-metadata / init 关联项目时使用) */
   server: z.strictObject({ baseUrl: z.string().min(1).optional() }).optional(),
   web: z.strictObject({ baseUrl: z.string().min(1).optional() }).optional(),
+  /** API 执行端(target: api):相对 url 的基准地址与超时 */
+  api: z
+    .strictObject({
+      baseUrl: z.string().min(1).optional(),
+      timeoutMs: z.number().int().positive().optional(),
+    })
+    .optional(),
   miniapp: z
     .strictObject({
       projectPath: z.string().min(1).optional(),
@@ -45,6 +52,7 @@ export interface TestpilotConfig {
   workspace?: { default?: string }
   server?: { baseUrl?: string }
   web?: { baseUrl?: string }
+  api?: { baseUrl?: string; timeoutMs?: number }
   miniapp?: { projectPath?: string; cliPath?: string }
 }
 
@@ -79,6 +87,7 @@ export async function loadTestpilotConfig(cwd: string = process.cwd()): Promise<
     workspace: result.data.workspace,
     server: result.data.server,
     web: result.data.web,
+    api: result.data.api,
     miniapp: result.data.miniapp,
   }
 }

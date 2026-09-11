@@ -13,6 +13,8 @@ export interface RunCaseOptions {
   artifacts: ArtifactManager
   bus: EventBus
   resolver: AdapterResolver
+  /** accountRef -> 凭据原文;Case 声明 accountRef 时注入为 ${account.*} 变量 */
+  accounts?: Record<string, string>
 }
 
 /** 引擎核心:顺序执行单条用例的全部步骤;失败后剩余步骤标记 skipped */
@@ -21,6 +23,10 @@ export class ExecutionEngine {
     const { runId, file, artifacts, bus, resolver } = options
     const startedAt = new Date()
     const context = new ExecutionContext()
+    // Case 声明了 accountRef 且运行方提供对应凭据时,注入模板变量
+    if (data.accountRef && options.accounts?.[data.accountRef] !== undefined) {
+      context.seedAccount(options.accounts[data.accountRef])
+    }
     const steps: CaseResult['steps'] = []
     const evidenceAdapters = new Map<StepTarget, TestAdapter>()
     let caseError: string | undefined

@@ -22,10 +22,50 @@ export interface TestAdapter {
   screenshot(): Promise<Buffer>
   /** 释放底层资源(浏览器 / IDE 连接) */
   close(): Promise<void>
-  /** [可选能力] 开始用例级取证(video/trace);不支持的可不实现 */
+/** [可选能力] 开始用例级取证(video/trace);不支持的可不实现 */
   startEvidence?(caseId: string): Promise<void>
   /** [可选能力] 结束取证并返回产物字节;与 startEvidence 成对调用 */
   stopEvidence?(caseId: string): Promise<AdapterEvidence>
+
+  // ---- [可选能力] API 端(target: api) ----
+
+  /** 发起 HTTP 请求;相对 url 由 adapter 按配置的 baseUrl 解析,模板变量已由引擎解析 */
+  request?(request: ApiRequestInput): Promise<ApiResult>
+  /** 断言最近一次响应体文本包含 expected */
+  assertResponse?(expected: string): Promise<void>
+  /** 按点号 JSON path(如 data.orderId / items.0.id)从最近一次响应提取值 */
+  extractResponse?(path: string): Promise<string>
+}
+
+/** api target:request action 的请求描述 */
+export interface ApiRequestInput {
+  method: string
+  url: string
+  headers?: Record<string, string>
+  /** 对象按 JSON 序列化并发送 application/json,字符串原样发送 */
+  body?: string | Record<string, unknown>
+}
+
+/** api target:请求结果(adapter 保留最近一次,供 assert/extract 使用) */
+export interface ApiResult {
+  status: number
+  statusText: string
+  headers: Record<string, string>
+  bodyText: string
+  /** 响应体可解析为 JSON 时给出 */
+  json?: unknown
+}
+
+/** 取证中必须脱敏的请求/响应头 */
+const SENSITIVE_HEADERS = new Set(['authorization', 'cookie', 'set-cookie', 'x-api-key', 'proxy-authorization'])
+
+/** 复制头部并对敏感键脱敏(用于 StepResult.http 取证) */
+export function redactHeaders(headers: Record<string, string>): Record<string, string> {
+  const redacted: Record<string, string> = {}
+  for (const [key, value] of Object.entries(headers)) {
+    redacted[key] = SENSITIVE_HEADERS.has(key.toLowerCase()) ? '[REDACTED]' : value
+  }
+  return redacted
 }
 
 /** adapter 工厂:引擎按需调用 create(),运行结束后统一 close */

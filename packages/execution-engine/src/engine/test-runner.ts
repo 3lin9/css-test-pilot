@@ -24,6 +24,8 @@ export interface TestRunnerOptions {
   onEvent?: RunEventSubscriber
   /** 取消信号:abort 后当前用例执行完即停止,未开始的用例不再执行 */
   signal?: AbortSignal
+  /** accountRef -> 凭据原文;用例声明 accountRef 时注入为 ${account.*} 变量 */
+  accounts?: Record<string, string>
 }
 
 /** 编排一次运行:分配 runId -> 逐用例执行 -> 汇总写盘 -> 关闭 adapter */
@@ -33,6 +35,7 @@ export class TestRunner {
   private readonly customRunId: string | undefined
   private readonly extraSubscriber: RunEventSubscriber | undefined
   private readonly signal: AbortSignal | undefined
+  private readonly accounts: Record<string, string> | undefined
 
   constructor(options: TestRunnerOptions) {
     this.resolver = options.resolver
@@ -40,6 +43,7 @@ export class TestRunner {
     this.customRunId = options.runId
     this.extraSubscriber = options.onEvent
     this.signal = options.signal
+    this.accounts = options.accounts
   }
 
   async run(cases: readonly TestCaseInput[]): Promise<RunSummary> {
@@ -70,6 +74,7 @@ export class TestRunner {
           artifacts,
           bus,
           resolver: this.resolver,
+          accounts: this.accounts,
         }),
       )
     }

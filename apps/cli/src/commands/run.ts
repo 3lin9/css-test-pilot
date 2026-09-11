@@ -10,11 +10,18 @@ export function makeRunCommand(): Command {
     .action(async (paths: string[] | undefined, options: { tag?: string }) => {
       const client = new TestPilotClient()
       try {
-        const { summary, invalid, tagFiltered } = await client.runCases({
+        const { summary, invalid, tagFiltered, missingAccounts } = await client.runCases({
           paths,
           tag: options.tag,
+          accounts: collectAccountEnv(),
           onEvent: consoleEventHandler,
         })
+
+        if (missingAccounts.length > 0) {
+          console.log(
+            `⚠ 缺少账号凭据:${missingAccounts.join(', ')}(本地用环境变量 TESTPILOT_ACCOUNT_<REF大写下划线> 提供;Server 触发时按环境凭据解析)`,
+          )
+        }
 
         const notes = [
           invalid.length > 0 ? `${invalid.length} 个校验失败跳过` : '',
@@ -34,6 +41,23 @@ export function makeRunCommand(): Command {
         process.exitCode = 1
       }
     })
+}
+
+/**
+ * 本地账号凭据注入:环境变量 TESTPILOT_ACCOUNT_<REF>(ref 的 - 转 _,大写)
+ * 如 accountRef: test-user -> TESTPILOT_ACCOUNT_TEST_USER='{"username":"a","password":"b"}'
+ */
+function collectAccountEnv(): Record<string, string> {
+  const accounts: Record<string, string> = {}
+  for (const [key, value] of Object.entries(process.env)) {
+    if (!key.startsWith('TESTPILOT_ACCOUNT_') || value === undefined) continue
+    const ref = key
+      .slice('TESTPILOT_ACCOUNT_'.length)
+      .toLowerCase()
+      .replace(/_/g, '-')
+    if (ref) accounts[ref] = value
+  }
+  return accounts
 }
 
 function consoleEventHandler(event: RunEvent): void {

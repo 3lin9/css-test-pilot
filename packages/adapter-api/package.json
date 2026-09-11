@@ -1,0 +1,12 @@
+{
+  "name": "@testpilot/adapter-api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "dependencies": {
+    "@testpilot/adapter-core": "workspace:^",
+    "@testpilot/core": "workspace:^"
+  }
+}

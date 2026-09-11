@@ -1,8 +1,12 @@
 import { z } from 'zod'
 
 /** Step 执行端 */
-export const STEP_TARGETS = ['web', 'miniapp'] as const
+export const STEP_TARGETS = ['web', 'miniapp', 'api'] as const
 export type StepTarget = (typeof STEP_TARGETS)[number]
+
+/** HTTP 方法(api target 的 request action) */
+export const HTTP_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD'] as const
+export type HttpMethod = (typeof HTTP_METHODS)[number]
 
 /**
  * V0.1 稳定 Action:通用测试原语,不含业务动作
@@ -18,6 +22,7 @@ export const ACTIONS = [
   'assert',
   'extract',
   'screenshot',
+  'request',
 ] as const
 export type ActionName = (typeof ACTIONS)[number]
 
@@ -35,6 +40,12 @@ export const stepSchema = z.strictObject({
   url: z.string().min(1).optional(),
   value: z.string().optional(),
   expected: z.string().optional(),
+  /** api target:request 的 HTTP 方法(默认 GET) */
+  method: z.enum(HTTP_METHODS).optional(),
+  /** api target:request 的请求头(值支持 ${var} 模板) */
+  headers: z.record(z.string(), z.string()).optional(),
+  /** api target:请求体;对象按 JSON 序列化,字符串原样发送(支持 ${var} 模板) */
+  body: z.union([z.string(), z.record(z.string(), z.unknown())]).optional(),
   variable: z
     .string()
     .regex(/^[A-Za-z_][A-Za-z0-9_]*$/, '变量名需以字母或下划线开头,仅含字母、数字、下划线')

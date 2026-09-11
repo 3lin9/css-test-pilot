@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@testpilot/adapter-api": "workspace:^",
     "@testpilot/adapter-playwright": "workspace:^",
     "@testpilot/adapter-wechatide": "workspace:^",
     "@testpilot/core": "workspace:^",

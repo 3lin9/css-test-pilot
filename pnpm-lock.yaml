@@ -129,6 +129,15 @@ importers:
         specifier: ^2.1.0
         version: 2.2.12(typescript@5.9.3)
 
+  packages/adapter-api:
+    dependencies:
+      '@testpilot/adapter-core':
+        specifier: workspace:^
+        version: link:../adapter-core
+      '@testpilot/core':
+        specifier: workspace:^
+        version: link:../core
+
   packages/adapter-core:
     dependencies:
       '@testpilot/core':
@@ -212,6 +221,9 @@ importers:
 
   packages/sdk:
     dependencies:
+      '@testpilot/adapter-api':
+        specifier: workspace:^
+        version: link:../adapter-api
       '@testpilot/adapter-playwright':
         specifier: workspace:^
         version: link:../adapter-playwright

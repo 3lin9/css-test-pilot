@@ -1,7 +1,7 @@
 import { parseCase, type DslIssue } from '../parser'
 import { type ActionName, type StepTarget, type TestCase, type TestStep } from '../schema'
 
-/** V0.1 各端 adapter 支持的 action 矩阵(小程序端 select/picker 交互暂不支持) */
+/** V0.1 各端 adapter 支持的 action 矩阵(小程序端 select/picker 交互暂不支持;api 端只支持 request/assert/extract) */
 const ADAPTER_SUPPORT: Record<ActionName, readonly StepTarget[]> = {
   launch: ['web', 'miniapp'],
   navigate: ['web', 'miniapp'],
@@ -9,29 +9,41 @@ const ADAPTER_SUPPORT: Record<ActionName, readonly StepTarget[]> = {
   input: ['web', 'miniapp'],
   select: ['web'],
   wait: ['web', 'miniapp'],
-  assert: ['web', 'miniapp'],
-  extract: ['web', 'miniapp'],
+  assert: ['web', 'miniapp', 'api'],
+  extract: ['web', 'miniapp', 'api'],
   screenshot: ['web', 'miniapp'],
+  request: ['api'],
 }
 
 const LOCATOR_REQUIRED = new Set<ActionName>(['click', 'input', 'select', 'assert', 'extract'])
 const VALUE_REQUIRED = new Set<ActionName>(['input', 'select'])
 
 /** 字段只允许出现在指定 action 上(防复制粘贴/拼写错误) */
-const FIELD_ALLOWED: Record<'url' | 'value' | 'expected' | 'variable' | 'timeout', readonly ActionName[]> = {
-  url: ['navigate'],
-  value: ['input', 'select'],
-  expected: ['assert'],
+const FIELD_ALLOWED: Record<
+  'url' | 'value' | 'expected' | 'variable' | 'timeout' | 'method' | 'headers' | 'body',
+  readonly ActionName[]
+> = {
+  url: ['navigate', 'request'],
+  value: ['input', 'select', 'extract'],
+  expected: ['assert', 'request'],
   variable: ['extract'],
   timeout: ['wait'],
+  method: ['request'],
+  headers: ['request'],
+  body: ['request'],
 }
 
-const VARIABLE_REF = /\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g
+const VARIABLE_REF = /\$\{([A-Za-z_][A-Za-z0-9_.]*)\}/g
 
 /** 语义校验:action/target 支持关系、必填字段、字段误用、变量引用 */
 export function validateCase(data: TestCase): DslIssue[] {
   const issues: DslIssue[] = []
   const declared = new Set<string>()
+
+  // Case 声明了 accountRef 时,运行时把凭据注入为 account.* 变量(整值为 ${account},JSON 字段为 ${account.username} 等)
+  if (data.accountRef) {
+    declared.add('account')
+  }
 
   data.steps.forEach((step, index) => {
     checkStep(step, `steps[${index}]`, declared, issues)
@@ -66,7 +78,14 @@ function checkStep(step: TestStep, at: string, declared: Set<string>, issues: Ds
     })
   }
 
-  checkLocator(step, at, issues)
+  // api 端不使用元素 locator;断言/提取走 assertResponse / extractResponse
+  if (step.target === 'api') {
+    if (step.locator) {
+      issues.push({ path: `${at}.locator`, code: 'semantic', message: 'api 端不支持 locator,断言用 expected,提取用 value(JSON path)' })
+    }
+  } else {
+    checkLocator(step, at, issues)
+  }
 
   // 小程序 WXML 无法按文案查询,text locator 仅 web 可用
   if (step.target === 'miniapp' && step.locator?.text !== undefined) {
@@ -78,7 +97,7 @@ function checkStep(step: TestStep, at: string, declared: Set<string>, issues: Ds
   }
 
   for (const [field, actions] of Object.entries(FIELD_ALLOWED)) {
-    const key = field as 'url' | 'value' | 'expected' | 'variable' | 'timeout'
+    const key = field as 'url' | 'value' | 'expected' | 'variable' | 'timeout' | 'method' | 'headers' | 'body'
     if (step[key] !== undefined && !actions.includes(step.action)) {
       issues.push({
         path: `${at}.${field}`,
@@ -92,8 +111,16 @@ function checkStep(step: TestStep, at: string, declared: Set<string>, issues: Ds
     issues.push({ path: `${at}.url`, code: 'semantic', message: 'navigate 必须提供 url' })
   }
 
+  if (step.action === 'request' && !step.url) {
+    issues.push({ path: `${at}.url`, code: 'semantic', message: 'request 必须提供 url(相对路径按 api.baseUrl 解析)' })
+  }
+
   if (VALUE_REQUIRED.has(step.action) && !step.value) {
     issues.push({ path: `${at}.value`, code: 'semantic', message: `action "${step.action}" 必须提供 value` })
+  }
+
+  if (step.action === 'extract' && step.target === 'api' && !step.value) {
+    issues.push({ path: `${at}.value`, code: 'semantic', message: 'api 端 extract 必须提供 value(点号 JSON path,如 data.orderId)' })
   }
 
   if (step.action === 'assert' && !step.expected) {
@@ -147,18 +174,29 @@ function checkVariableRefs(
   declared: Set<string>,
   issues: DslIssue[],
 ): void {
-  for (const field of ['value', 'expected'] as const) {
-    const raw = step[field]
-    if (!raw) continue
+  /** 字段 -> 引用的变量名;account.* 一类点号引用按首段匹配已声明变量 */
+  const refs: Array<[field: string, name: string]> = []
+  const collect = (field: string, raw: string | undefined): void => {
+    if (!raw) return
     for (const match of raw.matchAll(VARIABLE_REF)) {
-      const name = match[1]
-      if (name && !declared.has(name)) {
-        issues.push({
-          path: `${at}.${field}`,
-          code: 'semantic',
-          message: `引用了未定义变量 "\${${name}}":需要先通过 extract 步骤提取`,
-        })
-      }
+      if (match[1]) refs.push([field, match[1]])
+    }
+  }
+  collect('value', step.value)
+  collect('expected', step.expected)
+  collect('url', step.url)
+  if (typeof step.body === 'string') collect('body', step.body)
+  else if (step.body) collect('body', JSON.stringify(step.body))
+  for (const headerValue of Object.values(step.headers ?? {})) collect('headers', headerValue)
+
+  for (const [field, name] of refs) {
+    const root = name.split('.')[0] ?? name
+    if (!declared.has(root)) {
+      issues.push({
+        path: `${at}.${field}`,
+        code: 'semantic',
+        message: `引用了未定义变量 "\${${name}}":先通过 extract 提取,或 Case 声明 accountRef 后使用 \${account.*}`,
+      })
     }
   }
 }
