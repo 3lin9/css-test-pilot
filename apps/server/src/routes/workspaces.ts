@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify'
 import type { ServerContext } from '../server'
 import { getProjectOrThrow } from '../services/project-service'
 import {
+  deleteEnvironmentSecret,
   findBinding,
   getEnvironmentRow,
   getWorkspaceRow,
@@ -10,7 +11,9 @@ import {
   insertWorkspace,
   listBindings,
   listEnvironments,
+  listEnvironmentSecretKeys,
   listWorkspaces,
+  upsertEnvironmentSecret,
 } from '../repositories/workspace-repo'
 /** Project Environment 与 Test Workspace 管理(V0.1 最小集) */
 export function registerWorkspaceRoutes(app: FastifyInstance, ctx: ServerContext): void {
@@ -20,6 +23,47 @@ export function registerWorkspaceRoutes(app: FastifyInstance, ctx: ServerContext
     const { projectId } = request.params as { projectId: string }
     await getProjectOrThrow(ctx.db, Number(projectId))
     return { environments: await listEnvironments(ctx.db, Number(projectId)) }
+  })
+
+  /** 环境凭据:Case 的 accountRef 运行时按环境解析;值只写,列表只回 key */
+  async function requireEnvironment(ctx: ServerContext, projectId: number, environmentId: number) {
+    const environment = await getEnvironmentRow(ctx.db, environmentId)
+    if (!environment || environment.projectId !== projectId) {
+      throw Object.assign(new Error(`环境不存在或不属于该项目:${environmentId}`), { statusCode: 404 })
+    }
+    return environment
+  }
+
+  app.get('/api/projects/:projectId/environments/:environmentId/secrets', async (request) => {
+    const { projectId, environmentId } = request.params as Record<string, string>
+    await getProjectOrThrow(ctx.db, Number(projectId))
+    await requireEnvironment(ctx, Number(projectId), Number(environmentId))
+    return { secrets: await listEnvironmentSecretKeys(ctx.db, Number(environmentId)) }
+  })
+
+  app.post('/api/projects/:projectId/environments/:environmentId/secrets', async (request, reply) => {
+    const { projectId, environmentId } = request.params as Record<string, string>
+    await getProjectOrThrow(ctx.db, Number(projectId))
+    await requireEnvironment(ctx, Number(projectId), Number(environmentId))
+    const body = (request.body ?? {}) as { key?: string; value?: string }
+    if (!body.key || !body.value) {
+      return reply.code(400).send({ error: '需要提供 key(对应 Case 的 accountRef)与 value(凭据,推荐 JSON)' })
+    }
+    const secret = await upsertEnvironmentSecret(ctx.db, {
+      environmentId: Number(environmentId),
+      secretKey: body.key,
+      secretValue: body.value,
+    })
+    // 值不回显
+    return reply.code(201).send({ secretKey: secret.secretKey, updatedAt: secret.updatedAt })
+  })
+
+  app.delete('/api/projects/:projectId/environments/:environmentId/secrets/:key', async (request, reply) => {
+    const { projectId, environmentId, key } = request.params as Record<string, string>
+    await getProjectOrThrow(ctx.db, Number(projectId))
+    await requireEnvironment(ctx, Number(projectId), Number(environmentId))
+    await deleteEnvironmentSecret(ctx.db, Number(environmentId), key)
+    return reply.code(204).send()
   })
 
   app.post('/api/projects/:projectId/environments', async (request, reply) => {

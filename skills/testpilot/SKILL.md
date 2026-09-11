@@ -47,6 +47,7 @@ npx csspilot run       # run cases (file paths / --tag)
 npx csspilot report    # generate JSON + HTML report
 npx csspilot doctor    # health check (config / cases / adapters / env / server)
 npx csspilot ci init   # generate TestPilot CI workflow template
+npx csspilot sync-metadata  # sync case metadata to TestPilot Server (CI, after git push)
 ```
 
 ## Project context

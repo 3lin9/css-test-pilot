@@ -132,10 +132,48 @@ adapters:
 web:
   baseUrl: http://127.0.0.1:8080    # navigate 相对 url 的基准
 
+api:                                 # target: api 的 HTTP 执行端
+  baseUrl: http://127.0.0.1:8080     # request 相对 url 的基准
+  # timeoutMs: 15000                 # 单请求超时
+
 # miniapp:
 #   projectPath: path/to/miniprogram
 #   cliPath: "C:/.../cli.bat"      # 可省略:自动探测
 ```
+
+### API 用例(target: api)
+
+DSL 支持 `target: api` 的 HTTP 步骤(`request` / `assert` / `extract`),用于接口造数、UI+API 混合编排与数据层断言:
+
+```yaml
+steps:
+  - target: api
+    action: request
+    url: /api/orders          # 相对 api.baseUrl
+    method: POST
+    body: { skuId: S1 }
+    expected: '201'           # 断言状态码
+  - target: api
+    action: extract
+    value: data.orderId       # 点号 JSON path
+    variable: orderId
+```
+
+### 账号凭据(accountRef)
+
+Case 声明 `accountRef: test-user` 后,步骤中用 `${account.username}` / `${account.password}` 引用凭据,不写明文:
+
+- **本地运行**:`TESTPILOT_ACCOUNT_TEST_USER='{"username":"a","password":"b"}'`(ref 的 `-` 转 `_` 并大写;缺失时 CLI 输出告警)
+- **Server 触发**:按环境存凭据,值只写不回显
+
+```bash
+# 写入 TEST 环境的 test-user 凭据(幂等;列表只返回 key)
+curl -X POST $SERVER/api/projects/1/environments/1/secrets \
+  -H 'content-type: application/json' \
+  -d '{"key":"test-user","value":"{\"username\":\"a\",\"password\":\"b\"}"}'
+```
+
+Server 运行时优先取**运行分支绑定环境**的凭据(如 release 分支取 STAGING),找不到再依次查项目其他环境;凭据只进引擎模板变量,不写 Run 行、不进事件流,取证对敏感头自动脱敏。
 
 ## 环境变量
 

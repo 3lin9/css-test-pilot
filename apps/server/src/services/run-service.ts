@@ -13,9 +13,11 @@ import {
   type RunStatus,
 } from '../repositories/run-repo'
 import {
+  findEnvironmentSecretValue,
   findWorkspaceByName,
   getWorkspaceRow,
   listBindings,
+  listEnvironments,
   type BindingView,
 } from '../repositories/workspace-repo'
 import { clientFor, getProjectOrThrow, type ProjectRow } from './project-service'
@@ -136,8 +138,43 @@ export async function createRun(
     workspaceSnapshotJson: snapshotJson,
     startedAt: new Date().toISOString(),
   })
-  orchestrator.start(runId, project, { paths: input.paths, tag: input.tag })
+  // accountRef 凭据:优先取运行分支绑定的环境,找不到再依次查项目其他环境
+  const accounts = await resolveAccounts(db, project.id, branch, cases)
+  orchestrator.start(runId, project, { paths: input.paths, tag: input.tag, accounts })
   return row
+}
+
+/**
+ * 解析用例声明的 accountRef -> 环境凭据值。
+ * 环境优先级:绑定运行分支的环境 > 项目其他环境;同一个 ref 第一个命中的环境生效。
+ * 凭据只进引擎内存(模板变量),不写 Run 行、不进事件流。
+ */
+export async function resolveAccounts(
+  db: Db,
+  projectId: number,
+  branch: string | null,
+  cases: Array<{ case?: { accountRef?: string } }>,
+): Promise<Record<string, string>> {
+  const refs = [...new Set(cases.map((item) => item.case?.accountRef).filter((ref): ref is string => !!ref))]
+  if (refs.length === 0) return {}
+
+  const environments = await listEnvironments(db, projectId)
+  const ordered = [
+    ...environments.filter((env) => branch !== null && env.branch === branch),
+    ...environments.filter((env) => env.branch !== branch),
+  ]
+
+  const accounts: Record<string, string> = {}
+  for (const ref of refs) {
+    for (const env of ordered) {
+      const value = await findEnvironmentSecretValue(db, env.id, ref)
+      if (value !== undefined) {
+        accounts[ref] = value
+        break
+      }
+    }
+  }
+  return accounts
 }
 
 export interface WorkspaceSnapshot {

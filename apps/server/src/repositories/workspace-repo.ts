@@ -1,6 +1,6 @@
 import { and, asc, eq } from 'drizzle-orm'
 import type { Db } from '../db'
-import { environments, projects, workspaceBindings, workspaces } from '../db/schema'
+import { environments, environmentSecrets, projects, workspaceBindings, workspaces } from '../db/schema'
 
 export type WorkspaceRow = typeof workspaces.$inferSelect
 export type WorkspaceInsert = typeof workspaces.$inferInsert
@@ -31,6 +31,80 @@ export async function insertEnvironment(
 ): Promise<EnvironmentRow> {
   const rows = await db.insert(environments).values(values).returning()
   return rows[0]
+}
+
+// ---- environment secrets(accountRef 凭据;值只写不读) ----
+
+export interface EnvironmentSecretRow {
+  id: number
+  environmentId: number
+  secretKey: string
+  secretValue: string
+  createdAt: string
+  updatedAt: string
+}
+
+/** 新增或更新环境凭据(按 environmentId + secretKey 幂等) */
+export async function upsertEnvironmentSecret(
+  db: Db,
+  values: { environmentId: number; secretKey: string; secretValue: string },
+): Promise<EnvironmentSecretRow> {
+  const now = new Date().toISOString()
+  const rows = await db
+    .insert(environmentSecrets)
+    .values({ ...values, createdAt: now, updatedAt: now })
+    .onConflictDoUpdate({
+      target: [environmentSecrets.environmentId, environmentSecrets.secretKey],
+      set: { secretValue: values.secretValue, updatedAt: now },
+    })
+    .returning()
+  return rows[0]
+}
+
+/** 凭据列表只返回 key 与时间,不含值(值仅 Orchestrator 解析时读取) */
+export async function listEnvironmentSecretKeys(
+  db: Db,
+  environmentId: number,
+): Promise<Array<{ secretKey: string; updatedAt: string }>> {
+  return db
+    .select({ secretKey: environmentSecrets.secretKey, updatedAt: environmentSecrets.updatedAt })
+    .from(environmentSecrets)
+    .where(eq(environmentSecrets.environmentId, environmentId))
+    .orderBy(asc(environmentSecrets.secretKey))
+}
+
+/** Orchestrator 解析 accountRef 用:读取凭据值 */
+export async function findEnvironmentSecretValue(
+  db: Db,
+  environmentId: number,
+  secretKey: string,
+): Promise<string | undefined> {
+  const rows = await db
+    .select({ secretValue: environmentSecrets.secretValue })
+    .from(environmentSecrets)
+    .where(
+      and(
+        eq(environmentSecrets.environmentId, environmentId),
+        eq(environmentSecrets.secretKey, secretKey),
+      ),
+    )
+    .limit(1)
+  return rows[0]?.secretValue
+}
+
+export async function deleteEnvironmentSecret(
+  db: Db,
+  environmentId: number,
+  secretKey: string,
+): Promise<void> {
+  await db
+    .delete(environmentSecrets)
+    .where(
+      and(
+        eq(environmentSecrets.environmentId, environmentId),
+        eq(environmentSecrets.secretKey, secretKey),
+      ),
+    )
 }
 
 // ---- workspaces ----

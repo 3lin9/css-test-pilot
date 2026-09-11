@@ -83,6 +83,12 @@ const isRunning = (): boolean => run.value?.status === 'running'
 function baseName(file: string): string {
   return file.split(/[\\/]/).at(-1) ?? file
 }
+
+/** 去除终端 ANSI 转义(Playwright 等错误信息自带颜色码,网页上显示为乱码) */
+function stripAnsi(text: string): string {
+  // eslint-disable-next-line no-control-regex
+  return text.replace(/\x1b\[[0-9;]*m/g, '')
+}
 </script>
 
 <template>
@@ -139,13 +145,14 @@ function baseName(file: string): string {
         <strong>{{ item.caseId }}</strong> · {{ item.caseName }}
         <span class="muted mono">{{ baseName(item.file) }}</span>
       </p>
-      <p v-if="item.error" class="error-text">{{ item.error }}</p>
+      <p v-if="item.error" class="error-text">{{ stripAnsi(item.error) }}</p>
       <ul class="steps">
         <li v-for="step in item.steps" :key="step.index">
           <span class="mark" :class="step.status">{{ step.status === 'passed' ? '✓' : step.status === 'failed' ? '✗' : '↷' }}</span>
           <span class="mono">{{ step.target }}/{{ step.action }}</span>
+          <span v-if="step.http" class="mono muted">{{ step.http.method }} {{ step.http.url }} → {{ step.http.status }}</span>
           <span class="muted">{{ step.durationMs }}ms</span>
-          <span v-if="step.error" class="error-text">{{ step.error }}</span>
+          <span v-if="step.error" class="error-text">{{ stripAnsi(step.error) }}</span>
           <a
             v-if="step.screenshot"
             href="#"

@@ -106,6 +106,7 @@ export async function runInit(root: string, options: InitOptions = {}): Promise<
 
   console.log('下一步:')
   console.log('  1. 让 AI 阅读 .agents/skills/testpilot/SKILL.md(项目上下文见 references/)')
+  console.log('     可选:按所用 Agent 复制到 .cursor/skills/、.claude/skills/ 等目录')
   console.log('  2. 在 tests/e2e/cases/ 创建 Case(遵循 references/test-conventions.md)')
   console.log('  3. npx csspilot validate && npx csspilot run')
 

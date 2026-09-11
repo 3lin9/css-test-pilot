@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs'
 import { access, cp, mkdir, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { loadTestpilotConfig } from '@testpilot/core'
 import type { AdapterInfo } from './adapter-detector'
 import type { ProjectInfo } from './project-detector'
 
@@ -57,9 +58,14 @@ export async function installSkill(
   }
 
   // 2. 项目级上下文 references/(按检测结果生成;已存在则保留,不覆盖用户改动)
+  // 默认环境/工作区从 testpilot.yaml 实际配置读取(init 刚生成或用户已有)
+  const config = await loadTestpilotConfig(root).catch(() => undefined)
+  const defaultEnvironment =
+    typeof config?.environment?.default === 'string' ? config.environment.default : '未设置'
+  const defaultWorkspace = config?.workspace?.default ?? '未设置(可在 yaml workspace.default 配置)'
   const refsDir = join(dest, 'references')
   const files: Array<[name: string, render: () => string]> = [
-    ['project.md', () => renderProjectMd(info, adapters)],
+    ['project.md', () => renderProjectMd(info, adapters, defaultEnvironment, defaultWorkspace)],
     ['test-conventions.md', renderTestConventionsMd],
     ['adapters.md', () => renderAdaptersMd(adapters)],
   ]
@@ -75,7 +81,12 @@ export async function installSkill(
   return { core, references, dest }
 }
 
-function renderProjectMd(info: ProjectInfo, adapters: AdapterInfo[]): string {
+function renderProjectMd(
+  info: ProjectInfo,
+  adapters: AdapterInfo[],
+  defaultEnvironment: string,
+  defaultWorkspace: string,
+): string {
   const available = adapters.filter((item) => item.available).map((item) => item.id)
   return `# Project
 
@@ -88,8 +99,8 @@ function renderProjectMd(info: ProjectInfo, adapters: AdapterInfo[]): string {
 - Test directory: tests/e2e
 - Case directory: tests/e2e/cases
 - Available adapters: ${available.length > 0 ? available.join(', ') : '(none detected)'}
-- Default environment: test(testpilot.yaml environment.default)
-- Default workspace: 未设置(Case 可按需声明 workspace 字段)
+- Default environment: ${defaultEnvironment}
+- Default workspace: ${defaultWorkspace}
 `
 }
 

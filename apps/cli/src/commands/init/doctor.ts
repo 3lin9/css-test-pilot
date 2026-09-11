@@ -39,16 +39,23 @@ export async function runDoctor(root: string): Promise<DoctorReport> {
   const warn = (label: string, hint?: string): DoctorItem => ({ status: 'warn', label, hint })
   const error = (label: string, hint?: string): DoctorItem => ({ status: 'error', label, hint })
 
-  // ---- Runtime ----
+  // ---- Runtime(§12:Node / Package Manager / Git) ----
+  const info: ProjectInfo = await detectProject(root)
+  const runtimeItems: DoctorItem[] = []
   const nodeMajor = Number(process.versions.node.split('.')[0])
-  push('Runtime', [
+  runtimeItems.push(
     nodeMajor >= 22
       ? ok(`Node.js ${process.versions.node}`)
       : error(`Node.js ${process.versions.node}`, '需要 Node.js >= 22'),
-  ])
+  )
+  if (info.packageManager !== 'npx') runtimeItems.push(ok(`Package Manager ${info.packageManager}`))
+  else runtimeItems.push(warn('Package Manager 未识别', '未发现 pnpm/yarn/npm lockfile'))
+  runtimeItems.push(
+    info.git.commit ? ok('Git') : warn('Git 未检测到', 'Case Metadata 无法同步到 Server'),
+  )
+  push('Runtime', runtimeItems)
 
   // ---- Project ----
-  const info: ProjectInfo = await detectProject(root)
   const projectItems: DoctorItem[] = [
     ok(`Project ${info.name}(${info.type})`),
     info.git.commit
@@ -66,7 +73,7 @@ export async function runDoctor(root: string): Promise<DoctorReport> {
   // ---- Test ----
   const config = await loadTestpilotConfig(root).catch(() => undefined)
   const casesDir = config?.casesDir ?? 'tests/e2e/cases'
-  const cases = await collectCases([casesDir], { root }).catch(() => [])
+  const cases = await collectCases([join(root, casesDir)], { root }).catch(() => [])
   const invalidCount = cases.filter((item) => !item.valid).length
   const testDir = join(root, 'tests', 'e2e')
   push('Test', [
@@ -105,21 +112,34 @@ export async function runDoctor(root: string): Promise<DoctorReport> {
     ),
   )
 
-  // ---- Environment(配置里引用的环境变量) ----
+  // ---- Environment(配置引用的环境变量 + Case 声明的账号凭据,§12 Required secrets) ----
   const refs = await collectEnvVarRefs(root)
-  if (refs.length > 0) {
-    push(
-      'Environment',
-      refs.map((name) =>
-        process.env[name] !== undefined
-          ? ok(name)
-          : error(`${name} missing`, '在运行环境(.env / CI Secret)中设置'),
-      ),
-    )
+  const envItems: DoctorItem[] = refs.map((name) =>
+    process.env[name] !== undefined
+      ? ok(name)
+      : error(`${name} missing`, '在运行环境(.env / CI Secret)中设置'),
+  )
+
+  // accountRef 凭据:本地用 TESTPILOT_ACCOUNT_<REF> 提供;Server 触发时按环境凭据解析,缺失只警告
+  const serverConfigured = (process.env.TESTPILOT_SERVER_URL ?? config?.server?.baseUrl) !== undefined
+  const accountRefs = [
+    ...new Set(cases.map((item) => item.case?.accountRef).filter((ref): ref is string => !!ref)),
+  ]
+  for (const ref of accountRefs) {
+    const envName = `TESTPILOT_ACCOUNT_${ref.toUpperCase().replace(/-/g, '_')}`
+    if (process.env[envName] !== undefined) envItems.push(ok(`${envName}(账号 ${ref})`))
+    else if (!serverConfigured)
+      envItems.push(
+        warn(
+          `账号 ${ref} 凭据缺失`,
+          `本地运行设置 ${envName};或配置 Server 后按环境凭据解析`,
+        ),
+      )
   }
+  if (envItems.length > 0) push('Environment', envItems)
 
   // ---- Server(配置了才检查) ----
-  const serverUrl = process.env.TESTPILOT_SERVER_URL ?? config?.server?.baseUrl
+  const serverUrl = serverConfigured ? (process.env.TESTPILOT_SERVER_URL ?? config?.server?.baseUrl) : undefined
   if (serverUrl) {
     const link = await readProjectLink(root)
     const serverItems: DoctorItem[] = []

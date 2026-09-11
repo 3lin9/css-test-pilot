@@ -43,7 +43,7 @@ export class RunOrchestrator {
   start(
     runId: string,
     project: ProjectRow,
-    options: { paths?: string[]; tag?: string },
+    options: { paths?: string[]; tag?: string; accounts?: Record<string, string> },
   ): void {
     const controller = new AbortController()
     const client = clientFor(project)
@@ -57,6 +57,7 @@ export class RunOrchestrator {
           tag: options.tag,
           signal: controller.signal,
           adapters: this.options.adapters,
+          accounts: options.accounts,
           onEvent: (event: RunEvent) => this.persistEvent(runId, event),
         })
         await updateRun(this.db, runId, {

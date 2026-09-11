@@ -170,6 +170,57 @@ describe('cli:init:安全(§18/§20)', () => {
     expect(summary.doctor.errors).toBe(0)
   })
 
+  test('references/project.md 渲染配置中的默认环境', async () => {
+    const root = await makeProject({
+      'index.html': '',
+      'testpilot.yaml': 'environment:\n  default: staging\nworkspace:\n  default: mall-test\n',
+    })
+    await runInit(root, { serverUrl: null })
+    const projectMd = await readFile(
+      join(root, '.agents', 'skills', 'testpilot', 'references', 'project.md'),
+      'utf8',
+    )
+    expect(projectMd).toContain('Default environment: staging')
+    expect(projectMd).toContain('Default workspace: mall-test')
+  })
+
+  test('已有其他 E2E 目录:保持标准 tests/e2e,只提示不迁移(§6 决策)', async () => {
+    const root = await makeProject({
+      'index.html': '',
+      'cypress/e2e/old.spec.js': '// legacy',
+    })
+    const summary = await runInit(root, { serverUrl: null })
+    // 标准 tests/e2e 仍创建;已有目录原样保留;配置指向标准目录
+    expect(existsSync(join(root, 'tests', 'e2e', 'cases'))).toBe(true)
+    expect(existsSync(join(root, 'cypress', 'e2e', 'old.spec.js'))).toBe(true)
+    const yaml = await readFile(join(root, 'testpilot.yaml'), 'utf8')
+    expect(yaml).toContain('caseDirectory: tests/e2e/cases')
+    expect(summary.project.existingE2eDirs).toContain('cypress')
+  })
+
+  test('doctor 检查 Case 声明的账号凭据(§12 Required secrets)', async () => {
+    const root = await makeProject({
+      'index.html': '',
+      '.testpilot/project.json': '{"projectId":"proj_t1"}',
+      'tests/e2e/cases/a.yaml':
+        'id: a\nname: A\naccountRef: ci-runner\nsteps:\n  - target: web\n    action: launch\n',
+    })
+    delete process.env.TESTPILOT_ACCOUNT_CI_RUNNER
+    const missing = await runDoctor(root)
+    const envMissing = missing.sections
+      .find((section) => section.name === 'Environment')
+      ?.items.filter((item) => item.label.includes('ci-runner'))
+    expect(envMissing).toHaveLength(1)
+    expect(envMissing?.[0]?.status).toBe('warn') // Server 已配置 → warn 而非 error
+
+    process.env.TESTPILOT_ACCOUNT_CI_RUNNER = '{"token":"t"}'
+    const provided = await runDoctor(root)
+    const envProvided = provided.sections
+      .find((section) => section.name === 'Environment')
+      ?.items.filter((item) => item.label.includes('ci-runner'))
+    expect(envProvided?.[0]?.status).toBe('ok')
+  })
+
   test('.env 中的 Secret 不会写进任何生成文件', async () => {
     const root = await makeProject({ 'index.html': '', '.env': 'TEST_ACCOUNT=super-secret-token-xyz\n' })
     await runInit(root, { serverUrl: null })

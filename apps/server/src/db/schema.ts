@@ -1,4 +1,4 @@
-import { integer, sqliteTable, text, unique } from 'drizzle-orm/sqlite-core'
+import { integer, sqliteTable, text, unique, uniqueIndex } from 'drizzle-orm/sqlite-core'
 
 /**
  * Control Plane 元数据(V0.1 增量设计 v4)。
@@ -38,6 +38,27 @@ export const environments = sqliteTable('environments', {
   varsJson: text('vars_json'),
   createdAt: text('created_at').notNull(),
 })
+
+/**
+ * 环境级凭据:Case 的 accountRef 运行时按环境解析。
+ * 值只写不读(列表 API 只返回 key),用于 Orchestrator 注入引擎。
+ */
+export const environmentSecrets = sqliteTable(
+  'environment_secrets',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    environmentId: integer('environment_id')
+      .notNull()
+      .references(() => environments.id),
+    /** 与 Case 的 accountRef 对应(如 test-user) */
+    secretKey: text('secret_key').notNull(),
+    /** 凭据原文(推荐 JSON:{"username":"...","password":"..."});不通过 API 回显 */
+    secretValue: text('secret_value').notNull(),
+    createdAt: text('created_at').notNull(),
+    updatedAt: text('updated_at').notNull(),
+  },
+  (table) => [uniqueIndex('environment_secret_unique').on(table.environmentId, table.secretKey)],
+)
 
 /**
  * Case Metadata 索引。Git push 后由 sync-metadata 以快照方式同步:

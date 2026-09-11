@@ -85,6 +85,15 @@ export interface StepResult {
   error?: string
   screenshot?: string
   extracted?: Record<string, string>
+  /** api target 的请求取证(敏感头已脱敏) */
+  http?: {
+    method: string
+    url: string
+    status: number
+    requestHeaders?: Record<string, string>
+    requestBody?: string
+    responseSnippet?: string
+  }
 }
 
 export interface CaseResult {

@@ -114,6 +114,17 @@ function ensureSchema(sqlite: Database.Database): void {
     );
     CREATE UNIQUE INDEX IF NOT EXISTS workspace_binding_unique ON workspace_bindings (workspace_id, project_id);
 
+    -- 环境级凭据(accountRef 解析;加表不破坏旧库,无需 bump SCHEMA_VERSION)
+    CREATE TABLE IF NOT EXISTS environment_secrets (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      environment_id INTEGER NOT NULL REFERENCES environments(id),
+      secret_key TEXT NOT NULL,
+      secret_value TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS environment_secret_unique ON environment_secrets (environment_id, secret_key);
+
     CREATE TABLE IF NOT EXISTS runs (
       id TEXT PRIMARY KEY,
       project_id INTEGER NOT NULL REFERENCES projects(id),
