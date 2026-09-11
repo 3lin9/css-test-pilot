@@ -27,10 +27,10 @@ async function exists(path: string): Promise<boolean> {
 function resolveSkillSourceDir(): string | undefined {
   const fromEnv = process.env.TESTPILOT_SKILL_DIR
   if (fromEnv) return fromEnv
-  // 打包形态:dist/init/skill-installer.js -> dist/skills/testpilot
-  const bundled = fileURLToPath(new URL('../../skills/testpilot', import.meta.url))
+  // 打包形态:esbuild 单文件产物 dist/bin.js -> dist/skills/testpilot
+  const bundled = fileURLToPath(new URL('./skills/testpilot', import.meta.url))
   if (existsSync(bundled)) return bundled
-  // 开发态:src/commands/init/ -> 仓库根 skills/testpilot
+  // 开发态:src/commands/init/skill-installer.ts -> 仓库根 skills/testpilot
   const inRepo = fileURLToPath(new URL('../../../../../skills/testpilot', import.meta.url))
   return existsSync(inRepo) ? inRepo : undefined
 }
