@@ -56,8 +56,27 @@ export interface TestpilotConfig {
   miniapp?: { projectPath?: string; cliPath?: string }
 }
 
+/** 将值中的 ${ENV_VAR} 替换为进程环境变量;未设置的引用保持原样(doctor / inspect 负责标记缺失) */
+function interpolateEnvRefs(value: string): string {
+  return value.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (match, name: string) => process.env[name] ?? match)
+}
+
+/**
+ * 加载业务项目根目录的 .env 文件到进程环境(Node 内建 process.loadEnvFile)。
+ * 已存在的环境变量优先,不会被文件覆盖;.env 缺失或不可解析时静默跳过。
+ * `.env` 通常包含敏感信息,应加入 .gitignore。
+ */
+export function loadProjectEnvFile(root: string = process.cwd()): void {
+  try {
+    process.loadEnvFile(join(root, '.env'))
+  } catch {
+    // .env 不存在 / 不可解析:跳过(引用了未定义变量时由 doctor / inspect 标记)
+  }
+}
+
 /** 读取并校验业务项目的 testpilot.yaml;文件不存在时返回默认配置 */
 export async function loadTestpilotConfig(cwd: string = process.cwd()): Promise<TestpilotConfig> {
+  loadProjectEnvFile(cwd)
   const file = join(cwd, 'testpilot.yaml')
   let raw: unknown
   try {
@@ -76,18 +95,66 @@ export async function loadTestpilotConfig(cwd: string = process.cwd()): Promise<
       .join('; ')
     throw new Error(`testpilot.yaml 配置不合法:${detail}`)
   }
+
+  const parsed = result.data
+
+  // 环境配置段只放 ${ENV_VAR} 引用不放明文(§10);此处注入进程环境变量。
+  // environment 的 default 键是环境名,不做插值。
+  const environment = parsed.environment
+    ? Object.fromEntries(
+        Object.entries(parsed.environment).map(([name, entry]) => {
+          if (name === 'default' || typeof entry === 'string') {
+            return [name, entry]
+          }
+          if (entry === undefined) {
+            return [name, undefined]
+          }
+          return [
+            name,
+            { baseUrl: entry.baseUrl === undefined ? undefined : interpolateEnvRefs(entry.baseUrl) },
+          ]
+        }),
+      )
+    : undefined
+
   return {
-    version: result.data.version,
+    version: parsed.version,
     // 用例目录:旧字段 casesDir 优先,其次 test.caseDirectory,最后默认值
-    casesDir: result.data.casesDir ?? result.data.test?.caseDirectory ?? DEFAULT_CASES_DIR,
-    testDirectory: result.data.test?.directory,
-    projectName: result.data.project?.name,
-    environment: result.data.environment,
-    adapters: result.data.adapters,
-    workspace: result.data.workspace,
-    server: result.data.server,
-    web: result.data.web,
-    api: result.data.api,
-    miniapp: result.data.miniapp,
+    casesDir: parsed.casesDir ?? parsed.test?.caseDirectory ?? DEFAULT_CASES_DIR,
+    testDirectory: parsed.test?.directory,
+    projectName: parsed.project?.name,
+    environment,
+    adapters: parsed.adapters,
+    workspace: parsed.workspace,
+    server: parsed.server
+      ? {
+          baseUrl:
+            parsed.server.baseUrl === undefined
+              ? undefined
+              : interpolateEnvRefs(parsed.server.baseUrl),
+        }
+      : undefined,
+    web: parsed.web
+      ? {
+          baseUrl:
+            parsed.web.baseUrl === undefined ? undefined : interpolateEnvRefs(parsed.web.baseUrl),
+        }
+      : undefined,
+    api: parsed.api
+      ? {
+          baseUrl: parsed.api.baseUrl === undefined ? undefined : interpolateEnvRefs(parsed.api.baseUrl),
+          timeoutMs: parsed.api.timeoutMs,
+        }
+      : undefined,
+    miniapp: parsed.miniapp
+      ? {
+          projectPath:
+            parsed.miniapp.projectPath === undefined
+              ? undefined
+              : interpolateEnvRefs(parsed.miniapp.projectPath),
+          cliPath:
+            parsed.miniapp.cliPath === undefined ? undefined : interpolateEnvRefs(parsed.miniapp.cliPath),
+        }
+      : undefined,
   }
 }

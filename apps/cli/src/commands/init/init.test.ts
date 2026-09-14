@@ -92,6 +92,9 @@ describe('cli:init:新项目', () => {
     // Skill + references
     expect(existsSync(join(root, '.agents', 'skills', 'testpilot', 'SKILL.md'))).toBe(true)
     expect(existsSync(join(root, '.agents', 'skills', 'testpilot', 'manifest.yaml'))).toBe(true)
+    expect(
+      existsSync(join(root, '.agents', 'skills', 'testpilot', 'workflows', 'test-requirements-review.md')),
+    ).toBe(true)
     expect(existsSync(join(root, '.agents', 'skills', 'testpilot', 'references', 'project.md'))).toBe(true)
     expect(
       existsSync(join(root, '.agents', 'skills', 'testpilot', 'references', 'test-conventions.md')),
@@ -113,6 +116,20 @@ describe('cli:init:新项目', () => {
     expect(yaml).toContain('baseUrl: ${TEST_BASE_URL}')
     expect(yaml).not.toMatch(/password|secret\s*:/i)
 
+    // 机器相关的地址/路径走环境变量,模板不写死(每人环境不同)
+    expect(yaml).toContain('baseUrl: ${WEB_BASE_URL}')
+    expect(yaml).toContain('projectPath: ${MINIAPP_PROJECT_PATH}')
+    expect(yaml).not.toContain('http://127.0.0.1:8080')
+
+    // .env.example 示例 + .gitignore 忽略 .env
+    expect(existsSync(join(root, '.env.example'))).toBe(true)
+    const envExample = await readFile(join(root, '.env.example'), 'utf8')
+    expect(envExample).toContain('TEST_BASE_URL=')
+    expect(envExample).toContain('STAGING_BASE_URL=')
+    expect(envExample).toContain('MINIAPP_PROJECT_PATH')
+    const gitignore = await readFile(join(root, '.gitignore'), 'utf8')
+    expect(gitignore.split(/\r?\n/)).toContain('.env')
+
     // init 自动执行 doctor(§12)
     expect(summary.doctor.sections.length).toBeGreaterThan(0)
   })
@@ -128,6 +145,27 @@ describe('cli:init:新项目', () => {
 })
 
 describe('cli:init:幂等与保留(§17/§20)', () => {
+  test('Skill 版本变化时 init 自动更新主体,references 保留', async () => {
+    const root = await makeProject({ 'index.html': '' })
+    await runInit(root, { serverUrl: null })
+    const skillDir = join(root, '.agents', 'skills', 'testpilot')
+    const manifestPath = join(skillDir, 'manifest.yaml')
+    // 模拟已安装的是旧版本 Skill
+    await writeFile(
+      manifestPath,
+      (await readFile(manifestPath, 'utf8')).replace(/^version: .*$/m, 'version: 0.0.9'),
+      'utf8',
+    )
+    // 用户定制的 references 不应被升级覆盖
+    const refPath = join(skillDir, 'references', 'project.md')
+    await writeFile(refPath, '# 自定义项目上下文', 'utf8')
+
+    await runInit(root, { serverUrl: null })
+
+    expect(await readFile(manifestPath, 'utf8')).not.toContain('version: 0.0.9')
+    expect(await readFile(refPath, 'utf8')).toBe('# 自定义项目上下文')
+  })
+
   test('重复 init 不覆盖、不重置 projectId', async () => {
     const root = await makeProject({ 'index.html': '' })
     await runInit(root, { serverUrl: null })

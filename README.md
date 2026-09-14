@@ -143,9 +143,22 @@ RAG、AI 自动修复、Baseline、性能/业务数据基线、SQL/MySQL Adapter
 
 CLI 以 npm 包名 `csspilot` 发布:esbuild 单文件打包,内部 `@testpilot/*` 全部打入产物,`playwright` / `miniprogram-automator` 保持外部依赖,skill 目录随包分发。
 
+**自动发布(推荐)**:推送 `v*` 标签触发 `.github/workflows/publish.yml` —— 校验 tag 与包版本一致 → build → test → e2e → publish(npmjs)。一次性准备:仓库 Settings → Secrets and variables → Actions 添加 `NPM_TOKEN`(npmjs 的 Granular/Automation token,需具备 `csspilot` 包发布权限且允许绕过 2FA)。
+
 ```bash
-pnpm build                  # 产出 apps/cli/dist(bin.js + index.js + skills/)
-cd apps/cli && pnpm pack    # 生成 csspilot-0.1.1.tgz;pnpm publish 发布
+# 发版流程:
+# 1) 更新 apps/cli/package.json 的 version、apps/cli/src/cli.ts 的 CLI_VERSION
+#    与 skills/testpilot/manifest.yaml 的 version(三处保持一致)
+# 2) 提交后打标签推送,CI 自动完成发布
+# 3) 已安装的业务项目:升级 csspilot 依赖后 npx csspilot update 同步接入物
+git tag v0.4.0 && git push origin v0.4.0
+```
+
+**手动发布(备用)**:
+
+```bash
+pnpm --filter csspilot build
+cd apps/cli && pnpm publish --no-git-checks --access public --registry https://registry.npmjs.org
 ```
 
 业务项目安装后即可 `npx csspilot init`,`init` 会把包内 skills/testpilot 安装到业务项目 `.agents/skills/`。

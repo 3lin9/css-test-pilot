@@ -10,12 +10,24 @@
 | `csspilot validate [paths...]`          | 校验用例 DSL                                   |
 | `csspilot list [--tag <tag>]`           | 列出用例                                       |
 | `csspilot run [paths...] [--tag <tag>]` | 执行用例                                       |
-| `csspilot report [--run <id>] [--open]` | 生成 JSON + HTML 报告                          |
+| `csspilot report [--run <id>] [--open]` | 生成交互式单文件 HTML 报告(步骤树 / 失败分类 / 历史趋势)+ report.json |
 | `csspilot sync-metadata`                | 同步 Case Metadata 到 Server(CI / git push 后) |
 | `csspilot doctor`                       | 健康检查(分组报告:error / warning)          |
+| `csspilot update [--force]`             | 同步接入物到当前 CLI 版本(Skill / .env.example;不触碰 .env 与用例) |
 | `csspilot ci init`                      | 生成 TestPilot CI 工作流模板(不改动已有 CI)   |
 
 全局:`-V` 查看版本,`-h` 查看帮助。
+
+### update —— 同步接入物
+
+`.agents/skills/testpilot/manifest.yaml` 的 `version` 记录已安装的 Skill 版本。CLI 升级后(内置接入物更新),两种方式拿到最新能力:
+
+```bash
+npx csspilot init    # 重新接入时自动同步(版本一致则跳过)
+npx csspilot update  # 只做同步;--force 版本一致时也强制覆盖 Skill
+```
+
+同步范围:Skill 主体(SKILL.md、manifest.yaml、rules/、workflows/)、`.env.example`、`.gitignore` 忽略 `.env`;`references/` 是项目级上下文,不会被覆盖。**绝不触碰用户资产**:`.env`(真实凭据)、`tests/e2e/cases/`、`.testpilot/`、`testpilot.yaml`。`doctor` 的 Agent 段会显示 Skill 版本并提示可更新。发新版本时记得同步更新仓库里 `skills/testpilot/manifest.yaml` 的 `version`(与 CLI 版本保持一致)。
 
 ## init —— 接入业务项目
 
@@ -30,7 +42,7 @@ npx csspilot init [--server <url>]
 3. **配置初始化**:生成 `testpilot.yaml`(含 environment 环境段,baseUrl 用 `${VAR}` 引用)+ `.testpilot/{project.json,artifacts/}`;project.json 含 `version / projectId / testDir / caseDir / defaultAdapter`;Server 可达时注册项目,不可达时生成本地 ID
 4. **测试目录**:`tests/e2e/{cases,fixtures,data}`(已有直接复用;检测到其他 E2E 目录只提示不迁移)
 5. **Agent Skill**:安装到 `.agents/skills/testpilot/`,并生成项目级上下文 `references/{project,test-conventions,adapters}.md`
-6. **环境配置**:模板引用 `TEST_BASE_URL` / `STAGING_BASE_URL`,敏感值一律由环境变量注入,不落明文
+6. **环境配置**:生成 `.env.example` 示例(`TEST_BASE_URL` / `STAGING_BASE_URL` / `WEB_BASE_URL` / `MINIAPP_PROJECT_PATH` 等),确保 `.gitignore` 忽略 `.env`;真实值复制为 `.env` 或设为环境变量,配置中的 `${VAR}` 引用加载时自动注入
 7. **CI 准备**:只检测已有 CI 并提示,可用 `csspilot ci init` 生成模板
 8. **自动 Doctor**:结束时执行一次健康检查
 
@@ -180,7 +192,7 @@ Server 运行时优先取**运行分支绑定环境**的凭据(如 release 分�
 | 变量                                   | 作用                                                |
 | -------------------------------------- | --------------------------------------------------- |
 | `TESTPILOT_SERVER_URL`                 | TestPilot Server 地址(init / sync-metadata)        |
-| `TEST_BASE_URL` / `STAGING_BASE_URL`   | 环境配置引用的被测系统地址(doctor 会检查是否设置)  |
+| `TEST_BASE_URL` / `STAGING_BASE_URL`  | 环境配置引用的被测系统地址;加载配置时由进程环境注入 `${VAR}` 引用,未设置的保持原样并由 doctor / inspect 标记缺失 |
 | `WECHAT_DEVTOOLS_CLI`                  | 指定开发者工具 cli 路径(探测优先级最高)             |
 | `TESTPILOT_MINIPROGRAM_PROJECT_PATH`   | 小程序项目路径(可被 testpilot.yaml 覆盖)            |
 | `TESTPILOT_MINIPROGRAM_AUTO_PORT`      | 自动化端口,默认 9420                                |
@@ -188,6 +200,8 @@ Server 运行时优先取**运行分支绑定环境**的凭据(如 release 分�
 | `TESTPILOT_HEADLESS`                   | `false` 时 Chromium 有头运行                        |
 | `TESTPILOT_STEP_TIMEOUT`               | 单步操作超时毫秒,默认 15000                         |
 | `TESTPILOT_SKILL_DIR`                  | init 安装 Skill 的自定义源目录                      |
+
+除上表外,项目根目录的 **`.env` 文件会自动加载**(Node 内建 `process.loadEnvFile`),适合放本地敏感值;优先级为 **真实环境变量 > `.env` 文件**。`.env` 含敏感信息,务必加入 `.gitignore`。
 
 ## 产物目录
 
@@ -204,6 +218,38 @@ Server 运行时优先取**运行分支绑定环境**的凭据(如 release 分�
 ```
 
 runId 格式 `yyyymmdd-NNN`,同日递增。视频与 trace 为用例级(每用例独立 context 录制),trace 用 `npx playwright show-trace traces/<file>` 查看;小程序端 V0.1 仅截图取证。
+
+## 与 AI 协作(让 Skill 生效)
+
+AI 不会自动知道 Skill 的存在 —— 让它生效的方式 = **让 AI 读到对应文件**。三种方式,可靠性从高到低:
+
+1. **提示词直接给文件路径**(任何 AI 工具都有效):
+
+   ```text
+   请阅读 .agents/skills/testpilot/workflows/test-requirements-review.md,
+   严格按该流程对以下需求做测试需求评审,输出测试点清单、平台执行信息表和澄清问题:
+   <粘贴需求内容>
+   ```
+
+2. **项目级常驻**:在仓库根的 `AGENTS.md`(或 CLAUDE.md / .cursorrules)加入:
+
+   ```text
+   涉及测试需求或测试用例时,先读 .agents/skills/testpilot/SKILL.md,
+   严格遵循其 workflows/ 对应流程(test-requirements-review / create-case / validate / run-case / analyze-result)。
+   ```
+
+   之后一句话即可触发:"对 XX 需求做测试需求评审" / "按 TP-001~TP-003 生成用例并 validate"。
+
+3. **完整流程示例**(需求 → 上线一轮):
+
+   ```text
+   评审:按 test-requirements-review 评审「XX 需求」,输出测试点清单和平台执行信息
+   建用例:按 create-case 基于 TP-001/TP-002 生成 Case,缺的 .env 变量问我
+   执行:npx csspilot run --tag smoke
+   分析:按 analyze-result 分析最新 run,失败给出结论(改 Case 还是产品 bug)
+   ```
+
+Skill 已安装并提交进仓库后,团队里每个人(和每个人的 AI)共享同一套规范。
 
 ## 常见问题
 

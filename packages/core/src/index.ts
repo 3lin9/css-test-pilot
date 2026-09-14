@@ -8,6 +8,6 @@ export {
   TESTPILOT_DIR,
   WECHAT_DEVTOOLS_CLI_PATHS,
 } from './constants'
-export { loadTestpilotConfig } from './config-loader'
+export { loadProjectEnvFile, loadTestpilotConfig } from './config-loader'
 export type { TestpilotConfig } from './config-loader'
 export { findWechatDevToolsCli } from './wechat-devtools'

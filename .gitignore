@@ -36,3 +36,6 @@ Thumbs.db
 # SQLite WAL 辅助文件
 *.db-shm
 *.db-wal
+
+# 本地临时目录
+.tmp*/

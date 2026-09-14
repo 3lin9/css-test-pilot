@@ -38,7 +38,9 @@ export {
 } from './runs'
 export {
   generateReport,
+  generateSummaryReport,
   readReport,
   type GeneratedReport,
   type ReportPayload,
+  type SummaryReportResult,
 } from './reports'

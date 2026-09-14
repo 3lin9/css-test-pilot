@@ -5,6 +5,7 @@ import { collectCases, readProjectLink } from '@testpilot/sdk'
 import { detectAdapters, type AdapterInfo } from './adapter-detector'
 import { collectEnvVarRefs } from './environment-initializer'
 import { detectProject, type ProjectInfo } from './project-detector'
+import { readManifestVersion, resolveSkillSourceDir } from './skill-installer'
 
 export type CheckStatus = 'ok' | 'warn' | 'error'
 
@@ -90,14 +91,26 @@ export async function runDoctor(root: string): Promise<DoctorReport> {
 
   // ---- Agent ----
   const skillDir = join(root, '.agents', 'skills', 'testpilot')
-  push('Agent', [
-    existsSync(join(skillDir, 'manifest.yaml'))
-      ? ok('TestPilot Skill(.agents/skills/testpilot)')
+  const installedSkillVersion = readManifestVersion(skillDir)
+  const skillSource = resolveSkillSourceDir()
+  const bundledSkillVersion = skillSource ? readManifestVersion(skillSource) : undefined
+  const skillItems: DoctorItem[] = [
+    installedSkillVersion
+      ? ok(`TestPilot Skill(.agents/skills/testpilot,v${installedSkillVersion})`)
       : error('TestPilot Skill', '运行 npx csspilot init 安装'),
     existsSync(join(skillDir, 'references', 'project.md'))
       ? ok('Project testing guide(references/)')
       : warn('Project testing guide 缺失', 'references/ 由 init 生成;可重新运行 npx csspilot init'),
-  ])
+  ]
+  if (installedSkillVersion && bundledSkillVersion && installedSkillVersion !== bundledSkillVersion) {
+    skillItems.push(
+      warn(
+        `Skill 可更新(v${installedSkillVersion} -> v${bundledSkillVersion})`,
+        '运行 npx csspilot update 并提交 .agents/skills/ 变更',
+      ),
+    )
+  }
+  push('Agent', skillItems)
 
   // ---- Adapters(缺失为 warning,不阻塞) ----
   const adapters: AdapterInfo[] = await detectAdapters(root, info.type)

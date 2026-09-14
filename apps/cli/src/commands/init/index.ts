@@ -60,6 +60,16 @@ export async function runInit(root: string, options: InitOptions = {}): Promise<
   console.log(`✓ Runtime 目录      ${join('.testpilot', 'artifacts')}`)
   const serverMode = config.projectLink.serverUrl ? `Server:${config.projectLink.serverUrl}` : '本地模式'
   console.log(`✓ 项目关联          ${config.projectLink.projectId}(${serverMode})`)
+  console.log(
+    config.envExample === 'created'
+      ? '✓ 环境变量示例      .env.example(复制为 .env 填入真实值)'
+      : '✓ 环境变量示例      .env.example(已存在,保留)',
+  )
+  console.log(
+    config.gitignore === 'exists'
+      ? '✓ Git 忽略          .env(已在 .gitignore)'
+      : `✓ Git 忽略          .env(已写入 .gitignore)`,
+  )
 
   // 4. 测试目录(§6)
   const testStructure = await initTestStructure(root, project)
@@ -75,11 +85,17 @@ export async function runInit(root: string, options: InitOptions = {}): Promise<
 
   // 5. Agent Skill + 项目级上下文(§7-8)
   const skill = await installSkill(root, project, adapters)
-  console.log(
-    skill.core === 'created'
-      ? `✓ Skill 安装        ${join('.agents', 'skills', 'testpilot')}`
-      : '✓ Skill 安装        .agents/skills/testpilot/(已存在,跳过)',
-  )
+  if (skill.core === 'updated') {
+    console.log(
+      `✓ Skill 更新        .agents/skills/testpilot/(v${skill.coreVersion?.from ?? '?'} -> v${skill.coreVersion?.to ?? '?'})`,
+    )
+  } else {
+    console.log(
+      skill.core === 'created'
+        ? `✓ Skill 安装        ${join('.agents', 'skills', 'testpilot')}`
+        : '✓ Skill 安装        .agents/skills/testpilot/(已存在,跳过)',
+    )
+  }
   console.log(
     skill.references === 'created'
       ? '✓ Agent 上下文      references/{project,test-conventions,adapters}.md'

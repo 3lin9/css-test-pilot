@@ -179,7 +179,8 @@ describe('sdk:runs', () => {
     expect(report.json).toContain('report.json')
     const payload = await client.readReport(summary.runId)
     expect(payload?.summary.runId).toBe(summary.runId)
-    await expect(readFile(report.html, 'utf8')).resolves.toContain('TestPilot 报告')
+    expect(payload?.failures).toEqual([])
+    await expect(readFile(report.html, 'utf8')).resolves.toContain('TestPilot 测试报告')
   })
 
   test('runCases:没有用例时抛 RunError', async () => {

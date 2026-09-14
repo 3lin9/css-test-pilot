@@ -17,12 +17,18 @@ importers:
       '@testpilot/adapter-wechatide':
         specifier: workspace:^
         version: link:packages/adapter-wechatide
+      '@testpilot/core':
+        specifier: workspace:^
+        version: link:packages/core
       '@testpilot/dsl':
         specifier: workspace:^
         version: link:packages/dsl
       '@testpilot/execution-engine':
         specifier: workspace:^
         version: link:packages/execution-engine
+      '@testpilot/reporter':
+        specifier: workspace:^
+        version: link:packages/reporter
       '@types/node':
         specifier: ^22.0.0
         version: 22.20.2

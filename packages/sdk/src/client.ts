@@ -22,9 +22,11 @@ import {
 } from './project'
 import {
   generateReport,
+  generateSummaryReport,
   readReport,
   type GeneratedReport,
   type ReportPayload,
+  type SummaryReportResult,
 } from './reports'
 import {
   getRun,
@@ -136,6 +138,11 @@ export class TestPilotClient {
   /** 生成报告(默认最近一次运行) */
   generateReport(runId?: string): Promise<GeneratedReport> {
     return generateReport(runId, { root: this.root })
+  }
+
+  /** 生成跨 run 汇总报告(summary.html + summary.json) */
+  generateSummaryReport(options: { last?: number } = {}): Promise<SummaryReportResult> {
+    return generateSummaryReport({ ...options, root: this.root })
   }
 
   /** 读取已生成的报告 */

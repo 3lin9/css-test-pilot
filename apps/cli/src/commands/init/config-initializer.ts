@@ -1,4 +1,4 @@
-import { access, mkdir, writeFile } from 'node:fs/promises'
+import { access, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import { readProjectLink, writeProjectLink, type ProjectLink } from '@testpilot/sdk'
 import type { AdapterInfo } from './adapter-detector'
@@ -9,6 +9,8 @@ export interface ConfigInitResult {
   runtimeDir: string
   projectLink: ProjectLink
   projectLinkFile: string
+  envExample: 'created' | 'reused'
+  gitignore: 'created' | 'updated' | 'exists'
 }
 
 async function exists(path: string): Promise<boolean> {
@@ -23,7 +25,7 @@ async function exists(path: string): Promise<boolean> {
 const TEST_DIR = 'tests/e2e'
 const CASE_DIR = 'tests/e2e/cases'
 
-/** 生成 testpilot.yaml 模板(含环境配置;敏感值用 ${VAR} 引用,不落明文) */
+/** 生成 testpilot.yaml 模板(环境配置只放 ${VAR} 引用不落明文;机器相关的路径/地址一律走环境变量) */
 export function renderTestpilotYaml(info: ProjectInfo): string {
   const adapters = adaptersFor(info.type)
     .map((item) => `  - ${item}`)
@@ -59,18 +61,59 @@ ${adapters}
 # server:
 #   baseUrl: http://127.0.0.1:3000
 
-# Web 端:navigate 相对 url 的基准地址
+# Web 端:navigate 相对 url 的基准地址(每人的地址不同,值放 .env)
 # web:
-#   baseUrl: http://127.0.0.1:8080
+#   baseUrl: \${WEB_BASE_URL}
 
-# 小程序端:填入小程序项目目录后即可执行 target: miniapp 的步骤
+# 小程序端:填入小程序项目目录后即可执行 target: miniapp 的步骤(路径每人不同,走 .env)
 # miniapp:
-#   projectPath: path/to/miniprogram
-#   cliPath: C:/Program Files (x86)/Tencent/微信web开发者工具/cli.bat
+#   projectPath: \${MINIAPP_PROJECT_PATH}
+#   cliPath: \${MINIAPP_CLI_PATH}
 `
 }
 
-/** 初始化 testpilot.yaml + .testpilot/ 运行时目录 + project.json(设计文档 §9;全部幂等) */
+/** 生成 .env.example 示例(提交到 Git;真实值放 .env,.env 不提交) */
+export function renderDotEnvExample(): string {
+  return `# TestPilot 环境变量示例:复制为 .env 并填入真实值(.env 含敏感信息,不要提交到 Git)
+# 优先级:真实环境变量 > .env 文件;testpilot.yaml 中的 \${VAR} 引用运行时自动注入
+
+# 环境配置(environment 段)
+TEST_BASE_URL=http://127.0.0.1:8080
+STAGING_BASE_URL=https://staging.example.com
+
+# Web 端相对 url 的基准(取消 testpilot.yaml 中 web 段注释后生效)
+# WEB_BASE_URL=http://127.0.0.1:8080
+
+# 小程序端(取消 testpilot.yaml 中 miniapp 段注释后生效)
+# MINIAPP_PROJECT_PATH=path/to/miniprogram
+# MINIAPP_CLI_PATH=C:/Program Files (x86)/Tencent/微信web开发者工具/cli.bat
+
+# TestPilot Server(Control Plane,可选)
+# TESTPILOT_SERVER_URL=http://127.0.0.1:3000
+`
+}
+
+/** 确保 .gitignore 包含指定条目(如 .env);文件不存在时创建 */
+export async function ensureGitignoreEntry(
+  root: string,
+  entry: string,
+  comment = 'TestPilot 本地环境变量',
+): Promise<'created' | 'updated' | 'exists'> {
+  const gitignorePath = join(root, '.gitignore')
+  if (!(await exists(gitignorePath))) {
+    await writeFile(gitignorePath, `# ${comment}\n${entry}\n`, 'utf8')
+    return 'created'
+  }
+  const content = await readFile(gitignorePath, 'utf8')
+  if (content.split(/\r?\n/).some((item) => item.trim() === entry)) {
+    return 'exists'
+  }
+  const separator = content.endsWith('\n') || content === '' ? '' : '\n'
+  await writeFile(gitignorePath, `${content}${separator}# ${comment}\n${entry}\n`, 'utf8')
+  return 'updated'
+}
+
+/** 初始化 testpilot.yaml + .env.example + .testpilot/ 运行时目录 + project.json(全部幂等) */
 export async function initTestPilotConfig(
   root: string,
   info: ProjectInfo,
@@ -84,7 +127,16 @@ export async function initTestPilotConfig(
     yaml = 'created'
   }
 
-  // 2. Runtime 目录
+  // 2. .env.example(已存在则保留)+ .gitignore 忽略 .env
+  const envExamplePath = join(root, '.env.example')
+  let envExample: 'created' | 'reused' = 'reused'
+  if (!(await exists(envExamplePath))) {
+    await writeFile(envExamplePath, renderDotEnvExample(), 'utf8')
+    envExample = 'created'
+  }
+  const gitignore = await ensureGitignoreEntry(root, '.env')
+
+  // 3. Runtime 目录
   const runtimeDir = join(root, '.testpilot', 'artifacts')
   await mkdir(runtimeDir, { recursive: true })
   const keep = join(runtimeDir, '.gitkeep')
@@ -92,7 +144,7 @@ export async function initTestPilotConfig(
     await writeFile(keep, '', 'utf8')
   }
 
-  // 3. project.json:已有链接只补缺失字段,不重置 projectId(设计文档 §17)
+  // 4. project.json:已有链接只补缺失字段,不重置 projectId(设计文档 §17)
   const existing = await readProjectLink(root)
   const defaultAdapter = defaultAdapterFor(info.type)
   const serverUrl = process.env.TESTPILOT_SERVER_URL ?? undefined
@@ -114,7 +166,14 @@ export async function initTestPilotConfig(
   if (link.serverUrl === undefined && serverUrl) link.serverUrl = serverUrl
   const projectLinkFile = await writeProjectLink(link, root)
 
-  return { yaml, runtimeDir: join(root, '.testpilot'), projectLink: link, projectLinkFile }
+  return {
+    yaml,
+    runtimeDir: join(root, '.testpilot'),
+    projectLink: link,
+    projectLinkFile,
+    envExample,
+    gitignore,
+  }
 }
 
 /** 在 Server 上注册项目并返回 projectId;Server 不可达时退化为本地模式 ID */
