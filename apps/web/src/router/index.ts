@@ -31,6 +31,12 @@ export const router = createRouter({
       name: 'workspace-detail',
       component: () => import('../pages/workspaces/WorkspaceDetailPage.vue'),
     },
+    { path: '/agent', name: 'agent', component: () => import('../pages/agent/AgentJobsPage.vue') },
+    {
+      path: '/agent/:id',
+      name: 'agent-job',
+      component: () => import('../pages/agent/AgentJobDetailPage.vue'),
+    },
     { path: '/reports', name: 'reports', component: () => import('../pages/reports/ReportsPage.vue') },
   ],
 })

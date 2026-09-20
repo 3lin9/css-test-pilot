@@ -4,12 +4,26 @@ import {
   createProject,
   getProjectOrThrow,
   listProjectsWithCounts,
+  openLocalProject,
 } from '../services/project-service'
 import { getSyncStatus } from '../services/metadata-sync-service'
+import { pickFolderNative } from '../services/fs-browse'
 
 export function registerProjectRoutes(app: FastifyInstance, ctx: ServerContext): void {
   app.get('/api/projects', async () => {
     return { projects: await listProjectsWithCounts(ctx.db) }
+  })
+
+  /** 弹出操作系统自带选文件夹对话框(与 Server 同机桌面会话) */
+  app.post('/api/fs/pick-folder', async () => {
+    return pickFolderNative({ title: '选择业务项目根目录' })
+  })
+
+  /** 打开本地目录并登记为可写项目(幂等) */
+  app.post('/api/projects/open', async (request, reply) => {
+    const body = (request.body ?? {}) as { rootPath?: string }
+    const project = await openLocalProject(ctx.db, body.rootPath ?? '')
+    return reply.code(200).send(project)
   })
 
   /** 注册项目(init / API 创建);可只登记 Git 信息而不提供本地根目录 */

@@ -6,7 +6,9 @@ import fastifyStatic from '@fastify/static'
 import { resolveRoot } from '@testpilot/sdk'
 import type { AdapterFactory } from '@testpilot/adapter-core'
 import { openDatabase, type Db } from './db'
+import { AgentOrchestrator } from './orchestrator/agent-orchestrator'
 import { RunOrchestrator } from './orchestrator/run-orchestrator'
+import { registerAgentRoutes } from './routes/agent'
 import { registerArtifactRoutes } from './routes/artifacts'
 import { registerCaseRoutes } from './routes/cases'
 import { registerHealthRoutes } from './routes/health'
@@ -20,6 +22,7 @@ import { registerProject, type ProjectRow } from './services/project-service'
 export interface ServerContext {
   db: Db
   orchestrator: RunOrchestrator
+  agentOrchestrator: AgentOrchestrator
   /** 默认项目(服务启动时按根目录注册) */
   defaultProject: ProjectRow
 }
@@ -46,8 +49,26 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Tes
   const db = openDatabase({ root, dbPath: options.dbPath })
   const defaultProject = await registerProject(db, root)
   const orchestrator = new RunOrchestrator(db, { adapters: options.adapters })
+  const agentOrchestrator = new AgentOrchestrator(db)
 
   const app = Fastify({ logger: options.logger ?? false })
+
+  // 无 body 的动作型 POST(如弹系统选文件夹)可能带任意 content-type,一律当空 body 放行
+  app.addContentTypeParser('*', (_request, payload, done) => {
+    let raw = ''
+    payload.on('data', (chunk: Buffer | string) => {
+      raw += chunk.toString()
+    })
+    payload.on('end', () => {
+      const text = raw.trim()
+      if (!text) return done(null, undefined)
+      try {
+        done(null, JSON.parse(text) as unknown)
+      } catch {
+        done(null, text)
+      }
+    })
+  })
 
   // 服务层抛出的 statusCode 优先;其余一律 500
   app.setErrorHandler((error: Error & { statusCode?: number }, _request, reply: FastifyReply) => {
@@ -56,11 +77,12 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Tes
     void reply.code(statusCode).send({ error: error.message })
   })
 
-  const ctx: ServerContext = { db, orchestrator, defaultProject }
+  const ctx: ServerContext = { db, orchestrator, agentOrchestrator, defaultProject }
   registerHealthRoutes(app, ctx)
   registerProjectRoutes(app, ctx)
   registerCaseRoutes(app, ctx)
   registerRunRoutes(app, ctx)
+  registerAgentRoutes(app, ctx)
   registerReportRoutes(app, ctx)
   registerIntegrationRoutes(app, ctx)
   registerWorkspaceRoutes(app, ctx)
@@ -83,7 +105,7 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Tes
     app,
     ctx,
     async close() {
-      await orchestrator.waitAll()
+      await Promise.all([orchestrator.waitAll(), agentOrchestrator.waitAll()])
       await app.close()
     },
   }

@@ -185,3 +185,38 @@ export const reports = sqliteTable('reports', {
   jsonPath: text('json_path').notNull(),
   htmlPath: text('html_path').notNull(),
 })
+
+/**
+ * Agent Job:Web/API 触发的 Case 编排任务。
+ * Agent 在 project.rootPath 工作区写 YAML;不入 Case Index(仍需 git push + sync-metadata)。
+ */
+export const agentJobs = sqliteTable('agent_jobs', {
+  id: text('id').primaryKey(),
+  projectId: integer('project_id')
+    .notNull()
+    .references(() => projects.id),
+  status: text('status').notNull(), // queued | running | passed | failed | cancelled
+  prompt: text('prompt').notNull(),
+  runAfterCreate: integer('run_after_create').notNull().default(0),
+  overwrite: integer('overwrite').notNull().default(0),
+  /** 显式 Case 相对路径(可选) */
+  fileHint: text('file_hint'),
+  caseFile: text('case_file'),
+  caseId: text('case_id'),
+  runId: text('run_id'),
+  message: text('message'),
+  nextStepsJson: text('next_steps_json'),
+  startedAt: text('started_at').notNull(),
+  finishedAt: text('finished_at'),
+})
+
+export const agentJobEvents = sqliteTable('agent_job_events', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  jobId: text('job_id')
+    .notNull()
+    .references(() => agentJobs.id),
+  seq: integer('seq').notNull(),
+  type: text('type').notNull(),
+  payloadJson: text('payload_json').notNull(),
+  ts: text('ts').notNull(),
+})

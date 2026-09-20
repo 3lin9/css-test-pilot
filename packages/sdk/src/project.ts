@@ -1,15 +1,33 @@
 import { mkdir, readFile, stat, writeFile } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
+import { existsSync } from 'node:fs'
+import { dirname, join, resolve } from 'node:path'
 import { loadTestpilotConfig, TESTPILOT_DIR, type TestpilotConfig } from '@testpilot/core'
 
 /** SDK 根目录约定:所有项目内路径都相对该目录解析 */
 export interface ProjectOptions {
-  /** 业务项目根目录,默认 process.cwd() */
+  /** 业务项目根目录,默认从 process.cwd() 向上查找(包含 testpilot.yaml 或 .testpilot/ 的目录) */
   root?: string
 }
 
+/**
+ * 锚定业务项目根目录:
+ * 显式指定 root 时原样使用;未指定时从 process.cwd() 逐级向上查找
+ * testpilot.yaml / .testpilot/,保证在项目子目录里执行命令也能正确定位(与 npm 找 package.json 同理)。
+ * 找不到时保持原目录(兼容未接入的项目)。
+ */
 export function resolveRoot(root?: string): string {
-  return resolve(root ?? process.cwd())
+  const start = resolve(root ?? process.cwd())
+  if (root) return start
+
+  let current = start
+  for (;;) {
+    if (existsSync(join(current, 'testpilot.yaml')) || existsSync(join(current, TESTPILOT_DIR))) {
+      return current
+    }
+    const parent = dirname(current)
+    if (parent === current) return start
+    current = parent
+  }
 }
 
 /** 读取业务项目的 testpilot.yaml(不存在时返回默认配置;testpilot.yaml 始终是 Source of Truth) */

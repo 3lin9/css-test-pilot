@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@fastify/static": "^8.0.0",
+    "@testpilot/agent": "workspace:^",
     "@testpilot/sdk": "workspace:^",
     "better-sqlite3": "^12.0.0",
     "drizzle-orm": "^0.44.0",

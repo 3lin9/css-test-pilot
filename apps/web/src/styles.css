@@ -230,7 +230,96 @@ a:hover { text-decoration: underline; }
 .badge.running { background: #fdf3dc; color: #a97a0c; }
 .badge.skipped { background: #eef0f6; color: #64748b; }
 .badge.cancelled, .badge.deleted, .badge.unknown { background: #eceef4; color: #6b7280; }
+.badge.queued { background: #e9edff; color: var(--indigo); }
 .badge.ok { background: #e2f7f0; color: #0c8f6f; }
+
+button.ghost { background: transparent; }
+
+.btn-link {
+  display: inline-flex;
+  align-items: center;
+  font: inherit;
+  font-weight: 600;
+  padding: 7px 16px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+}
+.btn-link:hover { background: #f6f7fb; text-decoration: none; }
+
+textarea.agent-prompt {
+  width: 100%;
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 1.45;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: #fff;
+  resize: vertical;
+}
+textarea.agent-prompt:focus { outline: 2px solid rgba(75, 107, 251, 0.25); border-color: var(--indigo); }
+
+.check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  margin-right: 12px;
+}
+
+.agent-arch {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 18px 22px 16px;
+  margin-bottom: 20px;
+  text-align: center;
+}
+.agent-arch-node {
+  display: inline-block;
+  min-width: 140px;
+  padding: 10px 16px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: #f7f8fc;
+  font-weight: 700;
+  margin: 6px;
+}
+.agent-arch-node.accent {
+  background: #e9edff;
+  border-color: #c3ccfd;
+  color: var(--indigo);
+}
+.agent-arch-node span {
+  display: block;
+  font-weight: 500;
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+.agent-arch-split { display: flex; justify-content: center; gap: 12px; flex-wrap: wrap; }
+.agent-arch-flow { color: var(--muted); font-size: 12px; letter-spacing: 0.04em; margin-top: 8px; }
+
+.agent-lanes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+@media (max-width: 960px) {
+  .agent-lanes { grid-template-columns: 1fr; }
+}
+
+.next-steps {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.next-steps li { margin: 6px 0; }
 
 /* ---- 条形码式运行历史 ---- */
 

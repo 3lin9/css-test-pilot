@@ -1,5 +1,7 @@
 import type {
   ArtifactFile,
+  AgentJob,
+  AgentJobEvent,
   CaseView,
   Environment,
   Project,
@@ -13,10 +15,12 @@ import type {
 } from './types'
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, {
-    headers: { 'content-type': 'application/json' },
-    ...init,
-  })
+  const headers = new Headers(init?.headers)
+  // Fastify:带 application/json 时 body 不能为空;无 body 的 POST(如选文件夹)不要设该头
+  if (init?.body !== undefined && !headers.has('content-type')) {
+    headers.set('content-type', 'application/json')
+  }
+  const res = await fetch(url, { ...init, headers })
   if (!res.ok) {
     let detail = ''
     try {
@@ -38,6 +42,11 @@ export const api = {
   project: (id: number) => request<Project>(`/api/projects/${id}`),
   createProject: (body: { name: string; repositoryUrl?: string; rootPath?: string; defaultBranch?: string }) =>
     request<Project>('/api/projects', { method: 'POST', body: JSON.stringify(body) }),
+  openProject: (rootPath: string) =>
+    request<Project>('/api/projects/open', { method: 'POST', body: JSON.stringify({ rootPath }) }),
+  /** 本机 Server 弹出系统选文件夹对话框 */
+  pickFolder: () =>
+    request<{ path: string | null; cancelled: boolean }>('/api/fs/pick-folder', { method: 'POST' }),
   syncStatus: (id: number) => request<SyncStatus>(`/api/projects/${id}/sync-status`),
   environments: (id: number) =>
     request<{ environments: Environment[] }>(`/api/projects/${id}/environments`).then((r) => r.environments),
@@ -94,4 +103,28 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(body),
     }),
+
+  // ---- agent jobs ----
+  agentJobs: (filter: { projectId?: number; status?: string } = {}) => {
+    const params = new URLSearchParams()
+    if (filter.projectId !== undefined) params.set('projectId', String(filter.projectId))
+    if (filter.status) params.set('status', filter.status)
+    const query = params.toString()
+    return request<{ jobs: AgentJob[] }>(`/api/agent/jobs${query ? `?${query}` : ''}`).then((r) => r.jobs)
+  },
+  projectAgentJobs: (projectId: number) =>
+    request<{ jobs: AgentJob[] }>(`/api/projects/${projectId}/agent/jobs`).then((r) => r.jobs),
+  agentJob: (id: string) => request<AgentJob>(`/api/agent/jobs/${id}`),
+  agentJobEvents: (id: string) =>
+    request<{ events: AgentJobEvent[] }>(`/api/agent/jobs/${id}/events`).then((r) => r.events),
+  createAgentJob: (
+    projectId: number,
+    body: { prompt: string; runAfterCreate?: boolean; overwrite?: boolean; file?: string },
+  ) =>
+    request<AgentJob>(`/api/projects/${projectId}/agent/jobs`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  cancelAgentJob: (id: string) =>
+    request<AgentJob>(`/api/agent/jobs/${id}/cancel`, { method: 'POST' }),
 }

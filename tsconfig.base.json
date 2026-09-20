@@ -27,7 +27,8 @@
       "@testpilot/adapter-wechatide": ["packages/adapter-wechatide/src/index.ts"],
       "@testpilot/evidence": ["packages/evidence/src/index.ts"],
       "@testpilot/reporter": ["packages/reporter/src/index.ts"],
-      "@testpilot/sdk": ["packages/sdk/src/index.ts"]
+      "@testpilot/sdk": ["packages/sdk/src/index.ts"],
+      "@testpilot/agent": ["apps/agent/src/index.ts"]
     }
   }
 }

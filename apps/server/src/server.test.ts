@@ -1,6 +1,6 @@
 import { mkdir, mkdtemp, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { afterAll, beforeAll, describe, expect, test } from 'vitest'
 import type { AdapterFactory, TestAdapter } from '@testpilot/adapter-core'
 import { buildServer, type TestPilotServer } from './server'
@@ -155,6 +155,24 @@ describe('server:control-plane', () => {
   test('GET /api/projects/:id 404', async () => {
     const res = await server.app.inject({ method: 'GET', url: '/api/projects/999' })
     expect(res.statusCode).toBe(404)
+  })
+
+  test('打开本地文件夹:open 幂等登记 rootPath', async () => {
+    const extra = await mkdtemp(join(tmpdir(), 'testpilot-open-'))
+    const opened = await server.app.inject({
+      method: 'POST',
+      url: '/api/projects/open',
+      payload: { rootPath: extra },
+    })
+    expect(opened.statusCode).toBe(200)
+    expect(opened.json().rootPath).toBe(resolve(extra))
+
+    const again = await server.app.inject({
+      method: 'POST',
+      url: '/api/projects/open',
+      payload: { rootPath: extra },
+    })
+    expect(again.json().id).toBe(opened.json().id)
   })
 
   test('cases/sync 快照同步:新增 -> 删除 -> sync-status', async () => {
@@ -433,5 +451,73 @@ describe('server:control-plane', () => {
     const res = await server.app.inject({ method: 'GET', url: '/api/runs' })
     expect(res.statusCode).toBe(200)
     expect(res.json().runs.length).toBeGreaterThanOrEqual(3)
+  })
+
+  test('POST Agent Job:在业务项目工作区写入 Case', async () => {
+    const projectId = server.ctx.defaultProject.id
+    const res = await server.app.inject({
+      method: 'POST',
+      url: `/api/projects/${projectId}/agent/jobs`,
+      payload: {
+        prompt: `\`\`\`yaml
+id: from-agent-api
+name: 来自 Agent API
+tags:
+  - agent
+steps:
+  - target: web
+    action: navigate
+    url: /
+  - target: web
+    action: screenshot
+\`\`\``,
+      },
+    })
+    expect(res.statusCode).toBe(202)
+    const job = res.json() as { id: string; status: string }
+    expect(job.id).toMatch(/^agent-/)
+    expect(['queued', 'running', 'passed']).toContain(job.status)
+
+    await server.ctx.agentOrchestrator.wait(job.id)
+    const detail = await server.app.inject({ method: 'GET', url: `/api/agent/jobs/${job.id}` })
+    expect(detail.statusCode).toBe(200)
+    const body = detail.json() as {
+      status: string
+      caseFile: string
+      caseId: string
+      nextSteps: string[]
+    }
+    expect(body.status).toBe('passed')
+    expect(body.caseId).toBe('from-agent-api')
+    expect(body.caseFile).toBe('tests/e2e/cases/from-agent-api.yaml')
+    expect(body.nextSteps.some((step) => step.includes('sync-metadata'))).toBe(true)
+
+    const events = await server.app.inject({
+      method: 'GET',
+      url: `/api/agent/jobs/${job.id}/events`,
+    })
+    expect(events.statusCode).toBe(200)
+    expect(events.json().events.some((item: { type: string }) => item.type === 'case-written')).toBe(
+      true,
+    )
+
+    const list = await server.app.inject({
+      method: 'GET',
+      url: `/api/projects/${projectId}/agent/jobs`,
+    })
+    expect(list.json().jobs.some((item: { id: string }) => item.id === job.id)).toBe(true)
+
+    const all = await server.app.inject({ method: 'GET', url: '/api/agent/jobs' })
+    expect(all.statusCode).toBe(200)
+    expect(all.json().jobs.some((item: { id: string }) => item.id === job.id)).toBe(true)
+  })
+
+  test('Agent Job 无 prompt 时 422', async () => {
+    const res = await server.app.inject({
+      method: 'POST',
+      url: `/api/projects/${server.ctx.defaultProject.id}/agent/jobs`,
+      payload: { prompt: '  ' },
+    })
+    expect(res.statusCode).toBe(422)
   })
 })

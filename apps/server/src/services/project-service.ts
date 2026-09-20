@@ -1,4 +1,5 @@
-import { basename } from 'node:path'
+import { existsSync, statSync } from 'node:fs'
+import { basename, resolve } from 'node:path'
 import { inspectProject, TestPilotClient } from '@testpilot/sdk'
 import type { Db } from '../db'
 import {
@@ -106,6 +107,19 @@ export async function getProjectOrThrow(db: Db, id: number): Promise<ProjectRow>
     throw Object.assign(new Error(`项目不存在:${id}`), { statusCode: 404 })
   }
   return row
+}
+
+/** 打开本地目录:校验存在后按 rootPath 幂等注册(与 csspilot init 的项目关联同思路) */
+export async function openLocalProject(db: Db, rootPath: string): Promise<ProjectRow> {
+  const trimmed = rootPath?.trim()
+  if (!trimmed) {
+    throw Object.assign(new Error('请提供本地目录路径'), { statusCode: 400 })
+  }
+  const root = resolve(trimmed)
+  if (!existsSync(root) || !statSync(root).isDirectory()) {
+    throw Object.assign(new Error(`本地目录不存在或不是文件夹:${root}`), { statusCode: 422 })
+  }
+  return registerProject(db, root)
 }
 
 /** 可本地执行的项目的 SDK 客户端 */

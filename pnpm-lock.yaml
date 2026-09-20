@@ -48,6 +48,22 @@ importers:
         specifier: ^3.0.0
         version: 3.2.7(@types/node@22.20.2)(tsx@4.23.13)(yaml@2.9.0)
 
+  apps/agent:
+    dependencies:
+      '@testpilot/core':
+        specifier: workspace:^
+        version: link:../../packages/core
+      '@testpilot/sdk':
+        specifier: workspace:^
+        version: link:../../packages/sdk
+    devDependencies:
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.20.2
+      typescript:
+        specifier: ^5.5.0
+        version: 5.9.3
+
   apps/cli:
     dependencies:
       miniprogram-automator:
@@ -84,6 +100,9 @@ importers:
       '@fastify/static':
         specifier: ^8.0.0
         version: 8.3.0
+      '@testpilot/agent':
+        specifier: workspace:^
+        version: link:../agent
       '@testpilot/sdk':
         specifier: workspace:^
         version: link:../../packages/sdk

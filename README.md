@@ -22,8 +22,8 @@ AI → .agents/skills/testpilot(规范) → TestPilot CLI → DSL → Execution 
 ├── apps/
 │   ├── cli/                 # CLI(npm 包名 csspilot):init/validate/list/run/report/doctor
 │   ├── server/              # Control Plane API(Fastify + SQLite + Drizzle)
-│   ├── web/                 # 测试控制台(增量设计,待实现)
-│   └── agent/               # AI 测试编排 Agent(增量设计,待实现)
+│   ├── web/                 # 测试控制台(Vue 3:项目 / Case Index / Run / Agent Job)
+│   └── agent/               # TestPilot AI:Planner + Analysis(经 Skill → SDK → Engine)
 ├── packages/                # 内部共享包,统一 scope @testpilot
 │   ├── core/                # 通用类型、错误、常量、配置模型(testpilot.yaml)
 │   ├── dsl/                 # 用例 DSL:schema(zod)/ parser(yaml)/ validator
@@ -90,7 +90,7 @@ Phase 8  TestPilot Skill 完善(✓ rules/workflows 与实现对齐,随真实使
 Phase 9  SDK @testpilot/sdk(✓ client/project/cases/runs/reports;CLI 已改为统一走 SDK;引擎支持取消)
 Phase 10 Backend Control Plane + Git Metadata Sync(✓ Fastify + SQLite + Drizzle;快照式 Case 同步 + Run 编排)
 Phase 11 Web 测试控制台(✓ Vue 3 + Vite:项目概览 / Case Index / Run 详情(Step 级结果 + 截图/日志/Trace)/ 同步状态;Server 静态托管)
-Phase 12 Agent(待实现:需求 → 发现 → 生成 Case → validate → run → 分析)
+Phase 12 Agent(✓ Web→Server→AgentOrchestrator→apps/agent;在 rootPath 写 YAML;push+sync-metadata 后进 Case Index)
 ```
 
 ## SDK 与 Control Plane(增量)
@@ -126,8 +126,12 @@ POST /api/runs                   GET  /api/runs
 GET  /api/runs/:id               GET  /api/runs/:id/events
 POST /api/runs/:id/cancel        GET  /api/runs/:id/report
 GET  /api/runs/:id/summary       GET  /api/runs/:id/artifacts[/*]
+POST /api/projects/:id/agent/jobs   GET /api/projects/:id/agent/jobs
+GET  /api/agent/jobs/:id            GET /api/agent/jobs/:id/events
+POST /api/agent/jobs/:id/cancel
 ```
 
+- **Agent**(apps/agent):`TestPilot AI` = **Planner Agent**(规划/写 Case/validate/可选 run) + **Analysis Agent**(归因失败与建议)。经 Skill → `@testpilot/sdk` → Execution Engine;在项目 `rootPath` 落盘 YAML,**不**写入 Server Case Index。团队可见仍走 `git push` → `csspilot sync-metadata`。Web 项目详情页可提交 Job 并查看事件流。
 - **Web 控制台**(apps/web,Vue 3 + Vite):仪表盘、项目列表/概览(Git 同步状态)、Case Index(active/deleted 过滤,可查看 DSL 源文件)、运行列表、Run 详情(Step 级结果、失败原因、截图内联预览、日志 / Trace / video 下载)、报告按需生成。生产形态由 Server 静态托管 `apps/web/dist`,单进程部署。
 
 - **分支即测试环境**:同一 Case 可同时存在于多个分支(main→TEST、release→STAGING...);快照同步按分支作用域执行,互不影响;环境可绑定分支,Case Index 按环境(分支)筛选。

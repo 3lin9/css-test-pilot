@@ -13,7 +13,7 @@ export interface DbOptions {
 }
 
 /** 当前 schema 版本;结构变更时递增,V0.1 阶段直接重建(尚无需要保留的存量数据) */
-const SCHEMA_VERSION = 3
+const SCHEMA_VERSION = 4
 
 /** 打开 SQLite 并确保表结构存在(版本不匹配时重建) */
 export function openDatabase(options: DbOptions = {}): Db {
@@ -33,9 +33,12 @@ function ensureSchema(sqlite: Database.Database): void {
   const current = sqlite.pragma('user_version', { simple: true }) as number
   if (current !== SCHEMA_VERSION) {
     sqlite.exec(`
+      DROP TABLE IF EXISTS agent_job_events;
+      DROP TABLE IF EXISTS agent_jobs;
       DROP TABLE IF EXISTS reports;
       DROP TABLE IF EXISTS run_events;
       DROP TABLE IF EXISTS runs;
+      DROP TABLE IF EXISTS environment_secrets;
       DROP TABLE IF EXISTS workspace_bindings;
       DROP TABLE IF EXISTS workspaces;
       DROP TABLE IF EXISTS case_branches;
@@ -158,6 +161,33 @@ function ensureSchema(sqlite: Database.Database): void {
       json_path TEXT NOT NULL,
       html_path TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS agent_jobs (
+      id TEXT PRIMARY KEY,
+      project_id INTEGER NOT NULL REFERENCES projects(id),
+      status TEXT NOT NULL,
+      prompt TEXT NOT NULL,
+      run_after_create INTEGER NOT NULL DEFAULT 0,
+      overwrite INTEGER NOT NULL DEFAULT 0,
+      file_hint TEXT,
+      case_file TEXT,
+      case_id TEXT,
+      run_id TEXT,
+      message TEXT,
+      next_steps_json TEXT,
+      started_at TEXT NOT NULL,
+      finished_at TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS agent_job_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      job_id TEXT NOT NULL REFERENCES agent_jobs(id),
+      seq INTEGER NOT NULL,
+      type TEXT NOT NULL,
+      payload_json TEXT NOT NULL,
+      ts TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS agent_job_events_job_seq ON agent_job_events (job_id, seq);
   `)
 
   sqlite.pragma(`user_version = ${SCHEMA_VERSION}`)

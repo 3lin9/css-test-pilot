@@ -2,7 +2,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { api } from '../../api/client'
-import type { Environment, Project, Run, SyncStatus } from '../../api/types'
+import type { AgentJob, Environment, Project, Run, SyncStatus } from '../../api/types'
 import RunBars from '../../components/RunBars.vue'
 import StatCard from '../../components/StatCard.vue'
 import StatusBadge from '../../components/StatusBadge.vue'
@@ -15,6 +15,7 @@ const project = ref<Project>()
 const sync = ref<SyncStatus>()
 const environments = ref<Environment[]>([])
 const runs = ref<Run[]>([])
+const agentJobs = ref<AgentJob[]>([])
 const error = ref('')
 const creatingRun = ref(false)
 
@@ -28,6 +29,7 @@ async function load(): Promise<void> {
     sync.value = await api.syncStatus(id.value).catch(() => undefined)
     environments.value = await api.environments(id.value).catch(() => [])
     runs.value = (await api.runs({ projectId: id.value })).slice(0, 10)
+    agentJobs.value = (await api.agentJobs({ projectId: id.value })).slice(0, 8)
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err)
   }
@@ -91,9 +93,12 @@ const envByBranch = computed(() => {
         <h1 class="page-title">{{ project?.name ?? '...' }}</h1>
         <p class="page-sub mono">{{ project?.repositoryUrl ?? '' }}</p>
       </div>
-      <button class="primary" :disabled="creatingRun" @click="newRun">
-        {{ creatingRun ? '启动中…' : '+ NEW RUN' }}
-      </button>
+      <div class="form-row">
+        <RouterLink class="btn-link" :to="`/agent?project=${id}`">TestPilot AI</RouterLink>
+        <button class="primary" :disabled="creatingRun" @click="newRun">
+          {{ creatingRun ? '启动中…' : '+ NEW RUN' }}
+        </button>
+      </div>
     </div>
   </div>
 
@@ -104,6 +109,30 @@ const envByBranch = computed(() => {
     <StatCard :value="sync?.branches?.length ?? '-'" label="测试分支" tone="purple" icon="folder" />
     <StatCard :value="passedRuns()" label="最近运行 Passed" tone="green" icon="check" />
     <StatCard :value="failedRuns()" label="最近运行 Failed" tone="red" icon="x" />
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">
+      <div>
+        <h3>TestPilot AI</h3>
+        <p class="panel-desc">Planner 写 Case，Analysis 看结果。完整编排见 AI 页。</p>
+      </div>
+      <RouterLink :to="`/agent?project=${id}`">新建任务 →</RouterLink>
+    </div>
+    <table v-if="agentJobs.length">
+      <thead>
+        <tr><th>Job</th><th>状态</th><th>Case</th><th>开始时间</th></tr>
+      </thead>
+      <tbody>
+        <tr v-for="job in agentJobs" :key="job.id">
+          <td><RouterLink :to="`/agent/${job.id}`">{{ job.id }}</RouterLink></td>
+          <td><StatusBadge :status="job.status" /></td>
+          <td class="mono">{{ job.caseId ?? '-' }}</td>
+          <td>{{ formatTime(job.startedAt) }}</td>
+        </tr>
+      </tbody>
+    </table>
+    <div v-else class="empty">暂无 Agent 任务</div>
   </div>
 
   <div class="panel">
