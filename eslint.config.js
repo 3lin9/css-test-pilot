@@ -2,7 +2,7 @@ import js from '@eslint/js'
 import tseslint from 'typescript-eslint'
 
 export default tseslint.config(
-  { ignores: ['**/dist/**', '**/node_modules/**', '**/.turbo/**', '**/artifacts/**', '**/.tmp*/**'] },
+  { ignores: ['**/dist/**', '**/node_modules/**', '**/.turbo/**', '**/artifacts/**', '**/.tmp*/**', 'docs/slides-src/**'] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
