@@ -26,6 +26,10 @@ export interface TestAdapter {
   startEvidence?(caseId: string): Promise<void>
   /** [可选能力] 结束取证并返回产物字节;与 startEvidence 成对调用 */
   stopEvidence?(caseId: string): Promise<AdapterEvidence>
+  /** [可选能力] 开始采集当前 UI 会话发出的网络请求 */
+  startRequestCapture?(): Promise<void>
+  /** [可选能力] 停止采集并返回请求摘要 */
+  stopRequestCapture?(): Promise<CapturedRequest[]>
 
   // ---- [可选能力] API 端(target: api) ----
 
@@ -35,6 +39,11 @@ export interface TestAdapter {
   assertResponse?(expected: string): Promise<void>
   /** 按点号 JSON path(如 data.orderId / items.0.id)从最近一次响应提取值 */
   extractResponse?(path: string): Promise<string>
+}
+
+export interface CapturedRequest {
+  method: string
+  url: string
 }
 
 /** api target:request action 的请求描述 */

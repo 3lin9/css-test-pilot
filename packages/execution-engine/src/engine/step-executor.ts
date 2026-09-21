@@ -1,4 +1,4 @@
-import { redactHeaders, type TestAdapter } from '@testpilot/adapter-core'
+import { redactHeaders, type CapturedRequest, type TestAdapter } from '@testpilot/adapter-core'
 import type { StepResult } from '@testpilot/core'
 import type { TestStep } from '@testpilot/dsl'
 import type { ArtifactManager } from '../artifacts'
@@ -32,6 +32,7 @@ export async function executeStep(
     status: 'passed',
     durationMs: 0,
   }
+  let captureStarted = false
 
   try {
     // locator 支持 ${var} 模板解析(动态元素定位,如 .order-row-${orderId})
@@ -41,6 +42,14 @@ export async function executeStep(
           css: step.locator.css !== undefined ? context.resolve(step.locator.css) : undefined,
         }
       : undefined
+
+    if (step.expectRequests) {
+      if (!adapter.startRequestCapture || !adapter.stopRequestCapture) {
+        throw new Error(`当前 ${step.target} adapter 不支持请求次数断言`)
+      }
+      await adapter.startRequestCapture()
+      captureStarted = true
+    }
 
     switch (step.action) {
       case 'launch':
@@ -122,7 +131,34 @@ export async function executeStep(
         throw new Error(`不支持的 action:${String(exhaustive)}`)
       }
     }
+
+    if (step.expectRequests) {
+      const windowMs = Math.max(...step.expectRequests.map((item) => item.windowMs))
+      if (windowMs > 0) await delay(windowMs)
+      const requests = await adapter.stopRequestCapture!()
+      captureStarted = false
+      result.requestAssertions = buildRequestAssertions(step, requests, context)
+      const mismatches = result.requestAssertions.filter((item) => item.actualCount !== item.count)
+      if (mismatches.length > 0) {
+        throw new Error(
+          mismatches
+            .map(
+              (item) =>
+                `请求次数不匹配:${item.method ?? '*'} ${item.urlContains},实际 ${item.actualCount},期望 ${item.count}`,
+            )
+            .join('; '),
+        )
+      }
+    }
   } catch (err) {
+    if (captureStarted) {
+      try {
+        await adapter.stopRequestCapture?.()
+      } catch {
+        // 尽力恢复请求观察器;保留原始动作错误。
+      }
+      captureStarted = false
+    }
     result.status = 'failed'
     result.error = err instanceof Error ? err.message : String(err)
     try {
@@ -181,4 +217,40 @@ function resolveDeep(value: unknown, context: ExecutionContext): unknown {
 
 function snippet(text: string, limit = SNIPPET_LIMIT): string {
   return text.length > limit ? `${text.slice(0, limit)}…` : text
+}
+
+function buildRequestAssertions(
+  step: TestStep,
+  requests: CapturedRequest[],
+  context: ExecutionContext,
+): NonNullable<StepResult['requestAssertions']> {
+  return (step.expectRequests ?? []).map((expectation) => {
+    const method = expectation.method?.toUpperCase()
+    const urlContains = context.resolve(expectation.urlContains)
+    const matches = requests.filter(
+      (request) =>
+        (!method || request.method.toUpperCase() === method) && request.url.includes(urlContains),
+    )
+    return {
+      method,
+      urlContains: expectation.urlContains,
+      count: expectation.count,
+      actualCount: matches.length,
+      windowMs: expectation.windowMs,
+      requests: matches.slice(0, 20).map((request) => ({
+        method: request.method.toUpperCase(),
+        url: sanitizeRequestUrl(request.url),
+      })),
+    }
+  })
+}
+
+function sanitizeRequestUrl(url: string): string {
+  const queryIndex = url.indexOf('?')
+  const safe = queryIndex >= 0 ? `${url.slice(0, queryIndex)}?<redacted>` : url
+  return snippet(safe, 300)
+}
+
+function delay(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds))
 }

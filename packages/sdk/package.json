@@ -16,7 +16,8 @@
     "@testpilot/core": "workspace:^",
     "@testpilot/dsl": "workspace:^",
     "@testpilot/execution-engine": "workspace:^",
-    "@testpilot/reporter": "workspace:^"
+    "@testpilot/reporter": "workspace:^",
+    "yaml": "^2.5.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

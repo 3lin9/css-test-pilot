@@ -48,6 +48,10 @@ environment:
   staging:
     baseUrl: \${STAGING_BASE_URL}
 
+# Case 可见的项目变量白名单(值来自 .env / CI Secret;Case 用 \${variable.<name>} 引用)
+# variables:
+#   ppmProjectId: \${PPM_PROJECT_ID}
+
 # 项目声明的执行端(实际可用性以 csspilot doctor 检测为准)
 adapters:
 ${adapters}

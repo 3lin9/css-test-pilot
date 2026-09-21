@@ -103,6 +103,7 @@ function classify(
 ): AnalysisReport['verdict'] {
   if (summary.cancelled) return 'cancelled'
   if (summary.status === 'passed') return 'passed'
+  if (summary.status === 'skipped') return 'skipped'
   if (isDraft) return 'draft-placeholder'
   const errors = failedSteps.map((step) => (step.error ?? '').toLowerCase()).join(' ')
   if (/timeout|timed out/.test(errors)) return 'timeout'
@@ -121,6 +122,9 @@ function buildSuggestions(
   switch (verdict) {
     case 'passed':
       tips.push('结果通过:commit Case 后 push,CI sync-metadata 进入团队 Index')
+      break
+    case 'skipped':
+      tips.push('依赖未就绪:根据 missingDependencies 补充 fixture/dataset/account/variable 后重跑')
       break
     case 'draft-placeholder':
     case 'case-issue':

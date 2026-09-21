@@ -5,8 +5,8 @@ export interface ReportSummaryView {
   runId: string
   status: string
   durationMs: number
-  cases: { passed: number; failed: number }
-  steps: { total: number; passed: number; failed: number; skipped: number }
+  cases: { templates: number; passed: number; failed: number; skipped: number; warnings: number }
+  steps: { total: number; passed: number; failed: number; skipped: number; warning: number }
 }
 
 export function toSummaryView(summary: RunSummary): ReportSummaryView {
@@ -14,12 +14,19 @@ export function toSummaryView(summary: RunSummary): ReportSummaryView {
     runId: summary.runId,
     status: summary.status,
     durationMs: summary.durationMs,
-    cases: { passed: summary.totals.passed, failed: summary.totals.failed },
+    cases: {
+      templates: summary.totals.templates ?? summary.totals.cases,
+      passed: summary.totals.passed,
+      failed: summary.totals.failed,
+      skipped: summary.totals.skipped ?? 0,
+      warnings: summary.totals.warnings ?? 0,
+    },
     steps: {
       total: summary.totals.steps,
       passed: summary.totals.stepsPassed,
       failed: summary.totals.stepsFailed,
       skipped: summary.totals.stepsSkipped,
+      warning: summary.totals.stepsWarning ?? 0,
     },
   }
 }

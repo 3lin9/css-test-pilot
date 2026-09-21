@@ -190,6 +190,12 @@ function renderTestConventionsMd(): string {
 6. 优先复用已有 Case
 7. 新增 Case 必须通过 csspilot validate
 8. Case ID 必须唯一
+9. fixture/dataset 使用 YAML 或 JSON,统一位于 tests/e2e/data
+10. 需求规则矩阵与 QA 覆盖映射写入 tests/e2e/reviews/<需求>-coverage.md
+11. 只在步骤模板相同时使用 data-driven Case,每行保持一个可判定规则/数据点
+12. requires 只声明项目证据支持的依赖,不得套用账号/优惠券/PPM 等默认字段
+13. Case 不得读取任意环境变量;先在 testpilot.yaml variables 白名单映射后使用 \${variable.*}
+14. setup/teardown 优先 API;teardown 失败作为 warning,不改变主流程结果
 `
 }
 

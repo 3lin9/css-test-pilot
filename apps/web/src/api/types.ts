@@ -51,7 +51,7 @@ export interface SyncStatus {
   branches: BranchSyncStatus[]
 }
 
-export type RunStatus = 'running' | 'passed' | 'failed' | 'cancelled'
+export type RunStatus = 'running' | 'passed' | 'failed' | 'skipped' | 'cancelled'
 
 export interface Run {
   id: string
@@ -80,7 +80,8 @@ export interface StepResult {
   index: number
   target: string
   action: string
-  status: 'passed' | 'failed' | 'skipped'
+  status: 'passed' | 'failed' | 'skipped' | 'warning'
+  phase?: 'setup' | 'steps' | 'teardown'
   durationMs: number
   error?: string
   screenshot?: string
@@ -94,13 +95,23 @@ export interface StepResult {
     requestBody?: string
     responseSnippet?: string
   }
+  requestAssertions?: Array<{
+    method?: string
+    urlContains: string
+    count: number
+    actualCount: number
+    windowMs: number
+    requests: Array<{ method: string; url: string }>
+  }>
 }
 
 export interface CaseResult {
   caseId: string
   caseName: string
   file: string
-  status: 'passed' | 'failed'
+  rowId?: string
+  rowIndex?: number
+  status: 'passed' | 'failed' | 'skipped'
   steps: StepResult[]
   startedAt: string
   finishedAt: string
@@ -108,6 +119,9 @@ export interface CaseResult {
   error?: string
   video?: string
   trace?: string
+  skipReason?: 'dependency-not-ready'
+  missingDependencies?: string[]
+  warnings?: string[]
 }
 
 export interface RunSummary {
@@ -115,17 +129,21 @@ export interface RunSummary {
   startedAt: string
   finishedAt: string
   durationMs: number
-  status: 'passed' | 'failed'
+  status: 'passed' | 'failed' | 'skipped'
   cancelled?: boolean
   cases: CaseResult[]
   totals: {
+    templates?: number
     cases: number
     passed: number
     failed: number
+    skipped?: number
+    warnings?: number
     steps: number
     stepsPassed: number
     stepsFailed: number
     stepsSkipped: number
+    stepsWarning?: number
   }
 }
 

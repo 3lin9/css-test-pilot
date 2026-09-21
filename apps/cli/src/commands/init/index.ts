@@ -77,7 +77,7 @@ export async function runInit(root: string, options: InitOptions = {}): Promise<
   console.log(
     testStructure.cases === 'reused'
       ? '✓ 测试目录          tests/e2e(已存在,复用)'
-      : '✓ 测试目录          tests/e2e/{cases,fixtures,data}',
+      : '✓ 测试目录          tests/e2e/{cases,fixtures,data,reviews}',
   )
   if (reuseNote.length > 0) {
     console.log(`  ⚠ 检测到其他 E2E 目录:${reuseNote.join(', ')}(保留不动,未强制迁移)`)

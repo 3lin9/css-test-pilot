@@ -3,6 +3,7 @@ export type {
   AdapterFactory,
   ApiRequestInput,
   ApiResult,
+  CapturedRequest,
   TestAdapter,
 } from './adapter'
 export { redactHeaders } from './adapter'

@@ -24,6 +24,11 @@ export {
   type WriteCaseResult,
 } from './cases'
 export {
+  prepareCaseExecutions,
+  type PreparedCaseExecution,
+  type PrepareCaseOptions,
+} from './case-preparation'
+export {
   RunError,
   allocateRunId,
   createDefaultAdapters,

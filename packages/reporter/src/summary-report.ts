@@ -10,6 +10,7 @@ export interface SummaryRunInput {
 
 export interface SummaryCase {
   caseId: string
+  rowId?: string
   caseName: string
   /** 用例步骤中出现过的执行端(如 web / miniapp / api) */
   platforms: string[]
@@ -17,7 +18,7 @@ export interface SummaryCase {
   passed: number
   failed: number
   passRate: number
-  lastStatus: 'passed' | 'failed' | 'unknown'
+  lastStatus: 'passed' | 'failed' | 'skipped' | 'unknown'
   lastCategory?: FailureCategory
   /** 窗口内又过又挂(Flaky) */
   flaky: boolean
@@ -65,8 +66,10 @@ export function buildSummaryData(runs: readonly SummaryRunInput[]): SummaryRepor
   const executions: Array<{
     runId: string
     caseId: string
+    rowId?: string
+    identity: string
     caseName: string
-    status: 'passed' | 'failed'
+    status: 'passed' | 'failed' | 'skipped'
     category?: FailureCategory
     platforms: string[]
   }> = []
@@ -80,6 +83,8 @@ export function buildSummaryData(runs: readonly SummaryRunInput[]): SummaryRepor
       executions.push({
         runId,
         caseId: item.caseId,
+        rowId: item.rowId,
+        identity: item.rowId && item.rowId !== 'default' ? `${item.caseId}#${item.rowId}` : item.caseId,
         caseName: item.caseName,
         status: item.status,
         category,
@@ -98,10 +103,11 @@ export function buildSummaryData(runs: readonly SummaryRunInput[]): SummaryRepor
 
   const byCase = new Map<string, SummaryCase>()
   for (const exec of executions) {
-    let agg = byCase.get(exec.caseId)
+    let agg = byCase.get(exec.identity)
     if (!agg) {
       agg = {
         caseId: exec.caseId,
+        rowId: exec.rowId,
         caseName: exec.caseName,
         platforms: [],
         runs: 0,
@@ -111,18 +117,19 @@ export function buildSummaryData(runs: readonly SummaryRunInput[]): SummaryRepor
         lastStatus: 'unknown',
         flaky: false,
       }
-      byCase.set(exec.caseId, agg)
+      byCase.set(exec.identity, agg)
     }
     agg.runs++
     if (exec.status === 'passed') agg.passed++
-    else agg.failed++
+    else if (exec.status === 'failed') agg.failed++
     for (const platform of exec.platforms) {
       if (!agg.platforms.includes(platform)) agg.platforms.push(platform)
     }
   }
   for (const agg of byCase.values()) {
     // 输入按时间正序,最后一条即该用例的最近状态
-    const last = [...executions].reverse().find((exec) => exec.caseId === agg.caseId)
+    const identity = agg.rowId && agg.rowId !== 'default' ? `${agg.caseId}#${agg.rowId}` : agg.caseId
+    const last = [...executions].reverse().find((exec) => exec.identity === identity)
     agg.lastStatus = last?.status ?? 'unknown'
     agg.lastCategory = last?.category
     agg.passRate = agg.runs > 0 ? agg.passed / agg.runs : 0

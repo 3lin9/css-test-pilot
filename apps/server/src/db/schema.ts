@@ -147,7 +147,7 @@ export const runs = sqliteTable('runs', {
   projectId: integer('project_id')
     .notNull()
     .references(() => projects.id),
-  status: text('status').notNull(), // running | passed | failed | cancelled
+  status: text('status').notNull(), // running | passed | failed | skipped | cancelled
   trigger: text('trigger').notNull().default('api'),
   /** 执行时的 Git 上下文(本地非 git 项目可为空) */
   branch: text('branch'),

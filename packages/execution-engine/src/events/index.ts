@@ -4,11 +4,13 @@ import { dirname } from 'node:path'
 /** 运行期事件(以 NDJSON 落盘到 events.ndjson) */
 export type RunEvent =
   | { type: 'run-started'; runId: string; totalCases: number; ts: string }
-  | { type: 'case-started'; runId: string; caseId: string; file: string; ts: string }
+  | { type: 'case-started'; runId: string; caseId: string; rowId?: string; file: string; ts: string }
   | {
       type: 'step-started'
       runId: string
       caseId: string
+      rowId?: string
+      phase?: 'setup' | 'steps' | 'teardown'
       index: number
       target: string
       action: string
@@ -18,6 +20,8 @@ export type RunEvent =
       type: 'step-finished'
       runId: string
       caseId: string
+      rowId?: string
+      phase?: 'setup' | 'steps' | 'teardown'
       index: number
       target: string
       action: string
@@ -26,7 +30,15 @@ export type RunEvent =
       error?: string
       ts: string
     }
-  | { type: 'case-finished'; runId: string; caseId: string; status: string; durationMs: number; ts: string }
+  | {
+      type: 'case-finished'
+      runId: string
+      caseId: string
+      rowId?: string
+      status: string
+      durationMs: number
+      ts: string
+    }
   | {
       type: 'run-finished'
       runId: string

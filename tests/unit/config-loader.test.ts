@@ -16,11 +16,13 @@ afterAll(async () => {
   delete process.env.MISSING_VAR_X
   delete process.env.DOTENV_TEST_BASE
   delete process.env.DOTENV_PRIORITY
+  delete process.env.PPM_PROJECT_ID
 })
 
 beforeEach(() => {
   delete process.env.TEST_BASE_URL
   delete process.env.MISSING_VAR_X
+  delete process.env.PPM_PROJECT_ID
 })
 
 async function writeAndLoad(yaml: string) {
@@ -48,6 +50,22 @@ describe('loadTestpilotConfig 环境变量注入', () => {
   test('未设置的变量保持字面量(doctor / inspect 负责标记缺失)', async () => {
     const config = await writeAndLoad('web:\n  baseUrl: ${MISSING_VAR_X}/api\n')
     expect(config.web?.baseUrl).toBe('${MISSING_VAR_X}/api')
+  })
+
+  test('variables 白名单注入 Case 可见的项目变量', async () => {
+    process.env.PPM_PROJECT_ID = 'ppm-100'
+    const config = await writeAndLoad(
+      'variables:\n  ppmProjectId: ${PPM_PROJECT_ID}\n  literalValue: fixed\n',
+    )
+    expect(config.variables).toEqual({
+      ppmProjectId: 'ppm-100',
+      literalValue: 'fixed',
+    })
+  })
+
+  test('variables 中未设置的环境变量保持字面量供 requires 预检', async () => {
+    const config = await writeAndLoad('variables:\n  missingValue: ${MISSING_VAR_X}\n')
+    expect(config.variables).toEqual({ missingValue: '${MISSING_VAR_X}' })
   })
 
   test('项目根目录 .env 文件自动加载', async () => {

@@ -23,6 +23,9 @@ function createFakeProgram() {
     screenshot: vi.fn(async () => Buffer.from('fake-png').toString('base64')),
     disconnect: vi.fn(async () => undefined),
     close: vi.fn(async () => undefined),
+    exposeFunction: vi.fn(async () => undefined),
+    mockWxMethod: vi.fn(async () => undefined),
+    restoreWxMethod: vi.fn(async () => undefined),
   }
   return { program, fakePage, fakeElement }
 }
@@ -110,6 +113,42 @@ describe('MiniAppAdapter(miniprogram-automator 映射)', () => {
     await adapter2.launch()
     await adapter2.close()
     expect(program.close).toHaveBeenCalled()
+  })
+
+  test('请求观察透明调用 origin 并在结束时恢复 wx.request', async () => {
+    const { program } = createFakeProgram()
+    const adapter = new MiniAppAdapter(
+      { projectPath, closeIde: false },
+      { launch: vi.fn(async () => program) },
+    )
+
+    await adapter.startRequestCapture()
+    const exposed = vi.mocked(program.exposeFunction).mock.calls[0]
+    const mocked = vi.mocked(program.mockWxMethod).mock.calls[0]
+    expect(exposed?.[0]).toBe(mocked?.[2])
+    exposed?.[1]({ method: 'POST', url: 'https://example.test/api/orders?token=secret' })
+
+    const origin = vi.fn(() => ({ ok: true }))
+    const handler = mocked?.[1]
+    expect(
+      handler?.call(
+        { origin },
+        { method: 'POST', url: 'https://example.test/api/orders' },
+        mocked?.[2] ?? '',
+      ),
+    ).toEqual({ ok: true })
+    expect(origin).toHaveBeenCalledWith({
+      method: 'POST',
+      url: 'https://example.test/api/orders',
+    })
+
+    await expect(adapter.stopRequestCapture()).resolves.toEqual([
+      {
+        method: 'POST',
+        url: 'https://example.test/api/orders?token=secret',
+      },
+    ])
+    expect(program.restoreWxMethod).toHaveBeenCalledWith('request')
   })
 
   test('未配置 projectPath 时 create() 给出配置指引', async () => {

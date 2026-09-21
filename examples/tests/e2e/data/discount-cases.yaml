@@ -1,0 +1,6 @@
+- id: vip-percentage
+  discountType: percentage
+  expectedDiscount: "20.00"
+- id: normal-fixed
+  discountType: fixed
+  expectedDiscount: "10.00"

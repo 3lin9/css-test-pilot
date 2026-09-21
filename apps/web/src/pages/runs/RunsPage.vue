@@ -54,7 +54,7 @@ watch(filter, load)
   <div class="filters">
     <button :class="{ on: filter === '' }" @click="filter = ''">全部</button>
     <button
-      v-for="status in ['running', 'passed', 'failed', 'cancelled']"
+      v-for="status in ['running', 'passed', 'failed', 'skipped', 'cancelled']"
       :key="status"
       :class="{ on: filter === status }"
       @click="filter = status"

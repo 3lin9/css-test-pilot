@@ -33,6 +33,13 @@ export const locatorSchema = z
   })
   .describe('text 与 css 只能提供其一')
 
+export const requestExpectationSchema = z.strictObject({
+  method: z.enum(HTTP_METHODS).optional(),
+  urlContains: z.string().min(1),
+  count: z.number().int().nonnegative(),
+  windowMs: z.number().int().nonnegative().default(1_000),
+})
+
 export const stepSchema = z.strictObject({
   target: z.enum(STEP_TARGETS),
   action: z.enum(ACTIONS),
@@ -51,7 +58,24 @@ export const stepSchema = z.strictObject({
     .regex(/^[A-Za-z_][A-Za-z0-9_]*$/, '变量名需以字母或下划线开头,仅含字母、数字、下划线')
     .optional(),
   timeout: z.number().int().positive().optional(),
+  /** UI 动作触发的网络请求精确次数断言 */
+  expectRequests: z.array(requestExpectationSchema).min(1).optional(),
 })
+
+export const datasetReferenceSchema = z.strictObject({
+  file: z.string().min(1),
+  idField: z
+    .string()
+    .regex(/^[A-Za-z_][A-Za-z0-9_]*$/, 'idField 需为合法字段名')
+    .default('id'),
+})
+
+const dependencyPathSchema = z
+  .string()
+  .regex(
+    /^(fixture|dataset|account|variable)(?:\.[A-Za-z_][A-Za-z0-9_]*)+$/,
+    'requires 路径必须以 fixture/dataset/account/variable 开头并包含字段',
+  )
 
 export const caseSchema = z.strictObject({
   id: z.string().regex(/^[a-z0-9][a-z0-9-]*$/, 'id 需为 kebab-case(小写字母、数字、连字符)'),
@@ -64,9 +88,16 @@ export const caseSchema = z.strictObject({
   /** 引用测试账号标识;凭据由 Environment + Server/CI Secret 管理,禁止写进 Case */
   accountRef: z.string().min(1).optional(),
   tags: z.array(z.string().min(1)).optional(),
+  fixtures: z.array(z.string().min(1)).min(1).optional(),
+  datasets: datasetReferenceSchema.optional(),
+  requires: z.array(dependencyPathSchema).min(1).optional(),
+  setup: z.array(stepSchema).min(1).optional(),
   steps: z.array(stepSchema).min(1, 'Case 至少包含一个 step'),
+  teardown: z.array(stepSchema).min(1).optional(),
 })
 
 export type CaseLocator = z.infer<typeof locatorSchema>
+export type RequestExpectation = z.infer<typeof requestExpectationSchema>
+export type DatasetReference = z.infer<typeof datasetReferenceSchema>
 export type TestStep = z.infer<typeof stepSchema>
 export type TestCase = z.infer<typeof caseSchema>

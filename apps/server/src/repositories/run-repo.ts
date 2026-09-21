@@ -2,7 +2,7 @@ import { and, asc, desc, eq } from 'drizzle-orm'
 import type { Db } from '../db'
 import { runEvents, runs } from '../db/schema'
 
-export type RunStatus = 'running' | 'passed' | 'failed' | 'cancelled'
+export type RunStatus = 'running' | 'passed' | 'failed' | 'skipped' | 'cancelled'
 export type RunRow = typeof runs.$inferSelect
 export type RunInsert = typeof runs.$inferInsert
 

@@ -31,7 +31,7 @@ export function makeRunCommand(): Command {
           .join(',')
         console.log('')
         console.log(
-          `Run ${summary.runId}${summary.cancelled ? '(已取消)' : ''}: ${summary.status.toUpperCase()} — 用例 ✓${summary.totals.passed} ✗${summary.totals.failed},步骤 ✓${summary.totals.stepsPassed} ✗${summary.totals.stepsFailed} ↷${summary.totals.stepsSkipped}${notes ? `(${notes})` : ''}`,
+          `Run ${summary.runId}${summary.cancelled ? '(已取消)' : ''}: ${summary.status.toUpperCase()} — 模板 ${summary.totals.templates ?? summary.totals.cases},数据行 ✓${summary.totals.passed} ✗${summary.totals.failed} ↷${summary.totals.skipped ?? 0} ⚠${summary.totals.warnings ?? 0},步骤 ✓${summary.totals.stepsPassed} ✗${summary.totals.stepsFailed} ↷${summary.totals.stepsSkipped} ⚠${summary.totals.stepsWarning ?? 0}${notes ? `(${notes})` : ''}`,
         )
         console.log(`产物目录:${join('.testpilot', 'artifacts', 'runs', summary.runId)}`)
         console.log('查看报告:npx csspilot report')
@@ -66,12 +66,19 @@ function consoleEventHandler(event: RunEvent): void {
       console.log(`运行 ${event.totalCases} 个用例\n`)
       break
     case 'case-started':
-      console.log(`▶ ${event.caseId} (${event.file})`)
+      console.log(`▶ ${event.caseId}#${event.rowId ?? 'default'} (${event.file})`)
       break
     case 'step-finished': {
-      const mark = event.status === 'passed' ? '  ✓' : event.status === 'failed' ? '  ✗' : '  ↷'
+      const mark =
+        event.status === 'passed'
+          ? '  ✓'
+          : event.status === 'failed'
+            ? '  ✗'
+            : event.status === 'warning'
+              ? '  ⚠'
+              : '  ↷'
       console.log(
-        `${mark} ${event.target}/${event.action} ${event.durationMs}ms${event.error ? ` — ${event.error}` : ''}`,
+        `${mark} ${event.phase ?? 'steps'} ${event.target}/${event.action} ${event.durationMs}ms${event.error ? ` — ${event.error}` : ''}`,
       )
       break
     }

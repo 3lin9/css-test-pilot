@@ -1,10 +1,18 @@
 # TestPilot 项目配置示例(跨端黄金路径)
 # 用法:复制到业务项目根目录并按需修改
 
-casesDir: tests/e2e/cases
+version: 1
+project:
+  name: testpilot-examples
+test:
+  directory: tests/e2e
+  caseDirectory: tests/e2e/cases
 
 web:
   # navigate 相对 url 的基准地址(mock 后端)
+  baseUrl: http://127.0.0.1:8080
+
+api:
   baseUrl: http://127.0.0.1:8080
 
 miniapp:

@@ -3,6 +3,7 @@ import { dirname, extname, isAbsolute, join, resolve } from 'node:path'
 import type { DslIssue, CaseValidationResult, TestCase } from '@testpilot/dsl'
 import { validateCaseSource } from '@testpilot/dsl'
 import { resolveRoot, type ProjectOptions } from './project'
+import { prepareCaseExecutions } from './case-preparation'
 
 /** 展开输入路径:目录递归收集 .yaml/.yml,文件直接保留;不存在的路径跳过 */
 export async function collectCaseFiles(paths: readonly string[]): Promise<string[]> {
@@ -61,8 +62,9 @@ export async function collectCases(
     paths.map((input) => resolveAgainstRoot(options.root, input)),
   )
   const infos: CaseInfo[] = []
+  const root = resolveRoot(options.root)
   for (const file of files) {
-    const validation = await validateCaseFile(file)
+    const validation = await validateCaseFile(file, root)
     infos.push({
       file,
       valid: validation.ok,
@@ -80,12 +82,12 @@ export async function readCaseFile(
 ): Promise<{ file: string; source: string; validation: CaseValidationResult }> {
   const target = resolveAgainstRoot(options.root, file)
   const source = await readFile(target, 'utf8')
-  return { file: target, source, validation: validateCaseSource(source) }
+  return { file: target, source, validation: await validateCaseDataSource(source, target, resolveRoot(options.root)) }
 }
 
-async function validateCaseFile(file: string): Promise<CaseValidationResult> {
+async function validateCaseFile(file: string, root: string): Promise<CaseValidationResult> {
   const source = await readFile(file, 'utf8')
-  return validateCaseSource(source)
+  return validateCaseDataSource(source, file, root)
 }
 
 export interface WriteCaseResult {
@@ -104,7 +106,7 @@ export async function writeCaseFile(
   options: ProjectOptions & { overwrite?: boolean } = {},
 ): Promise<WriteCaseResult> {
   const target = resolveAgainstRoot(options.root, file)
-  const validation = validateCaseSource(source)
+  const validation = await validateCaseDataSource(source, target, resolveRoot(options.root))
   if (!validation.ok) {
     return { file: target, written: false, validation }
   }
@@ -117,4 +119,32 @@ export async function writeCaseFile(
   await mkdir(dirname(target), { recursive: true })
   await writeFile(target, source, 'utf8')
   return { file: target, written: true, validation }
+}
+
+async function validateCaseDataSource(
+  source: string,
+  file: string,
+  root: string,
+): Promise<CaseValidationResult> {
+  const validation = validateCaseSource(source)
+  if (!validation.ok || !validation.data) return validation
+  try {
+    await prepareCaseExecutions(
+      { data: validation.data, file },
+      { root, dataDir: join(root, 'tests', 'e2e', 'data') },
+    )
+    return validation
+  } catch (error) {
+    return {
+      ok: false,
+      data: validation.data,
+      issues: [
+        {
+          path: '(root)',
+          code: 'semantic',
+          message: error instanceof Error ? error.message : String(error),
+        },
+      ],
+    }
+  }
 }

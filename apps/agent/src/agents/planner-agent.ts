@@ -129,11 +129,12 @@ export class PlannerAgent {
     })
     const runResult = await runTool(this.client, ctx, { paths: [caseFile] })
     const runId = runResult.summary.runId
+    const testStatus = runResult.summary.status
     const status = runResult.summary.cancelled
       ? 'cancelled'
-      : runResult.summary.status === 'passed'
-        ? 'passed'
-        : 'failed'
+      : testStatus === 'failed'
+        ? 'failed'
+        : 'passed'
 
     return {
       status,
@@ -145,7 +146,7 @@ export class PlannerAgent {
       message:
         status === 'cancelled'
           ? 'Planner 执行已取消'
-          : `Planner 已生成 ${caseFile} 并触发 run ${runId}(${status})`,
+          : `Planner 已生成 ${caseFile} 并触发 run ${runId}(${testStatus})`,
     }
   }
 }

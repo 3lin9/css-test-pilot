@@ -2,9 +2,9 @@ import { existsSync } from 'node:fs'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { AdapterEvidence, TestAdapter } from '@testpilot/adapter-core'
+import type { AdapterEvidence, CapturedRequest, TestAdapter } from '@testpilot/adapter-core'
 import type { CaseLocator, StepTarget } from '@testpilot/dsl'
-import type { BrowserContext, Locator, Page } from 'playwright'
+import type { BrowserContext, Locator, Page, Request } from 'playwright'
 import type { BrowserBundle, PlaywrightAdapterOptions } from './browser'
 import { openCaseContext } from './browser'
 
@@ -19,6 +19,9 @@ interface CurrentContext {
 export class PlaywrightAdapter implements TestAdapter {
   readonly target: StepTarget = 'web'
   private current: CurrentContext | undefined
+  private requestCapture:
+    | { page: Page; listener: (request: Request) => void; requests: CapturedRequest[] }
+    | undefined
 
   constructor(
     private readonly bundle: BrowserBundle,
@@ -40,6 +43,7 @@ export class PlaywrightAdapter implements TestAdapter {
 
   /** 结束取证:trace 落 zip、录屏在 context 关闭后完成,返回二者字节 */
   async stopEvidence(_caseId: string): Promise<AdapterEvidence> {
+    await this.stopRequestCapture().catch(() => [])
     if (!this.current) return {}
     const { context, page, evidenceTmpDir } = this.current
     this.current = undefined
@@ -56,6 +60,25 @@ export class PlaywrightAdapter implements TestAdapter {
     const trace = evidenceTmpDir && existsSync(traceZipPath) ? await readFile(traceZipPath) : undefined
     if (evidenceTmpDir) await rm(evidenceTmpDir, { recursive: true, force: true }).catch(() => undefined)
     return { video, trace }
+  }
+
+  async startRequestCapture(): Promise<void> {
+    if (this.requestCapture) await this.stopRequestCapture()
+    const page = await this.ensurePage()
+    const requests: CapturedRequest[] = []
+    const listener = (request: Request) => {
+      requests.push({ method: request.method(), url: request.url() })
+    }
+    page.on('request', listener)
+    this.requestCapture = { page, listener, requests }
+  }
+
+  async stopRequestCapture(): Promise<CapturedRequest[]> {
+    if (!this.requestCapture) return []
+    const capture = this.requestCapture
+    this.requestCapture = undefined
+    capture.page.off('request', capture.listener)
+    return capture.requests
   }
 
   async navigate(url: string): Promise<void> {
@@ -132,6 +155,7 @@ export class PlaywrightAdapter implements TestAdapter {
   }
 
   private async closeContextQuietly(): Promise<void> {
+    await this.stopRequestCapture().catch(() => [])
     if (!this.current) return
     const { context } = this.current
     this.current = undefined

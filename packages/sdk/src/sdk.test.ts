@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { describe, expect, test } from 'vitest'
 import type { CaseLocator } from '@testpilot/dsl'
 import type { AdapterFactory, TestAdapter } from '@testpilot/adapter-core'
-import { TestPilotClient, RunError } from './index'
+import { TestPilotClient, RunError, prepareCaseExecutions } from './index'
 
 const VALID_CASE = `id: smoke-login
 name: 冒烟 - 打开首页
@@ -148,6 +148,121 @@ describe('sdk:cases', () => {
   })
 })
 
+describe('sdk:data-driven preparation', () => {
+  test('合并 fixture、展开 dataset 并按行预检 requires', async () => {
+    const root = await makeProject({
+      'tests/e2e/data/product.yaml': 'product:\n  styleNo: SKU-100\n',
+      'tests/e2e/data/promotion.json': JSON.stringify({ coupon: { code: 'C20' } }),
+      'tests/e2e/data/rows.yaml': `
+- id: vip
+  discountType: percentage
+  expected: "20"
+- id: normal
+  discountType: fixed
+  expected: ""
+`,
+    })
+
+    const executions = await prepareCaseExecutions(
+      {
+        file: join(root, 'tests/e2e/cases/promotion.yaml'),
+        data: {
+          id: 'promotion',
+          name: '促销',
+          fixtures: [
+            'tests/e2e/data/product.yaml',
+            'tests/e2e/data/promotion.json',
+          ],
+          datasets: { file: 'tests/e2e/data/rows.yaml', idField: 'id' },
+          requires: [
+            'fixture.product.styleNo',
+            'fixture.coupon.code',
+            'dataset.expected',
+            'variable.ppmProjectId',
+            'account.token',
+          ],
+          accountRef: 'buyer',
+          steps: [{ target: 'web', action: 'launch' }],
+        },
+      },
+      {
+        root,
+        dataDir: join(root, 'tests/e2e/data'),
+        variables: { ppmProjectId: 'ppm-100' },
+        accounts: { buyer: '{"token":"secret-token"}' },
+      },
+    )
+
+    expect(executions).toHaveLength(2)
+    expect(executions[0]).toMatchObject({
+      templateId: 'promotion',
+      rowId: 'vip',
+      rowIndex: 0,
+      missingDependencies: [],
+    })
+    expect(executions[0]?.initialVariables).toMatchObject({
+      'fixture.product.styleNo': 'SKU-100',
+      'fixture.coupon.code': 'C20',
+      'dataset.discountType': 'percentage',
+      'variable.ppmProjectId': 'ppm-100',
+      'account.token': 'secret-token',
+    })
+    expect(executions[1]?.rowId).toBe('normal')
+    expect(executions[1]?.missingDependencies).toEqual(['dataset.expected'])
+  })
+
+  test('无 dataset 时生成 default 执行行', async () => {
+    const root = await makeProject({})
+    const executions = await prepareCaseExecutions(
+      {
+        file: join(root, 'tests/e2e/cases/smoke.yaml'),
+        data: {
+          id: 'smoke',
+          name: '冒烟',
+          steps: [{ target: 'web', action: 'launch' }],
+        },
+      },
+      { root, dataDir: join(root, 'tests/e2e/data') },
+    )
+    expect(executions).toEqual([
+      expect.objectContaining({ templateId: 'smoke', rowId: 'default', rowIndex: 0 }),
+    ])
+  })
+
+  test('拒绝越出 data 目录与重复 dataset row id', async () => {
+    const root = await makeProject({
+      'outside.yaml': 'secret: value\n',
+      'tests/e2e/data/rows.yaml': '- id: duplicate\n- id: duplicate\n',
+    })
+    const base = {
+      file: join(root, 'tests/e2e/cases/case.yaml'),
+      data: {
+        id: 'data-case',
+        name: '数据安全',
+        steps: [{ target: 'web' as const, action: 'launch' as const }],
+      },
+    }
+    await expect(
+      prepareCaseExecutions(
+        { ...base, data: { ...base.data, fixtures: ['outside.yaml'] } },
+        { root, dataDir: join(root, 'tests/e2e/data') },
+      ),
+    ).rejects.toThrow(/data 目录/)
+    await expect(
+      prepareCaseExecutions(
+        {
+          ...base,
+          data: {
+            ...base.data,
+            datasets: { file: 'tests/e2e/data/rows.yaml', idField: 'id' },
+          },
+        },
+        { root, dataDir: join(root, 'tests/e2e/data') },
+      ),
+    ).rejects.toThrow(/重复/)
+  })
+})
+
 describe('sdk:runs', () => {
   test('runCases -> getRun -> listRuns -> getRunEvents -> generateReport 全链路', async () => {
     const root = await makeProject({
@@ -203,6 +318,28 @@ describe('sdk:runs', () => {
     })
     expect(summary.cancelled).toBe(true)
     expect(summary.totals.cases).toBe(0)
+  })
+
+  test('runCases:数据集按行展开并把 rowId 写入结果', async () => {
+    const root = await makeProject({
+      'testpilot.yaml': 'casesDir: tests/e2e/cases\n',
+      'tests/e2e/data/rows.yaml': '- id: first\n  ready: yes\n- id: second\n  ready: yes\n',
+      'tests/e2e/cases/rows.yaml': `id: row-run
+name: 逐行运行
+datasets:
+  file: tests/e2e/data/rows.yaml
+requires:
+  - dataset.ready
+steps:
+  - target: web
+    action: launch
+`,
+    })
+    const client = new TestPilotClient({ root })
+    const { summary } = await client.runCases({ adapters: [stubAdapterFactory('web')] })
+
+    expect(summary.totals).toMatchObject({ templates: 1, cases: 2, passed: 2, skipped: 0 })
+    expect(summary.cases.map((item) => item.rowId)).toEqual(['first', 'second'])
   })
 })
 

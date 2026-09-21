@@ -2,7 +2,7 @@ import automator from 'miniprogram-automator'
 import { spawn } from 'node:child_process'
 import net from 'node:net'
 import type { CaseLocator, StepTarget } from '@testpilot/dsl'
-import type { TestAdapter } from '@testpilot/adapter-core'
+import type { CapturedRequest, TestAdapter } from '@testpilot/adapter-core'
 import type { MiniappAdapterConfig } from './project'
 
 /** 与 miniprogram-automator 运行时结构对应的最小类型(仅用到的能力) */
@@ -23,6 +23,17 @@ export interface AutomatorProgram {
   screenshot(): Promise<string>
   disconnect(): Promise<void>
   close(): Promise<void>
+  exposeFunction(name: string, callback: (value: unknown) => void): Promise<void>
+  mockWxMethod(
+    method: string,
+    implementation: (
+      this: { origin(options: unknown): unknown },
+      options: Record<string, unknown>,
+      exposedName: string,
+    ) => unknown,
+    exposedName: string,
+  ): Promise<void>
+  restoreWxMethod(method: string): Promise<void>
 }
 
 /** 启动器抽象:便于测试注入假实现(默认绑定 miniprogram-automator SDK) */
@@ -120,6 +131,9 @@ function startCliAuto(cliPath: string, projectPath: string, port: number): Promi
 export class MiniAppAdapter implements TestAdapter {
   readonly target: StepTarget = 'miniapp'
   private program: AutomatorProgram | undefined
+  private requestCapture:
+    | { program: AutomatorProgram; exposedName: string; requests: CapturedRequest[] }
+    | undefined
 
   constructor(
     private readonly config: MiniappAdapterConfig,
@@ -202,7 +216,52 @@ export class MiniAppAdapter implements TestAdapter {
     })
   }
 
+  async startRequestCapture(): Promise<void> {
+    if (this.requestCapture) await this.stopRequestCapture()
+    const program = await this.getProgram()
+    const requests: CapturedRequest[] = []
+    const exposedName = `__testpilotRequest_${Date.now()}_${Math.random().toString(36).slice(2)}`
+    await program.exposeFunction(exposedName, (value: unknown) => {
+      if (value === null || typeof value !== 'object') return
+      const request = value as Record<string, unknown>
+      if (typeof request.url !== 'string') return
+      requests.push({
+        method: typeof request.method === 'string' ? request.method : 'GET',
+        url: request.url,
+      })
+    })
+    await program.mockWxMethod(
+      'request',
+      function (
+        this: { origin(options: unknown): unknown },
+        options: Record<string, unknown>,
+        callbackName: string,
+      ) {
+        const callbacks = globalThis as unknown as Record<
+          string,
+          ((request: { method: string; url: string }) => void) | undefined
+        >
+        callbacks[callbackName]?.({
+          method: typeof options.method === 'string' ? options.method : 'GET',
+          url: typeof options.url === 'string' ? options.url : '',
+        })
+        return this.origin(options)
+      },
+      exposedName,
+    )
+    this.requestCapture = { program, exposedName, requests }
+  }
+
+  async stopRequestCapture(): Promise<CapturedRequest[]> {
+    if (!this.requestCapture) return []
+    const capture = this.requestCapture
+    this.requestCapture = undefined
+    await capture.program.restoreWxMethod('request')
+    return capture.requests
+  }
+
   async close(): Promise<void> {
+    await this.stopRequestCapture().catch(() => [])
     if (!this.program) return
     const program = this.program
     this.program = undefined

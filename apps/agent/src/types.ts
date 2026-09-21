@@ -37,6 +37,7 @@ export interface AnalysisReport {
   /** 归因结论 */
   verdict:
     | 'passed'
+    | 'skipped'
     | 'cancelled'
     | 'not-run'
     | 'draft-placeholder'
@@ -65,7 +66,7 @@ export interface AnalysisReport {
     stepsFailed: number
     stepsSkipped: number
   }
-  status?: 'passed' | 'failed' | 'cancelled'
+  status?: 'passed' | 'failed' | 'skipped' | 'cancelled'
 }
 
 export interface AgentJobResult {

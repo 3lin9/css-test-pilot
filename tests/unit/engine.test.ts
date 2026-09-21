@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { describe, expect, test } from 'vitest'
 import type { CaseLocator } from '@testpilot/dsl'
 import { AdapterResolver, TestRunner } from '@testpilot/execution-engine'
-import type { TestAdapter } from '@testpilot/adapter-core'
+import type { CapturedRequest, TestAdapter } from '@testpilot/adapter-core'
 
 /** 进程内 mock adapter:验证引擎编排,不启动真实浏览器 */
 class MockAdapter implements TestAdapter {
@@ -15,6 +15,7 @@ class MockAdapter implements TestAdapter {
   readonly clicked: string[] = []
   readonly evidenceStarted: string[] = []
   readonly evidenceStopped: string[] = []
+  capturedRequests: CapturedRequest[] = []
 
   async launch(): Promise<void> {
     this.launched++
@@ -27,6 +28,12 @@ class MockAdapter implements TestAdapter {
   async click(locator: CaseLocator): Promise<void> {
     if (locator.css === '.missing') throw new Error('element not found')
     this.clicked.push(locator.css ?? locator.text ?? '')
+    if (locator.css === '.request-once') {
+      this.capturedRequests.push({
+        method: 'POST',
+        url: 'https://example.test/api/orders?token=secret',
+      })
+    }
   }
 
   async input(locator: CaseLocator, value: string): Promise<void> {
@@ -59,6 +66,14 @@ class MockAdapter implements TestAdapter {
   async stopEvidence(caseId: string): Promise<{ video: Buffer; trace: Buffer }> {
     this.evidenceStopped.push(caseId)
     return { video: Buffer.from('fake-video'), trace: Buffer.from('fake-trace') }
+  }
+
+  async startRequestCapture(): Promise<void> {
+    this.capturedRequests = []
+  }
+
+  async stopRequestCapture(): Promise<CapturedRequest[]> {
+    return this.capturedRequests
   }
 
   async close(): Promise<void> {}
@@ -134,8 +149,8 @@ describe('TestRunner(引擎编排)', () => {
     expect(ok?.trace).toContain('traces/')
     const videoBytes = await readFile(join(root, 'runs', summary.runId, ok!.video!))
     expect(videoBytes.toString()).toBe('fake-video')
-    expect(adapter.evidenceStarted).toEqual(['extract-assert', 'failing'])
-    expect(adapter.evidenceStopped).toEqual(['extract-assert', 'failing'])
+    expect(adapter.evidenceStarted).toEqual(['extract-assert-default', 'failing-default'])
+    expect(adapter.evidenceStopped).toEqual(['extract-assert-default', 'failing-default'])
 
     // 用例 3:未注册 miniapp adapter -> 步骤失败并给出原因
     const mini = summary.cases.find((item) => item.caseId === 'no-miniapp')
@@ -148,5 +163,126 @@ describe('TestRunner(引擎编排)', () => {
     const events = await readFile(join(runDir, 'events.ndjson'), 'utf8')
     expect(events.split('\n').filter(Boolean).length).toBeGreaterThan(10)
     expect(adapter.launched).toBe(1)
+  })
+
+  test('逐行依赖预检与 setup/steps/teardown 生命周期', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'testpilot-engine-lifecycle-'))
+    const adapter = new MockAdapter()
+    const resolver = new AdapterResolver()
+    resolver.register({ target: 'web', create: async () => adapter })
+    const runner = new TestRunner({ resolver, runsRoot: join(root, 'runs') })
+
+    const summary = await runner.run([
+      {
+        file: 'rows.case.yaml',
+        templateId: 'row-case',
+        rowId: 'ready',
+        rowIndex: 0,
+        initialVariables: { 'dataset.button': '.ready' },
+        missingDependencies: [],
+        data: {
+          id: 'row-case',
+          name: '逐行用例',
+          setup: [{ target: 'web', action: 'click', locator: { css: '.setup' } }],
+          steps: [
+            {
+              target: 'web',
+              action: 'click',
+              locator: { css: '${dataset.button}' },
+            },
+          ],
+          teardown: [{ target: 'web', action: 'click', locator: { css: '.missing' } }],
+        },
+      },
+      {
+        file: 'rows.case.yaml',
+        templateId: 'row-case',
+        rowId: 'missing-data',
+        rowIndex: 1,
+        initialVariables: {},
+        missingDependencies: ['dataset.button'],
+        data: {
+          id: 'row-case',
+          name: '逐行用例',
+          steps: [{ target: 'web', action: 'click', locator: { css: '.never' } }],
+        },
+      },
+    ])
+
+    expect(summary.status).toBe('passed')
+    expect(summary.totals).toMatchObject({
+      templates: 1,
+      cases: 2,
+      passed: 1,
+      failed: 0,
+      skipped: 1,
+      warnings: 1,
+      stepsWarning: 1,
+    })
+    const ready = summary.cases[0]
+    expect(ready).toMatchObject({ rowId: 'ready', rowIndex: 0, status: 'passed' })
+    expect(ready?.steps.map((step) => [step.phase, step.status])).toEqual([
+      ['setup', 'passed'],
+      ['steps', 'passed'],
+      ['teardown', 'warning'],
+    ])
+    expect(ready?.warnings?.[0]).toContain('element not found')
+    expect(adapter.clicked).toEqual(['.setup', '.ready'])
+
+    const skipped = summary.cases[1]
+    expect(skipped).toMatchObject({
+      rowId: 'missing-data',
+      status: 'skipped',
+      skipReason: 'dependency-not-ready',
+      missingDependencies: ['dataset.button'],
+      steps: [],
+    })
+  })
+
+  test('UI 动作按 method + urlContains 精确断言请求次数并脱敏证据', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'testpilot-engine-request-'))
+    const adapter = new MockAdapter()
+    const resolver = new AdapterResolver()
+    resolver.register({ target: 'web', create: async () => adapter })
+    const runner = new TestRunner({ resolver, runsRoot: join(root, 'runs') })
+
+    const summary = await runner.run([
+      {
+        file: 'request.case.yaml',
+        data: {
+          id: 'request-count',
+          name: '请求次数',
+          steps: [
+            {
+              target: 'web',
+              action: 'click',
+              locator: { css: '.request-once' },
+              expectRequests: [
+                {
+                  method: 'POST',
+                  urlContains: '/api/orders',
+                  count: 1,
+                  windowMs: 0,
+                },
+              ],
+            },
+          ],
+        },
+      },
+    ])
+
+    expect(summary.status).toBe('passed')
+    expect(summary.cases[0]?.steps[0]?.requestAssertions).toEqual([
+      expect.objectContaining({
+        actualCount: 1,
+        count: 1,
+        requests: [
+          {
+            method: 'POST',
+            url: 'https://example.test/api/orders?<redacted>',
+          },
+        ],
+      }),
+    ])
   })
 })

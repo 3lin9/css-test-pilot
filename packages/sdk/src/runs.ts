@@ -19,6 +19,7 @@ import { wechatideAdapterFactory } from '@testpilot/adapter-wechatide'
 import { apiAdapterFactory } from '@testpilot/adapter-api'
 import type { AdapterFactory } from '@testpilot/adapter-core'
 import { collectCases, type CaseInfo } from './cases'
+import { prepareCaseExecutions } from './case-preparation'
 import { loadProjectConfig, resolveRoot, type ProjectOptions } from './project'
 
 export interface RunOptions extends ProjectOptions {
@@ -132,8 +133,33 @@ export async function runCases(options: RunOptions = {}): Promise<RunResult> {
     signal: options.signal,
     accounts: options.accounts,
   })
+  const prepared = (
+    await Promise.all(
+      runnable.map((item) =>
+        prepareCaseExecutions(
+          { data: item.case!, file: item.file },
+          {
+            root,
+            dataDir: join(root, 'tests', 'e2e', 'data'),
+            variables: config.variables,
+            accounts: options.accounts,
+          },
+        ),
+      ),
+    )
+  ).flat()
   const summary = await runner.run(
-    runnable.map((item): { data: TestCase; file: string } => ({ data: item.case!, file: item.file })),
+    prepared.map(
+      (item): {
+        data: TestCase
+        file: string
+        templateId: string
+        rowId: string
+        rowIndex: number
+        initialVariables: Record<string, string>
+        missingDependencies: string[]
+      } => item,
+    ),
   )
   return { summary, invalid, tagFiltered, missingAccounts }
 }

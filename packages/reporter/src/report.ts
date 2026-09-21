@@ -111,7 +111,7 @@ export function renderHtml(data: ReportData): string {
   const view = toSummaryView(data.summary)
   const summary = data.summary
   const trendSvg = renderTrend(data)
-  const casesHtml = summary.cases.map((item) => caseHtml(item)).join('\n')
+  const casesHtml = groupedCasesHtml(summary.cases)
   const chips = categoryChips(data)
   return `<!doctype html>
 <html lang="zh-CN">
@@ -119,13 +119,13 @@ export function renderHtml(data: ReportData): string {
 <meta charset="utf-8" />
 <title>TestPilot Report ${escapeHtml(summary.runId)}</title>
 <style>
-  :root { --ok:#1a7f37; --fail:#cf222e; --skip:#6e7781; --line:#d0d7de; --muted:#59636e; }
+  :root { --ok:#1a7f37; --fail:#cf222e; --warn:#9a6700; --skip:#6e7781; --line:#d0d7de; --muted:#59636e; }
   * { box-sizing: border-box; }
   body { font-family: system-ui, "Segoe UI", sans-serif; margin: 0; color: #1f2328; background: #f6f8fa; }
   .wrap { max-width: 1080px; margin: 0 auto; padding: 20px 16px 48px; }
   h1 { font-size: 20px; margin: 8px 0; } h2 { font-size: 15px; margin: 24px 0 8px; }
   .badge { display: inline-block; padding: 2px 10px; border-radius: 10px; color: #fff; font-size: 12px; }
-  .passed { background: var(--ok); } .failed { background: var(--fail); } .skipped { background: var(--skip); }
+  .passed { background: var(--ok); } .failed { background: var(--fail); } .warning { background: var(--warn); } .skipped { background: var(--skip); }
   code { background: #eef1f4; padding: 1px 5px; border-radius: 4px; font-size: 12px; }
   .cards { display: flex; gap: 12px; flex-wrap: wrap; margin: 14px 0; }
   .card { background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 10px 16px; min-width: 130px; }
@@ -138,6 +138,8 @@ export function renderHtml(data: ReportData): string {
   .btn { border: 1px solid var(--line); background: #fff; border-radius: 6px; padding: 4px 10px; font-size: 12px; cursor: pointer; }
   #count { color: var(--muted); font-size: 12px; margin-left: auto; }
   details.case { background: #fff; border: 1px solid var(--line); border-radius: 8px; margin: 10px 0; }
+  section.template { border-left: 3px solid var(--line); padding-left: 12px; margin: 14px 0; }
+  section.template > h3 { font-size: 14px; margin: 0 0 6px; }
   details.case > summary { cursor: pointer; padding: 10px 14px; font-size: 14px; list-style: none; }
   details.case > summary::-webkit-details-marker { display: none; }
   details.case > summary:hover { background: #f6f8fa; }
@@ -160,6 +162,8 @@ export function renderHtml(data: ReportData): string {
   <div class="cards">
     <div class="card"><b>${view.cases.passed}<span style="color:var(--ok)"> ✓</span></b><span>通过用例</span></div>
     <div class="card"><b>${view.cases.failed}<span style="color:var(--fail)"> ✗</span></b><span>失败用例</span></div>
+    <div class="card"><b>${view.cases.skipped} ↷</b><span>跳过数据行</span></div>
+    <div class="card"><b>${view.cases.warnings} ⚠</b><span>清理警告</span></div>
     <div class="card"><b>${view.steps.passed}<span style="color:var(--ok)"> ✓</span></b><span>通过步骤</span></div>
     <div class="card"><b>${view.steps.failed}<span style="color:var(--fail)"> ✗</span></b><span>失败步骤</span></div>
     <div class="card"><b>${view.steps.skipped} ↷</b><span>跳过步骤</span></div>
@@ -247,26 +251,51 @@ export function renderHtml(data: ReportData): string {
 </html>`
 }
 
+function groupedCasesHtml(cases: ReportCase[]): string {
+  const groups = new Map<string, ReportCase[]>()
+  for (const item of cases) {
+    const current = groups.get(item.caseId) ?? []
+    current.push(item)
+    groups.set(item.caseId, current)
+  }
+  return [...groups.entries()]
+    .map(
+      ([caseId, rows]) => `<section class="template">
+  <h3>${escapeHtml(caseId)} <span class="muted">· ${rows.length} 个数据行</span></h3>
+  ${rows.map((item) => caseHtml(item)).join('\n')}
+</section>`,
+    )
+    .join('\n')
+}
+
 function caseHtml(item: ReportCase): string {
   const rows = item.steps.map((step) => stepHtml(step)).join('\n')
   const errorLine = item.error ? `<p class="error">${escapeHtml(item.error)}</p>` : ''
+  const skipLine = item.skipReason
+    ? `<p class="muted">${escapeHtml(item.skipReason)}${item.missingDependencies?.length ? `: ${escapeHtml(item.missingDependencies.join(', '))}` : ''}</p>`
+    : ''
+  const warningLine = item.warnings?.length
+    ? `<p class="error">⚠ ${item.warnings.map(escapeHtml).join('<br />⚠ ')}</p>`
+    : ''
   const links: string[] = []
   if (item.video) links.push(`<a href="${escapeHtml(item.video)}">视频</a>`)
   if (item.trace) links.push(`<a href="${escapeHtml(item.trace)}">Trace</a>`)
   const linksLine = links.length > 0 ? `<p>${links.join(' · ')}</p>` : ''
-  const search = escapeHtml(`${item.caseId} ${item.caseName} ${item.file}`).replaceAll('"', '&quot;')
+  const search = escapeHtml(`${item.caseId} ${item.rowId ?? 'default'} ${item.caseName} ${item.file}`).replaceAll('"', '&quot;')
   const cats = escapeHtml(item.categories.join(','))
   return `
 <details class="case" data-status="${item.status}" data-cats="${cats}" data-search="${search}">
   <summary>
     <span class="badge ${item.status}">${item.status}</span>
-    <b>${escapeHtml(item.caseId)}</b> · ${escapeHtml(item.caseName)}
+    <b>数据行 ${escapeHtml(item.rowId ?? 'default')}</b> · ${escapeHtml(item.caseName)}
     <span class="muted">· ${item.steps.length} 步 · ${(item.durationMs / 1000).toFixed(1)}s</span>
   </summary>
   ${errorLine}
+  ${skipLine}
+  ${warningLine}
   ${linksLine}
   <table>
-    <tr><th>#</th><th>target</th><th>action</th><th>状态</th><th>耗时</th><th>详情</th></tr>
+    <tr><th>#</th><th>阶段</th><th>target</th><th>action</th><th>状态</th><th>耗时</th><th>详情</th></tr>
     ${rows}
   </table>
 </details>`
@@ -282,8 +311,14 @@ function stepHtml(step: StepResult & { category?: FailureCategory }): string {
     }
   }
   if (step.screenshot) details.push(`<a href="${escapeHtml(step.screenshot)}">截图</a>`)
+  for (const assertion of step.requestAssertions ?? []) {
+    details.push(
+      `请求 ${escapeHtml(assertion.method ?? '*')} <code>${escapeHtml(assertion.urlContains)}</code>: ${assertion.actualCount}/${assertion.count}`,
+    )
+  }
   return `<tr>
   <td class="num">${step.index}</td>
+  <td>${escapeHtml(step.phase ?? 'steps')}</td>
   <td>${escapeHtml(step.target)}</td>
   <td>${escapeHtml(step.action)}</td>
   <td><span class="badge ${step.status}">${step.status}</span></td>

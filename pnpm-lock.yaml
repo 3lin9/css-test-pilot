@@ -267,6 +267,9 @@ importers:
       '@testpilot/reporter':
         specifier: workspace:^
         version: link:../reporter
+      yaml:
+        specifier: ^2.5.0
+        version: 2.9.0
     devDependencies:
       '@types/node':
         specifier: ^22.0.0

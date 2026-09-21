@@ -21,6 +21,8 @@ const configSchema = z.strictObject({
     .optional(),
   /** 环境配置:default 指定默认环境名,其余键为环境名 -> { baseUrl } */
   environment: z.record(z.string(), z.union([z.string().min(1), environmentEntrySchema])).optional(),
+  /** Case 可见的项目变量白名单;值可通过 ${ENV_VAR} 从运行环境注入 */
+  variables: z.record(z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/), z.string()).optional(),
   /** 项目声明的执行端(playwright / wechatide);仅作声明,实际可用性以 doctor 检测为准 */
   adapters: z.array(z.string().min(1)).optional(),
   workspace: z.strictObject({ default: z.string().min(1).optional() }).optional(),
@@ -48,6 +50,7 @@ export interface TestpilotConfig {
   testDirectory?: string
   projectName?: string
   environment?: Record<string, string | { baseUrl?: string } | undefined>
+  variables?: Record<string, string>
   adapters?: string[]
   workspace?: { default?: string }
   server?: { baseUrl?: string }
@@ -124,6 +127,11 @@ export async function loadTestpilotConfig(cwd: string = process.cwd()): Promise<
     testDirectory: parsed.test?.directory,
     projectName: parsed.project?.name,
     environment,
+    variables: parsed.variables
+      ? Object.fromEntries(
+          Object.entries(parsed.variables).map(([name, value]) => [name, interpolateEnvRefs(value)]),
+        )
+      : undefined,
     adapters: parsed.adapters,
     workspace: parsed.workspace,
     server: parsed.server

@@ -7,20 +7,23 @@ export interface TestStructureResult {
   cases: 'created' | 'reused'
   fixtures: 'created' | 'reused'
   data: 'created' | 'reused'
+  reviews: 'created' | 'reused'
 }
 
-/** 初始化 tests/e2e/{cases,fixtures,data};已有目录直接复用,不迁移不删除(设计文档 §6) */
+/** 初始化 tests/e2e/{cases,fixtures,data,reviews};已有目录直接复用,不迁移不删除(设计文档 §6) */
 export async function initTestStructure(root: string, _info: ProjectInfo): Promise<TestStructureResult> {
   const dirs = {
     cases: join(root, 'tests', 'e2e', 'cases'),
     fixtures: join(root, 'tests', 'e2e', 'fixtures'),
     data: join(root, 'tests', 'e2e', 'data'),
+    reviews: join(root, 'tests', 'e2e', 'reviews'),
   } as const
 
   const existed: Record<keyof typeof dirs, boolean> = {
     cases: existsSync(dirs.cases),
     fixtures: existsSync(dirs.fixtures),
     data: existsSync(dirs.data),
+    reviews: existsSync(dirs.reviews),
   }
 
   for (const dir of Object.values(dirs)) {
@@ -37,5 +40,6 @@ export async function initTestStructure(root: string, _info: ProjectInfo): Promi
     cases: existed.cases ? 'reused' : 'created',
     fixtures: existed.fixtures ? 'reused' : 'created',
     data: existed.data ? 'reused' : 'created',
+    reviews: existed.reviews ? 'reused' : 'created',
   }
 }

@@ -17,6 +17,7 @@ const ADAPTER_SUPPORT: Record<ActionName, readonly StepTarget[]> = {
 
 const LOCATOR_REQUIRED = new Set<ActionName>(['click', 'input', 'select', 'assert', 'extract'])
 const VALUE_REQUIRED = new Set<ActionName>(['input', 'select'])
+const REQUEST_EXPECTATION_ACTIONS = new Set<ActionName>(['navigate', 'click', 'input', 'select'])
 
 /** 字段只允许出现在指定 action 上(防复制粘贴/拼写错误) */
 const FIELD_ALLOWED: Record<
@@ -40,13 +41,24 @@ export function validateCase(data: TestCase): DslIssue[] {
   const issues: DslIssue[] = []
   const declared = new Set<string>()
 
+  if (data.fixtures) declared.add('fixture')
+  if (data.datasets) declared.add('dataset')
+  // variable.* 只能来自 testpilot.yaml 白名单;具体值在项目级预检阶段检查。
+  declared.add('variable')
+
   // Case 声明了 accountRef 时,运行时把凭据注入为 account.* 变量(整值为 ${account},JSON 字段为 ${account.username} 等)
   if (data.accountRef) {
     declared.add('account')
   }
 
+  data.setup?.forEach((step, index) => {
+    checkStep(step, `setup[${index}]`, declared, issues)
+  })
   data.steps.forEach((step, index) => {
     checkStep(step, `steps[${index}]`, declared, issues)
+  })
+  data.teardown?.forEach((step, index) => {
+    checkStep(step, `teardown[${index}]`, declared, issues)
   })
 
   return issues
@@ -145,6 +157,16 @@ function checkStep(step: TestStep, at: string, declared: Set<string>, issues: Ds
     issues.push({ path: at, code: 'semantic', message: 'wait 需要提供 locator(等待元素)或 timeout(毫秒)' })
   }
 
+  if (step.expectRequests) {
+    if (step.target === 'api' || !REQUEST_EXPECTATION_ACTIONS.has(step.action)) {
+      issues.push({
+        path: `${at}.expectRequests`,
+        code: 'semantic',
+        message: 'expectRequests 仅用于 web/miniapp 的 navigate/click/input/select',
+      })
+    }
+  }
+
   checkVariableRefs(step, at, declared, issues)
 }
 
@@ -185,9 +207,14 @@ function checkVariableRefs(
   collect('value', step.value)
   collect('expected', step.expected)
   collect('url', step.url)
+  collect('locator.text', step.locator?.text)
+  collect('locator.css', step.locator?.css)
   if (typeof step.body === 'string') collect('body', step.body)
   else if (step.body) collect('body', JSON.stringify(step.body))
   for (const headerValue of Object.values(step.headers ?? {})) collect('headers', headerValue)
+  for (const [index, expectation] of (step.expectRequests ?? []).entries()) {
+    collect(`expectRequests[${index}].urlContains`, expectation.urlContains)
+  }
 
   for (const [field, name] of refs) {
     const root = name.split('.')[0] ?? name

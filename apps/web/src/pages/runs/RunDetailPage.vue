@@ -136,20 +136,24 @@ function stripAnsi(text: string): string {
   <div v-if="summary" class="panel">
     <h3>
       用例结果
-      用例 ✓{{ summary.totals.passed }} ✗{{ summary.totals.failed }} · 步骤
-      ✓{{ summary.totals.stepsPassed }} ✗{{ summary.totals.stepsFailed }} ↷{{ summary.totals.stepsSkipped }}
+      模板 {{ summary.totals.templates ?? summary.totals.cases }} · 数据行
+      ✓{{ summary.totals.passed }} ✗{{ summary.totals.failed }} ↷{{ summary.totals.skipped ?? 0 }}
+      ⚠{{ summary.totals.warnings ?? 0 }} · 步骤 ✓{{ summary.totals.stepsPassed }}
+      ✗{{ summary.totals.stepsFailed }} ↷{{ summary.totals.stepsSkipped }} ⚠{{ summary.totals.stepsWarning ?? 0 }}
     </h3>
-    <div v-for="item in summary.cases" :key="item.caseId" style="margin-bottom: 16px">
+    <div v-for="item in summary.cases" :key="`${item.caseId}#${item.rowId ?? 'default'}`" style="margin-bottom: 16px">
       <p style="margin: 0 0 6px">
         <StatusBadge :status="item.status" />
-        <strong>{{ item.caseId }}</strong> · {{ item.caseName }}
+        <strong>{{ item.caseId }}#{{ item.rowId ?? 'default' }}</strong> · {{ item.caseName }}
         <span class="muted mono">{{ baseName(item.file) }}</span>
       </p>
       <p v-if="item.error" class="error-text">{{ stripAnsi(item.error) }}</p>
+      <p v-if="item.skipReason" class="muted">{{ item.skipReason }}: {{ item.missingDependencies?.join(', ') }}</p>
+      <p v-for="warning in item.warnings ?? []" :key="warning" class="error-text">⚠ {{ warning }}</p>
       <ul class="steps">
-        <li v-for="step in item.steps" :key="step.index">
-          <span class="mark" :class="step.status">{{ step.status === 'passed' ? '✓' : step.status === 'failed' ? '✗' : '↷' }}</span>
-          <span class="mono">{{ step.target }}/{{ step.action }}</span>
+        <li v-for="step in item.steps" :key="`${step.phase ?? 'steps'}-${step.index}`">
+          <span class="mark" :class="step.status">{{ step.status === 'passed' ? '✓' : step.status === 'failed' ? '✗' : step.status === 'warning' ? '⚠' : '↷' }}</span>
+          <span class="mono">{{ step.phase ?? 'steps' }} · {{ step.target }}/{{ step.action }}</span>
           <span v-if="step.http" class="mono muted">{{ step.http.method }} {{ step.http.url }} → {{ step.http.status }}</span>
           <span class="muted">{{ step.durationMs }}ms</span>
           <span v-if="step.error" class="error-text">{{ stripAnsi(step.error) }}</span>

@@ -135,6 +135,68 @@ describe('writeReports(单文件交互式报告)', () => {
     }
     expect(payload.history.map((item) => item.runId)).toEqual(['20260910-002', '20260910-003'])
   })
+
+  test('按 Case 模板展示数据行、跳过原因、warning 与请求计数', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'testpilot-reporter-rows-'))
+    roots.push(root)
+    const summary = summaryFixture('20260911-rows', 'passed')
+    summary.cases[0]!.rowId = 'vip'
+    summary.cases[0]!.rowIndex = 0
+    summary.cases[0]!.warnings = ['cleanup failed']
+    summary.cases[0]!.steps.push({
+      index: 2,
+      phase: 'teardown',
+      target: 'web',
+      action: 'click',
+      status: 'warning',
+      durationMs: 2,
+      error: 'cleanup failed',
+      requestAssertions: [
+        {
+          method: 'POST',
+          urlContains: '/api/orders',
+          count: 1,
+          actualCount: 1,
+          windowMs: 0,
+          requests: [{ method: 'POST', url: 'https://example.test/api/orders' }],
+        },
+      ],
+    })
+    summary.cases.push({
+      caseId: 'login',
+      caseName: '登录',
+      file: 'login.yaml',
+      rowId: 'missing-account',
+      rowIndex: 1,
+      status: 'skipped',
+      skipReason: 'dependency-not-ready',
+      missingDependencies: ['account.token'],
+      steps: [],
+      startedAt: summary.startedAt,
+      finishedAt: summary.finishedAt,
+      durationMs: 0,
+    })
+    summary.totals = {
+      ...summary.totals,
+      templates: 1,
+      cases: 2,
+      passed: 1,
+      skipped: 1,
+      warnings: 1,
+      steps: 3,
+      stepsWarning: 1,
+    }
+
+    const runDir = await putRun(root, summary.runId, summary)
+    const written = await writeReports(runDir, summary)
+    const html = await readFile(written.html, 'utf8')
+    expect(html).toContain('class="template"')
+    expect(html).toContain('数据行 vip')
+    expect(html).toContain('missing-account')
+    expect(html).toContain('dependency-not-ready')
+    expect(html).toContain('cleanup failed')
+    expect(html).toContain('/api/orders')
+  })
 })
 
 describe('buildSummaryData + writeSummaryReport(汇总报告)', () => {

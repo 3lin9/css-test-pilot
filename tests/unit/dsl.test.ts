@@ -191,4 +191,78 @@ steps:
     })
     expect(issues).toHaveLength(0)
   })
+
+  test('data-driven Case 支持 fixtures/datasets/requires 与生命周期变量链路', () => {
+    const result = validateCaseSource(`
+id: promotion-discount
+name: 促销折扣规则
+fixtures:
+  - tests/e2e/data/promotion.yaml
+datasets:
+  file: tests/e2e/data/discount-cases.yaml
+  idField: id
+requires:
+  - fixture.product.styleNo
+  - dataset.discountType
+  - variable.ppmProjectId
+setup:
+  - target: api
+    action: request
+    method: POST
+    url: /setup/\${variable.ppmProjectId}
+  - target: api
+    action: extract
+    value: data.token
+    variable: setupToken
+steps:
+  - target: web
+    action: click
+    locator:
+      css: ".submit-\${dataset.discountType}"
+    expectRequests:
+      - method: POST
+        urlContains: /api/orders
+        count: 1
+        windowMs: 1000
+  - target: web
+    action: assert
+    locator:
+      css: .result
+    expected: "\${setupToken}"
+teardown:
+  - target: api
+    action: request
+    url: /cleanup/\${setupToken}
+`)
+    expect(result.ok).toBe(true)
+    expect(result.data?.datasets).toEqual({
+      file: 'tests/e2e/data/discount-cases.yaml',
+      idField: 'id',
+    })
+    expect(result.data?.setup).toHaveLength(2)
+    expect(result.data?.teardown).toHaveLength(1)
+  })
+
+  test('expectRequests 仅允许 UI 交互步骤且字段严格校验', () => {
+    const result = validateCaseSource(`
+id: invalid-request-expectation
+name: 非法请求断言
+steps:
+  - target: api
+    action: request
+    url: /orders
+    expectRequests:
+      - urlContains: /orders
+        count: 1
+  - target: web
+    action: screenshot
+    expectRequests:
+      - urlContains: /track
+        count: 1
+`)
+    expect(result.ok).toBe(false)
+    expect(result.issues.map((issue) => issue.path)).toEqual(
+      expect.arrayContaining(['steps[0].expectRequests', 'steps[1].expectRequests']),
+    )
+  })
 })

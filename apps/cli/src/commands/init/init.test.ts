@@ -86,7 +86,7 @@ describe('cli:init:新项目', () => {
     expect(existsSync(join(root, '.testpilot', 'project.json'))).toBe(true)
     expect(existsSync(join(root, '.testpilot', 'artifacts'))).toBe(true)
     // 测试目录
-    for (const dir of ['cases', 'fixtures', 'data']) {
+    for (const dir of ['cases', 'fixtures', 'data', 'reviews']) {
       expect(existsSync(join(root, 'tests', 'e2e', dir))).toBe(true)
     }
     // Skill + references
@@ -114,6 +114,8 @@ describe('cli:init:新项目', () => {
     expect(yaml).toContain('project:')
     expect(yaml).toContain('caseDirectory: tests/e2e/cases')
     expect(yaml).toContain('baseUrl: ${TEST_BASE_URL}')
+    expect(yaml).toContain('variables:')
+    expect(yaml).toContain('ppmProjectId: ${PPM_PROJECT_ID}')
     expect(yaml).not.toMatch(/password|secret\s*:/i)
 
     // 机器相关的地址/路径走环境变量,模板不写死(每人环境不同)

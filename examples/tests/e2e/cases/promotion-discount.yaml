@@ -1,0 +1,45 @@
+id: promotion-discount
+name: 促销折扣规则
+description: |
+  测试点: TP-001, TP-002
+  同一交互模板按折扣类型数据行执行。
+fixtures:
+  - tests/e2e/data/promotion.yaml
+datasets:
+  file: tests/e2e/data/discount-cases.yaml
+  idField: id
+requires:
+  - fixture.product.styleNo
+  - fixture.coupon.code
+  - dataset.discountType
+  - dataset.expectedDiscount
+setup:
+  - target: api
+    action: request
+    method: POST
+    url: /test-support/cart/clear
+    expected: "200"
+steps:
+  - target: web
+    action: navigate
+    url: /products/${fixture.product.styleNo}
+  - target: web
+    action: click
+    locator:
+      css: .add-to-cart
+    expectRequests:
+      - method: POST
+        urlContains: /api/cart/items
+        count: 1
+        windowMs: 1000
+  - target: web
+    action: assert
+    locator:
+      css: .discount-amount
+    expected: ${dataset.expectedDiscount}
+teardown:
+  - target: api
+    action: request
+    method: DELETE
+    url: /test-support/cart
+    expected: "204"

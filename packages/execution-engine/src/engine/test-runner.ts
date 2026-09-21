@@ -12,6 +12,11 @@ import { buildRunSummary } from './result-collector'
 export interface TestCaseInput {
   data: TestCase
   file: string
+  templateId?: string
+  rowId?: string
+  rowIndex?: number
+  initialVariables?: Record<string, string>
+  missingDependencies?: string[]
 }
 
 export interface TestRunnerOptions {
@@ -71,6 +76,11 @@ export class TestRunner {
         await engine.runCase(item.data, {
           runId,
           file: item.file,
+          templateId: item.templateId ?? item.data.id,
+          rowId: item.rowId ?? 'default',
+          rowIndex: item.rowIndex ?? 0,
+          initialVariables: item.initialVariables ?? {},
+          missingDependencies: item.missingDependencies ?? [],
           artifacts,
           bus,
           resolver: this.resolver,
@@ -82,7 +92,8 @@ export class TestRunner {
     const cancelled = this.signal?.aborted === true
 
     await this.resolver.closeAll()
-    const summary = buildRunSummary(runId, startedAt, results, { cancelled })
+    const templates = new Set(cases.map((item) => item.templateId ?? item.data.id)).size
+    const summary = buildRunSummary(runId, startedAt, results, { cancelled, templates })
     await bus.emit({
       type: 'run-finished',
       runId,

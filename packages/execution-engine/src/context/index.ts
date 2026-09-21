@@ -10,6 +10,12 @@ export class ExecutionContext {
     return this.variables.get(name)
   }
 
+  seed(values: Record<string, string>): void {
+    for (const [name, value] of Object.entries(values)) {
+      this.variables.set(name, value)
+    }
+  }
+
   /**
    * 将字符串中的 ${name} 替换为已提取的变量值;未定义的引用保持原样(校验阶段已拦截)。
    * 名字允许点号,用于引擎注入的 account.username 一类凭据变量(用户 extract 变量名不含点号)。
