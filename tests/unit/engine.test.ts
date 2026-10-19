@@ -418,6 +418,26 @@ describe('runCase 三态汇总', () => {
     expect(item?.errorCode).toBe('ADAPTER_NOT_FOUND')
   })
 
+  test('blockedError 预阻塞(fixture 缺失)→ case blocked,步骤不执行', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'testpilot-preblocked-'))
+    const resolver = new AdapterResolver()
+    resolver.register({ target: 'web', create: async () => new MockAdapter() })
+    const runner = new TestRunner({ resolver, runsRoot: join(root, 'runs') })
+    const summary = await runner.run([
+      {
+        file: 'case.yaml',
+        data: { id: 'no-fixture', name: '数据缺失', steps: [{ target: 'web', action: 'click', locator: { css: '.x' } }] } as never,
+        blockedError: { code: 'FIXTURE_MISSING', message: '数据文件不存在:data/order.yaml' },
+      },
+    ])
+    const item = summary.cases[0]
+    expect(item?.status).toBe('blocked')
+    expect(item?.errorCode).toBe('FIXTURE_MISSING')
+    // 合成的失败步骤携带错误码,reporter 三桶/CLI 计数由此自然生效
+    expect(item?.steps[0]?.errorCode).toBe('FIXTURE_MISSING')
+    expect(summary.status).toBe('blocked')
+  })
+
   test('步骤 PREREQ_VARIABLE_MISSING → case inconclusive', async () => {
     const summary = await runWith(
       {

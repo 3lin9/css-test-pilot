@@ -115,4 +115,34 @@ describe('sdk:runCases(api target + accountRef)', () => {
     expect(summary.cases[0]?.errorCode).toBe('ACCOUNT_UNAVAILABLE')
     expect(loginCalls.length).toBe(callsBefore)
   })
+
+  test('fixture 缺失 → 该 case blocked,其余 case 照常执行(FIXTURE_MISSING 端到端)', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'testpilot-sdk-fixture-'))
+    await mkdir(join(root, 'tests/e2e/cases'), { recursive: true })
+    await writeFile(join(root, 'testpilot.yaml'), `api:\n  baseUrl: ${base}\n`, 'utf8')
+    await writeFile(
+      join(root, 'tests/e2e/cases/missing-fixture.yaml'),
+      `id: missing-fixture\nname: 数据缺失\nfixtures: [tests/e2e/data/no-such-fixture.yaml]\nsteps:\n  - target: api\n    action: request\n    url: /login\n    expected: '200'\n`,
+      'utf8',
+    )
+    await writeFile(
+      join(root, 'tests/e2e/cases/healthy.yaml'),
+      `id: healthy\nname: 正常用例\nsteps:\n  - target: api\n    action: request\n    url: /login\n    expected: '200'\n`,
+      'utf8',
+    )
+    const client = new TestPilotClient({ root })
+    const { summary } = await client.runCases({
+      adapters: [apiAdapterFactory({ baseUrl: base })],
+    })
+
+    // 不再整 run 中止:缺数据的 case blocked(exit 2 语义),健康 case 照常跑完
+    const blocked = summary.cases.find((item) => item.caseId === 'missing-fixture')
+    const healthy = summary.cases.find((item) => item.caseId === 'healthy')
+    expect(blocked?.status).toBe('blocked')
+    expect(blocked?.errorCode).toBe('FIXTURE_MISSING')
+    expect(healthy?.status).toBe('passed')
+    expect(summary.totals.blocked).toBe(1)
+    expect(summary.totals.passed).toBe(1)
+    expect(summary.status).toBe('blocked')
+  })
 })

@@ -109,7 +109,7 @@ npx csspilot run --tag smoke                      # 按标签
 | 1 | 产品回归或证据不足 | `failed`(产品 bug)、`inconclusive`(前置变量缺失,没测到) |
 | 2 | 环境/前置阻塞,非产品回归 | `blocked`(服务不可达、adapter 未注册、fixture/凭据缺失) |
 
-输出行 `⊘` = blocked 计数,`?` = inconclusive 计数;规则:未知错误码一律按产品失败(宁红勿漏)。
+输出行 `⊘` = blocked 计数,`?` = inconclusive 计数;规则:未知错误码一律按产品失败(宁红勿漏)。CI 判定:0 通过,**1 与 2 都必须判失败**(2 只是分流到环境排查,不代表运行成功);fixture 缺失的用例按 blocked 阻塞,同一 run 中其余用例照常执行。
 
 ## report —— 生成报告
 

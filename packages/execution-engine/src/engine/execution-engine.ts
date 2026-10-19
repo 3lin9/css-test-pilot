@@ -15,6 +15,8 @@ export interface RunCaseOptions {
   rowIndex: number
   initialVariables: Record<string, string>
   missingDependencies: string[]
+  /** prepare 阶段已定案的阻塞(fixture 缺失等):case 以 blocked 进入执行,步骤不再运行 */
+  blockedError?: { code: string; message: string }
   artifacts: ArtifactManager
   bus: EventBus
   resolver: AdapterResolver
@@ -172,22 +174,42 @@ export class ExecutionEngine {
       return passed
     }
 
-    const setupPassed = await runPhase('setup', data.setup ?? [])
-    if (setupPassed) {
-      await runPhase('steps', data.steps)
-    } else {
-      for (const [index, step] of data.steps.entries()) {
+    if (options.blockedError) {
+      // prepare 阶段已定案的阻塞(fixture 缺失等):合成失败步骤后走既有 caseError 链路,
+      // 状态由 caseStatusFromErrorCode 推导(blocked),totals/reporter/exit code 自然生效
+      const first = data.setup?.[0] ?? data.steps[0]
+      if (first) {
         steps.push({
-          index,
-          phase: 'steps',
-          target: step.target,
-          action: step.action,
-          status: 'skipped',
+          index: 0,
+          phase: 'setup',
+          target: first.target,
+          action: first.action,
+          status: 'failed',
           durationMs: 0,
+          error: options.blockedError.message,
+          errorCode: options.blockedError.code,
         })
       }
+      caseError = options.blockedError.message
+      caseErrorCode = options.blockedError.code
+    } else {
+      const setupPassed = await runPhase('setup', data.setup ?? [])
+      if (setupPassed) {
+        await runPhase('steps', data.steps)
+      } else {
+        for (const [index, step] of data.steps.entries()) {
+          steps.push({
+            index,
+            phase: 'steps',
+            target: step.target,
+            action: step.action,
+            status: 'skipped',
+            durationMs: 0,
+          })
+        }
+      }
+      await runPhase('teardown', data.teardown ?? [])
     }
-    await runPhase('teardown', data.teardown ?? [])
 
     const finishedAt = new Date()
     // case 状态按第一个失败步骤的错误码推导:failed(产品) / inconclusive(没测到) / blocked(环境)

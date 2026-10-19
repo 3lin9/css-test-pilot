@@ -2,6 +2,7 @@ import { mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises'
 import { dirname, extname, isAbsolute, join, resolve } from 'node:path'
 import type { DslIssue, CaseValidationResult, TestCase } from '@testpilot/dsl'
 import { validateCaseSource } from '@testpilot/dsl'
+import { TestPilotError } from '@testpilot/core'
 import { resolveRoot, type ProjectOptions } from './project'
 import { prepareCaseExecutions } from './case-preparation'
 
@@ -135,6 +136,10 @@ async function validateCaseDataSource(
     )
     return validation
   } catch (error) {
+    // fixture/dataset 文件缺失不是编写错误:放行校验,run 时按 FIXTURE_MISSING 阻塞(blocked)
+    if (error instanceof TestPilotError && error.code === 'FIXTURE_MISSING') {
+      return validation
+    }
     return {
       ok: false,
       data: validation.data,
