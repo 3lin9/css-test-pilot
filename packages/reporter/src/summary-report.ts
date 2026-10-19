@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import type { RunSummary } from '@testpilot/core'
-import { categoryLabel, classifyFailure, FAILURE_CATEGORIES, type FailureCategory } from './classify'
+import { categoryLabel, classifyFromCode, classifyFailure, FAILURE_CATEGORIES, type FailureCategory } from './classify'
 
 export interface SummaryRunInput {
   runId: string
@@ -44,6 +44,8 @@ export interface SummaryReportData {
   }
   runs: SummaryRunPoint[]
   cases: SummaryCase[]
+  /** 三态桶计数(blocked=环境/前置,inconclusive=证据不足),非产品回归单列 */
+  buckets: { blocked: number; inconclusive: number }
   platforms: string[]
   categories: Array<{ id: FailureCategory; label: string; count: number }>
   categoryLabels: Record<string, string>
@@ -79,7 +81,10 @@ export function buildSummaryData(runs: readonly SummaryRunInput[]): SummaryRepor
     for (const item of summary.cases) {
       const platforms = [...new Set(item.steps.map((step) => step.target))]
       const failedStep = item.steps.find((step) => step.status === 'failed')
-      const category = item.status === 'failed' ? classifyFailure(failedStep?.error) : undefined
+      // 错误码映射确定性优先;历史数据无码时回退 message regex
+      const category =
+        classifyFromCode(item.errorCode ?? failedStep?.errorCode) ??
+        (item.status === 'failed' ? classifyFailure(failedStep?.error) : undefined)
       executions.push({
         runId,
         caseId: item.caseId,
@@ -147,6 +152,10 @@ export function buildSummaryData(runs: readonly SummaryRunInput[]): SummaryRepor
   const durations = runs.map((item) => item.summary.durationMs).filter((value) => typeof value === 'number')
 
   return {
+    buckets: {
+      blocked: executions.filter((exec) => exec.status === 'blocked').length,
+      inconclusive: executions.filter((exec) => exec.status === 'inconclusive').length,
+    },
     window: {
       runs: runs.length,
       from: runPoints[0]?.startedAt,
@@ -365,6 +374,8 @@ export function renderSummaryHtml(data: SummaryReportData): string {
     <div class="card"><b>${rateText}</b><span>整体通过率</span></div>
     <div class="card"><b>${(kpis.avgDurationMs / 1000).toFixed(1)}s</b><span>平均运行耗时</span></div>
     <div class="card"><b>${kpis.flakyCount}</b><span>Flaky 用例</span></div>
+    ${data.buckets.blocked > 0 ? `<div class="card"><b>${data.buckets.blocked} ⊘</b><span>环境/前置阻塞(非产品)</span></div>` : ''}
+    ${data.buckets.inconclusive > 0 ? `<div class="card"><b>${data.buckets.inconclusive} ?</b><span>未验证(证据不足)</span></div>` : ''}
   </div>
 
   <h2>趋势(每次运行结果与通过率,悬浮看详情)</h2>

@@ -1,7 +1,8 @@
 import { writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import type { CaseResult, RunSummary, StepResult } from '@testpilot/core'
-import { categoryLabel, classifyFailure, FAILURE_CATEGORIES, type FailureCategory } from './classify'
+import { verdictFromErrorCode, type Verdict } from '@testpilot/core'
+import { categoryLabel, classifyFromCode, classifyFailure, FAILURE_CATEGORIES, type FailureCategory } from './classify'
 import { collectHistory, type HistoryPoint } from './history'
 import { toSummaryView, type ReportSummaryView } from './summary'
 
@@ -16,6 +17,8 @@ export interface ReportFailureEntry {
   caseId: string
   index: number
   message: string
+  /** 三态判定:product(产品)/ infra(环境与前置)/ unverified(未验证);无码历史数据归 product */
+  verdict: Verdict
 }
 
 export interface ReportCase extends CaseResult {
@@ -52,7 +55,9 @@ export async function writeReports(
   const cases: ReportCase[] = summary.cases.map((item) => {
     const categories = new Set<FailureCategory>()
     const steps = item.steps.map((step) => {
-      const category = step.status === 'failed' ? classifyFailure(step.error) : undefined
+      // 错误码映射确定性优先;历史数据无码时回退 message regex
+      const category =
+        classifyFromCode(step.errorCode) ?? (step.status === 'failed' ? classifyFailure(step.error) : undefined)
       if (category) {
         categories.add(category)
         failures.push({
@@ -61,6 +66,7 @@ export async function writeReports(
           caseId: item.caseId,
           index: step.index,
           message: step.error ?? '',
+          verdict: verdictFromErrorCode(step.errorCode ?? item.errorCode),
         })
       }
       return { ...step, category }
@@ -85,6 +91,29 @@ export async function writeReports(
   await writeFile(jsonPath, JSON.stringify(data, null, 2), 'utf8')
   await writeFile(htmlPath, renderHtml(data), 'utf8')
   return { json: jsonPath, html: htmlPath }
+}
+
+/** 失败用例按三态分桶;空桶也渲染(标题常驻,便于读者确认「未验证」一栏是否存在内容) */
+export const VERDICT_GROUPS: Array<{ verdict: Verdict; title: string }> = [
+  { verdict: 'product', title: '产品失败' },
+  { verdict: 'infra', title: '环境与前置(非产品回归)' },
+  { verdict: 'unverified', title: '未验证' },
+]
+
+function verdictGroupsHtml(data: ReportData): string {
+  return VERDICT_GROUPS.map((group) => {
+    const items = data.failures.filter((failure) => failure.verdict === group.verdict)
+    const list =
+      items.length > 0
+        ? items
+            .map(
+              (failure) =>
+                `<li><code>${escapeHtml(failure.caseId)}</code> #${failure.index} ${escapeHtml(failure.message.slice(0, 160))}</li>`,
+            )
+            .join('\n')
+        : '<li class="muted">无</li>'
+    return `<div class="verdict-group"><h3>${escapeHtml(group.title)}(${items.length})</h3><ul>${list}</ul></div>`
+  }).join('\n')
 }
 
 function categoryChips(data: ReportData): string {
@@ -113,6 +142,7 @@ export function renderHtml(data: ReportData): string {
   const trendSvg = renderTrend(data)
   const casesHtml = groupedCasesHtml(summary.cases)
   const chips = categoryChips(data)
+  const verdictHtml = verdictGroupsHtml(data)
   return `<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -152,6 +182,11 @@ export function renderHtml(data: ReportData): string {
   .muted { color: var(--muted); }
   .hide { display: none !important; }
   .meta { color: var(--muted); font-size: 12px; margin: 6px 0; }
+  .verdicts { display: flex; gap: 14px; flex-wrap: wrap; }
+  .verdict-group { background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; flex: 1; min-width: 220px; }
+  .verdict-group h3 { font-size: 13px; margin: 0 0 6px; }
+  .verdict-group ul { margin: 0; padding-left: 18px; font-size: 12px; }
+  .verdict-group li { margin: 3px 0; }
 </style>
 </head>
 <body>
@@ -171,6 +206,9 @@ export function renderHtml(data: ReportData): string {
 
   <h2>历史趋势(最近 ${data.history.length + 1} 次运行)</h2>
   <div class="trend">${trendSvg}</div>
+
+  <h2>失败三桶</h2>
+  <div class="verdicts">${verdictHtml}</div>
 
   <h2>失败分类</h2>
   <div class="toolbar" id="cat-chips">${chips}</div>

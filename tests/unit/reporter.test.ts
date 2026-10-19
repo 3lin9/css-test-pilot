@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, test } from 'vitest'
 import type { RunSummary } from '@testpilot/core'
-import { buildSummaryData, classifyFailure, writeReports, writeSummaryReport } from '@testpilot/reporter'
+import { buildSummaryData, classifyFromCode, classifyFailure, writeReports, writeSummaryReport } from '@testpilot/reporter'
 
 function summaryFixture(runId: string, status: 'passed' | 'failed'): RunSummary {
   return {
@@ -235,5 +235,117 @@ describe('buildSummaryData + writeSummaryReport(汇总报告)', () => {
     expect(html).toContain('<svg')
     const json = JSON.parse(await readFile(written.json, 'utf8'))
     expect(json.kpis.runs).toBe(1)
+  })
+})
+
+
+describe('classifyFromCode + 三桶分组( errorCode 优先)', () => {
+  test('classifyFromCode:错误码 → 分类全映射', () => {
+    expect(classifyFromCode('ASSERTION_FAILED')).toBe('assert')
+    expect(classifyFromCode('REQUEST_COUNT_MISMATCH')).toBe('assert')
+    expect(classifyFromCode('STATUS_MISMATCH')).toBe('assert')
+    expect(classifyFromCode('STEP_TIMEOUT')).toBe('assert')
+    expect(classifyFromCode('ELEMENT_NOT_FOUND')).toBe('element')
+    expect(classifyFromCode('ADAPTER_NOT_FOUND')).toBe('adapter')
+    expect(classifyFromCode('UNSUPPORTED_ACTION')).toBe('adapter')
+    expect(classifyFromCode('CONFIG_MISSING')).toBe('adapter')
+    expect(classifyFromCode('ENVIRONMENT_UNAVAILABLE')).toBe('env')
+    expect(classifyFromCode('FIXTURE_MISSING')).toBe('env')
+    expect(classifyFromCode('ACCOUNT_UNAVAILABLE')).toBe('env')
+    expect(classifyFromCode('PREREQ_VARIABLE_MISSING')).toBe('other')
+    expect(classifyFromCode(undefined)).toBeUndefined()
+    expect(classifyFromCode('SOMETHING_NEW')).toBeUndefined()
+  })
+
+  test('classifyFailure regex 行为不变(legacy 回归)', () => {
+    expect(classifyFailure('断言失败:期望 x,实际 y')).toBe('assert')
+    expect(classifyFailure('waiting for locator(".x")')).toBe('element')
+  })
+
+  test('buildSummaryData:blocked/inconclusive 桶计数 + run 状态透传', () => {
+    const base = summaryFixture('r3', 'passed')
+    const withBuckets: RunSummary = {
+      ...base,
+      status: 'blocked',
+      totals: { ...base.totals, cases: 3, passed: 1, blocked: 1, inconclusive: 1 },
+      cases: [
+        ...base.cases,
+        {
+          caseId: 'no-env',
+          caseName: '环境阻塞',
+          file: 'no-env.yaml',
+          status: 'blocked',
+          errorCode: 'ADAPTER_NOT_FOUND',
+          steps: [{ index: 0, target: 'miniapp', action: 'launch', status: 'failed', durationMs: 1, errorCode: 'ADAPTER_NOT_FOUND' }],
+          startedAt: base.startedAt,
+          finishedAt: base.finishedAt,
+          durationMs: 1,
+        },
+        {
+          caseId: 'no-var',
+          caseName: '前置缺失',
+          file: 'no-var.yaml',
+          status: 'inconclusive',
+          errorCode: 'PREREQ_VARIABLE_MISSING',
+          steps: [{ index: 0, target: 'web', action: 'click', status: 'failed', durationMs: 1, errorCode: 'PREREQ_VARIABLE_MISSING' }],
+          startedAt: base.startedAt,
+          finishedAt: base.finishedAt,
+          durationMs: 1,
+        },
+      ],
+    }
+    const data = buildSummaryData([{ runId: 'r3', summary: withBuckets }])
+    expect(data.buckets).toEqual({ blocked: 1, inconclusive: 1 })
+    expect(data.runs[0]?.status).toBe('blocked')
+    // blocked/inconclusive 不计入失败,也不进整体通过率分子分母的失败侧
+    expect(data.kpis.executions).toBe(3)
+  })
+
+  test('writeReports:失败 case 按三桶分组(env 码 → 环境与前置,无码 → 产品失败)', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'testpilot-reporter-verdict-'))
+    roots.push(root)
+    const envCase = {
+      ...summaryFixture('r4', 'failed').cases[0]!,
+      errorCode: 'ENVIRONMENT_UNAVAILABLE',
+      steps: [
+        {
+          index: 0,
+          target: 'web' as const,
+          action: 'navigate',
+          status: 'failed' as const,
+          durationMs: 10,
+          errorCode: 'ENVIRONMENT_UNAVAILABLE',
+          error: 'net::ERR_CONNECTION_REFUSED',
+        },
+      ],
+    }
+    const productCase = {
+      ...summaryFixture('r4', 'failed').cases[0]!,
+      caseId: 'checkout',
+      steps: [
+        {
+          index: 0,
+          target: 'web' as const,
+          action: 'assert',
+          status: 'failed' as const,
+          durationMs: 10,
+          error: '断言失败:期望 已发货,实际 未发货',
+        },
+      ],
+    }
+    const summary: RunSummary = { ...summaryFixture('r4', 'failed'), cases: [envCase, productCase] }
+    const runDir = join(root, 'run-r4')
+    await mkdir(runDir, { recursive: true })
+    const written = await writeReports(runDir, summary)
+    const payload = JSON.parse(await readFile(written.json, 'utf8')) as {
+      failures: Array<{ caseId: string; verdict?: string }>
+    }
+    const verdicts = Object.fromEntries(payload.failures.map((f) => [f.caseId, f.verdict]))
+    expect(verdicts['login']).toBe('infra')
+    expect(verdicts['checkout']).toBe('product')
+    const html = await readFile(written.html, 'utf8')
+    expect(html).toContain('产品失败')
+    expect(html).toContain('环境与前置(非产品回归)')
+    expect(html).toContain('未验证')
   })
 })
