@@ -149,13 +149,13 @@ export function renderHtml(data: ReportData): string {
 <meta charset="utf-8" />
 <title>TestPilot Report ${escapeHtml(summary.runId)}</title>
 <style>
-  :root { --ok:#1a7f37; --fail:#cf222e; --warn:#9a6700; --skip:#6e7781; --line:#d0d7de; --muted:#59636e; }
+  :root { --ok:#1a7f37; --fail:#cf222e; --warn:#9a6700; --skip:#6e7781; --blocked:#8250df; --inconclusive:#9a6700; --line:#d0d7de; --muted:#59636e; }
   * { box-sizing: border-box; }
   body { font-family: system-ui, "Segoe UI", sans-serif; margin: 0; color: #1f2328; background: #f6f8fa; }
   .wrap { max-width: 1080px; margin: 0 auto; padding: 20px 16px 48px; }
   h1 { font-size: 20px; margin: 8px 0; } h2 { font-size: 15px; margin: 24px 0 8px; }
   .badge { display: inline-block; padding: 2px 10px; border-radius: 10px; color: #fff; font-size: 12px; }
-  .passed { background: var(--ok); } .failed { background: var(--fail); } .warning { background: var(--warn); } .skipped { background: var(--skip); }
+  .passed { background: var(--ok); } .failed { background: var(--fail); } .warning { background: var(--warn); } .skipped { background: var(--skip); } .blocked { background: var(--blocked); } .inconclusive { background: var(--inconclusive); }
   code { background: #eef1f4; padding: 1px 5px; border-radius: 4px; font-size: 12px; }
   .cards { display: flex; gap: 12px; flex-wrap: wrap; margin: 14px 0; }
   .card { background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 10px 16px; min-width: 130px; }

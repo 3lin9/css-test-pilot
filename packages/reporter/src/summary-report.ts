@@ -348,7 +348,7 @@ export function renderSummaryHtml(data: SummaryReportData): string {
   th.num, td.num { text-align: right; }
   code { background: #eef1f4; padding: 1px 5px; border-radius: 4px; font-size: 12px; cursor: pointer; }
   .badge { display: inline-block; padding: 1px 9px; border-radius: 10px; color: #fff; font-size: 11px; }
-  .passed { background: #1a7f37; } .failed { background: #cf222e; } .unknown { background: #6e7781; }
+  .passed { background: #1a7f37; } .failed { background: #cf222e; } .unknown { background: #6e7781; } .blocked { background: #8250df; } .inconclusive { background: #9a6700; }
   .toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 10px 0; }
   .chip { border: 1px solid var(--line); background: #fff; border-radius: 14px; padding: 3px 12px; font-size: 12px; cursor: pointer; }
   .chip.active { background: #0969da; color: #fff; border-color: #0969da; }
