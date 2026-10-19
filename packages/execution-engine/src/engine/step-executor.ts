@@ -1,5 +1,5 @@
 import { redactHeaders, type CapturedRequest, type TestAdapter } from '@testpilot/adapter-core'
-import type { StepResult } from '@testpilot/core'
+import { TestPilotError, type StepResult } from '@testpilot/core'
 import type { TestStep } from '@testpilot/dsl'
 import type { ArtifactManager } from '../artifacts'
 import type { ExecutionContext } from '../context'
@@ -45,7 +45,7 @@ export async function executeStep(
 
     if (step.expectRequests) {
       if (!adapter.startRequestCapture || !adapter.stopRequestCapture) {
-        throw new Error(`当前 ${step.target} adapter 不支持请求次数断言`)
+        throw new TestPilotError('UNSUPPORTED_ACTION', `当前 ${step.target} adapter 不支持请求次数断言`)
       }
       await adapter.startRequestCapture()
       captureStarted = true
@@ -74,7 +74,7 @@ export async function executeStep(
       case 'assert':
         // api 端断言最近一次响应体;UI 端断言元素文本
         if (step.target === 'api') {
-          if (!adapter.assertResponse) throw new Error('当前 adapter 不支持 api 断言')
+          if (!adapter.assertResponse) throw new TestPilotError('UNSUPPORTED_ACTION', '当前 adapter 不支持 api 断言')
           await adapter.assertResponse(context.resolve(step.expected ?? ''))
         } else {
           await adapter.assert(locator!, context.resolve(step.expected ?? ''))
@@ -98,7 +98,7 @@ export async function executeStep(
         break
       }
       case 'request': {
-        if (!adapter.request) throw new Error('当前 adapter 不支持 api request')
+        if (!adapter.request) throw new TestPilotError('UNSUPPORTED_ACTION', '当前 adapter 不支持 api request')
         const method = step.method ?? 'GET'
         const url = context.resolve(step.url ?? '')
         const headers = resolveHeaders(step.headers, context)
@@ -119,7 +119,8 @@ export async function executeStep(
         if (step.expected !== undefined) {
           const expectedStatus = context.resolve(step.expected)
           if (String(response.status) !== expectedStatus) {
-            throw new Error(
+            throw new TestPilotError(
+              'STATUS_MISMATCH',
               `HTTP 状态码 ${response.status} ${response.statusText},期望 ${expectedStatus}:${snippet(response.bodyText, 200)}`,
             )
           }
@@ -128,7 +129,7 @@ export async function executeStep(
       }
       default: {
         const exhaustive: never = step.action
-        throw new Error(`不支持的 action:${String(exhaustive)}`)
+        throw new TestPilotError('UNSUPPORTED_ACTION', `不支持的 action:${String(exhaustive)}`)
       }
     }
 
@@ -140,7 +141,8 @@ export async function executeStep(
       result.requestAssertions = buildRequestAssertions(step, requests, context)
       const mismatches = result.requestAssertions.filter((item) => item.actualCount !== item.count)
       if (mismatches.length > 0) {
-        throw new Error(
+        throw new TestPilotError(
+          'REQUEST_COUNT_MISMATCH',
           mismatches
             .map(
               (item) =>
@@ -161,6 +163,8 @@ export async function executeStep(
     }
     result.status = 'failed'
     result.error = err instanceof Error ? err.message : String(err)
+    // TestPilotError 的机器码透传给 case 级三态判定;普通 Error 无码
+    result.errorCode = err instanceof TestPilotError ? err.code : undefined
     try {
       const data = await adapter.screenshot()
       result.screenshot = await artifacts.saveStepScreenshot(`${options.screenshotName}-failed.png`, data)
@@ -174,8 +178,8 @@ export async function executeStep(
 }
 
 async function extractApiResponse(adapter: TestAdapter, path: string): Promise<string> {
-  if (!adapter.extractResponse) throw new Error('当前 adapter 不支持 api 提取')
-  if (!path) throw new Error('api 端 extract 需要提供 value(点号 JSON path)')
+  if (!adapter.extractResponse) throw new TestPilotError('UNSUPPORTED_ACTION', '当前 adapter 不支持 api 提取')
+  if (!path) throw new TestPilotError('UNSUPPORTED_ACTION', 'api 端 extract 需要提供 value(点号 JSON path)')
   return adapter.extractResponse(path)
 }
 

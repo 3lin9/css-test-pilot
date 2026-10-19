@@ -4,7 +4,8 @@ import { join } from 'node:path'
 import { describe, expect, test } from 'vitest'
 import type { CaseLocator } from '@testpilot/dsl'
 import { TestPilotError } from '@testpilot/core'
-import { AdapterResolver, ExecutionContext, TestRunner } from '@testpilot/execution-engine'
+import { AdapterResolver, ArtifactManager, ExecutionContext, TestRunner, executeStep } from '@testpilot/execution-engine'
+import type { TestStep } from '@testpilot/dsl'
 import type { CapturedRequest, TestAdapter } from '@testpilot/adapter-core'
 
 /** 进程内 mock adapter:验证引擎编排,不启动真实浏览器 */
@@ -313,5 +314,59 @@ describe('ExecutionContext.resolve 未定义变量', () => {
     } catch (err) {
       expect((err as TestPilotError).code).toBe('ACCOUNT_UNAVAILABLE')
     }
+  })
+})
+
+describe('executeStep 错误码化', () => {
+  class ApiMockAdapter extends MockAdapter {
+    async request(): Promise<{ status: number; statusText: string; bodyText?: string }> {
+      return { status: 500, statusText: 'Internal Server Error', bodyText: 'boom' }
+    }
+  }
+
+  async function runStep(step: TestStep, adapter: MockAdapter) {
+    const root = await mkdtemp(join(tmpdir(), 'testpilot-step-'))
+    const artifacts = new ArtifactManager(join(root, 'run'))
+    await artifacts.prepare()
+    return executeStep(step, 0, adapter, new ExecutionContext(), artifacts, { screenshotName: 's0' })
+  }
+
+  test('普通 Error → errorCode 为 undefined,error 保留消息', async () => {
+    const result = await runStep({ target: 'web', action: 'click', locator: { css: '.missing' } }, new MockAdapter())
+    expect(result.status).toBe('failed')
+    expect(result.error).toContain('element not found')
+    expect(result.errorCode).toBeUndefined()
+  })
+
+  test('请求次数不匹配 → REQUEST_COUNT_MISMATCH', async () => {
+    const result = await runStep(
+      {
+        target: 'web',
+        action: 'click',
+        locator: { css: '.request-once' },
+        expectRequests: [{ method: 'POST', urlContains: '/api/orders', count: 2, windowMs: 0 }],
+      },
+      new MockAdapter(),
+    )
+    expect(result.status).toBe('failed')
+    expect(result.error).toContain('请求次数不匹配')
+    expect(result.errorCode).toBe('REQUEST_COUNT_MISMATCH')
+  })
+
+  test('request 步骤状态码不匹配 → STATUS_MISMATCH', async () => {
+    const result = await runStep(
+      { target: 'api', action: 'request', url: 'https://api.test/orders', expected: '200' },
+      new ApiMockAdapter(),
+    )
+    expect(result.status).toBe('failed')
+    expect(result.error).toContain('HTTP 状态码 500')
+    expect(result.errorCode).toBe('STATUS_MISMATCH')
+  })
+
+  test('引用未定义变量 → PREREQ_VARIABLE_MISSING', async () => {
+    const result = await runStep({ target: 'web', action: 'click', locator: { css: '${missingVar}' } }, new MockAdapter())
+    expect(result.status).toBe('failed')
+    expect(result.error).toContain('missingVar')
+    expect(result.errorCode).toBe('PREREQ_VARIABLE_MISSING')
   })
 })

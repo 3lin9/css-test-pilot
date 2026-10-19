@@ -1,7 +1,7 @@
 {
   "name": "testpilot-monorepo",
   "version": "0.1.0",
-  "private": true,
+  "private": false,
   "description": "TestPilot — AI Native 跨端业务测试基础设施",
   "type": "module",
   "packageManager": "pnpm@10.32.1",
@@ -25,6 +25,7 @@
     "@testpilot/dsl": "workspace:^",
     "@testpilot/execution-engine": "workspace:^",
     "@testpilot/reporter": "workspace:^",
+    "@testpilot/sdk": "workspace:^",
     "@types/node": "^22.0.0",
     "eslint": "^9.0.0",
     "turbo": "^2.3.0",
