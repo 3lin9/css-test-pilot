@@ -4,7 +4,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { AdapterEvidence, CapturedRequest, TestAdapter } from '@testpilot/adapter-core'
 import type { CaseLocator, StepTarget } from '@testpilot/dsl'
-import type { BrowserContext, Locator, Page, Request } from 'playwright'
+import { errors, type BrowserContext, type Locator, type Page, type Request } from 'playwright'
+import { TestPilotError } from '@testpilot/core'
 import type { BrowserBundle, PlaywrightAdapterOptions } from './browser'
 import { openCaseContext } from './browser'
 
@@ -86,25 +87,38 @@ export class PlaywrightAdapter implements TestAdapter {
     const page = await this.ensurePage()
     const target =
       options.baseUrl && !/^https?:\/\//i.test(url) ? new URL(url, options.baseUrl).toString() : url
-    await page.goto(target)
+    try {
+      await page.goto(target)
+    } catch (err) {
+      if (err instanceof errors.TimeoutError) {
+        throw new TestPilotError('STEP_TIMEOUT', err.message, { cause: err })
+      }
+      if (err instanceof Error && err.message.includes('net::ERR')) {
+        throw new TestPilotError('ENVIRONMENT_UNAVAILABLE', err.message, { cause: err })
+      }
+      throw err
+    }
   }
 
   async click(locator: CaseLocator): Promise<void> {
-    await (await this.toLocator(locator)).click()
+    const target = await this.toLocator(locator)
+    await this.coded(() => target.click())
   }
 
   async input(locator: CaseLocator, value: string): Promise<void> {
-    await (await this.toLocator(locator)).fill(value)
+    const target = await this.toLocator(locator)
+    await this.coded(() => target.fill(value))
   }
 
   async select(locator: CaseLocator, value: string): Promise<void> {
-    await (await this.toLocator(locator)).selectOption(value)
+    const target = await this.toLocator(locator)
+    await this.coded(() => target.selectOption(value))
   }
 
   async wait(locator: CaseLocator | undefined, timeoutMs: number | undefined): Promise<void> {
     const page = await this.ensurePage()
     if (locator) {
-      await this.toLocatorOn(page, locator).waitFor({ state: 'visible', timeout: timeoutMs })
+      await this.coded(() => this.toLocatorOn(page, locator).waitFor({ state: 'visible', timeout: timeoutMs }))
       return
     }
     await page.waitForTimeout(timeoutMs ?? 1_000)
@@ -112,16 +126,17 @@ export class PlaywrightAdapter implements TestAdapter {
 
   async assert(locator: CaseLocator, expected: string): Promise<void> {
     const target = await this.toLocator(locator)
-    await target.waitFor({ state: 'visible' })
-    const actual = (await target.innerText()).trim()
+    await this.coded(() => target.waitFor({ state: 'visible' }))
+    const actual = (await this.coded(() => target.innerText())).trim()
     const wanted = expected.trim()
     if (!actual.includes(wanted)) {
-      throw new Error(`断言失败:期望包含 "${wanted}",实际为 "${actual.slice(0, 200)}"`)
+      throw new TestPilotError('ASSERTION_FAILED', `断言失败:期望包含 "${wanted}",实际为 "${actual.slice(0, 200)}"`)
     }
   }
 
   async extract(locator: CaseLocator): Promise<string> {
-    return (await this.toLocator(locator)).innerText().then((text) => text.trim())
+    const target = await this.toLocator(locator)
+    return this.coded(() => target.innerText()).then((text) => text.trim())
   }
 
   async screenshot(): Promise<Buffer> {
@@ -142,6 +157,18 @@ export class PlaywrightAdapter implements TestAdapter {
 
   private async toLocator(locator: CaseLocator): Promise<Locator> {
     return this.toLocatorOn(await this.ensurePage(), locator)
+  }
+
+  /** 定位类操作的统一兜底:等待超时按「元素没等到」归类(可能是回归也可能是 selector 腐烂,不允许静默) */
+  private async coded<T>(fn: () => Promise<T>): Promise<T> {
+    try {
+      return await fn()
+    } catch (err) {
+      if (err instanceof errors.TimeoutError) {
+        throw new TestPilotError('ELEMENT_NOT_FOUND', err.message, { cause: err })
+      }
+      throw err
+    }
   }
 
   private toLocatorOn(page: Page, locator: CaseLocator): Locator {

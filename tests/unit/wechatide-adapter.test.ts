@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { beforeAll, beforeEach, describe, expect, test, vi } from 'vitest'
 import type { CaseLocator } from '@testpilot/dsl'
+import { TestPilotError } from '@testpilot/core'
 import { MiniAppAdapter, wechatideAdapterFactory } from '@testpilot/adapter-wechatide'
 import type { AutomatorProgram } from '@testpilot/adapter-wechatide'
 
@@ -161,5 +162,78 @@ describe('MiniAppAdapter(miniprogram-automator 映射)', () => {
     const factory = wechatideAdapterFactory({ projectPath })
     // 不真正 create(会拉起真实 SDK),仅验证工厂的 target
     expect(factory.target).toBe('miniapp')
+  })
+})
+
+describe('MiniAppAdapter 错误码', () => {
+  test('等待元素超时 → ELEMENT_NOT_FOUND(消息原文不变)', async () => {
+    vi.useFakeTimers()
+    try {
+      vi.setSystemTime(Date.now() + 11_000)
+      const { program, fakePage } = createFakeProgram()
+      fakePage.$.mockResolvedValue(null)
+      const adapter = new MiniAppAdapter(
+        { projectPath, cliPath: 'C:/devtools/cli.bat', closeIde: false },
+        { launch: vi.fn(async () => program) },
+      )
+      await adapter.launch()
+      // startedAt 在 element() 内部取自假时钟,需推进 fake timer 让 Date.now() 越过 10s 阈值
+      const pending = adapter.click({ css: '.slow' }).then(
+        () => null,
+        (e) => e,
+      )
+      await vi.advanceTimersByTimeAsync(11_000)
+      const err = await pending
+      expect(err).toBeInstanceOf(TestPilotError)
+      expect((err as TestPilotError).code).toBe('ELEMENT_NOT_FOUND')
+      expect((err as Error).message).toContain('等待元素超时(10000ms)')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  test('断言失败 → ASSERTION_FAILED(消息原文不变)', async () => {
+    const { program, fakeElement } = createFakeProgram()
+    const adapter = new MiniAppAdapter(
+      { projectPath, cliPath: 'C:/devtools/cli.bat', closeIde: false },
+      { launch: vi.fn(async () => program) },
+    )
+    await adapter.launch()
+    const err = await adapter.assert({ css: '.order-id' }, '已发货').then(
+      () => null,
+      (e) => e,
+    )
+    expect(err).toBeInstanceOf(TestPilotError)
+    expect((err as TestPilotError).code).toBe('ASSERTION_FAILED')
+    expect((err as Error).message).toContain('断言失败:期望包含 "已发货"')
+  })
+
+  test('select 能力缺口 → UNSUPPORTED_ACTION', async () => {
+    const { program } = createFakeProgram()
+    const adapter = new MiniAppAdapter(
+      { projectPath, cliPath: 'C:/devtools/cli.bat', closeIde: false },
+      { launch: vi.fn(async () => program) },
+    )
+    await adapter.launch()
+    const err = await adapter.select({ css: '.picker' }, 'a').then(
+      () => null,
+      (e) => e,
+    )
+    expect(err).toBeInstanceOf(TestPilotError)
+    expect((err as TestPilotError).code).toBe('UNSUPPORTED_ACTION')
+  })
+
+  test('text locator 编写错误保持普通 Error(不带码)', async () => {
+    const { program } = createFakeProgram()
+    const adapter = new MiniAppAdapter(
+      { projectPath, cliPath: 'C:/devtools/cli.bat', closeIde: false },
+      { launch: vi.fn(async () => program) },
+    )
+    await adapter.launch()
+    const err = await adapter.click({ text: '登录' } as CaseLocator).then(
+      () => null,
+      (e) => e,
+    )
+    expect(err).not.toBeInstanceOf(TestPilotError)
   })
 })

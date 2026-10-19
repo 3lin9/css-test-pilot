@@ -1,4 +1,5 @@
 import automator from 'miniprogram-automator'
+import { TestPilotError } from '@testpilot/core'
 import { spawn } from 'node:child_process'
 import net from 'node:net'
 import type { CaseLocator, StepTarget } from '@testpilot/dsl'
@@ -95,12 +96,12 @@ function startCliAuto(cliPath: string, projectPath: string, port: number): Promi
     child.stderr?.on('data', (chunk: Buffer) => {
       output += chunk.toString('utf8')
     })
-    child.once('error', (err) => rejectPromise(new Error(`拉起开发者工具 cli 失败:${err.message}`)))
+    child.once('error', (err) => rejectPromise(new TestPilotError('ENVIRONMENT_UNAVAILABLE', `拉起开发者工具 cli 失败:${err.message}`)))
     child.once('exit', (code) => {
       if (code === 0) {
         resolvePromise()
       } else {
-        rejectPromise(new Error(`cli auto 退出码 ${code}:${output.slice(-400)}`))
+        rejectPromise(new TestPilotError('ENVIRONMENT_UNAVAILABLE', `cli auto 退出码 ${code}:${output.slice(-400)}`))
       }
     })
 
@@ -114,7 +115,7 @@ function startCliAuto(cliPath: string, projectPath: string, port: number): Promi
       socket.once('error', () => {
         socket.destroy()
         if (Date.now() - startedAt > AUTO_PORT_FALLBACK_WAIT_MS) {
-          rejectPromise(new Error(`等待开发者工具自动化端口 ${port} 超时;请确认:1) 工具已登录 2) 设置->安全设置->服务端口已开启`))
+          rejectPromise(new TestPilotError('ENVIRONMENT_UNAVAILABLE', `等待开发者工具自动化端口 ${port} 超时;请确认:1) 工具已登录 2) 设置->安全设置->服务端口已开启`))
         } else {
           setTimeout(poll, 500)
         }
@@ -177,7 +178,7 @@ export class MiniAppAdapter implements TestAdapter {
   }
 
   async select(): Promise<void> {
-    throw new Error('小程序端暂不支持 select(picker 交互),请改用 click 完成选择')
+    throw new TestPilotError('UNSUPPORTED_ACTION', '小程序端暂不支持 select(picker 交互),请改用 click 完成选择')
   }
 
   async wait(locator: CaseLocator | undefined, timeoutMs: number | undefined): Promise<void> {
@@ -197,7 +198,7 @@ export class MiniAppAdapter implements TestAdapter {
       const actual = (await element.text()).trim()
       const wanted = expected.trim()
       if (!actual.includes(wanted)) {
-        throw new Error(`断言失败:期望包含 "${wanted}",实际为 "${actual.slice(0, 200)}"`)
+        throw new TestPilotError('ASSERTION_FAILED', `断言失败:期望包含 "${wanted}",实际为 "${actual.slice(0, 200)}"`)
       }
     })
   }
@@ -313,7 +314,7 @@ export class MiniAppAdapter implements TestAdapter {
       const element = await page.$(selector)
       if (element) return element
       if (Date.now() - startedAt > ELEMENT_WAIT_MS) {
-        throw new Error(`等待元素超时(${ELEMENT_WAIT_MS}ms):${selector}`)
+        throw new TestPilotError('ELEMENT_NOT_FOUND', `等待元素超时(${ELEMENT_WAIT_MS}ms):${selector}`)
       }
       await delay(500)
     }

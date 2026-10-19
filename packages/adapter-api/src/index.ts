@@ -55,7 +55,7 @@ export class ApiAdapter implements TestAdapter {
         signal: AbortSignal.timeout(this.options.timeoutMs ?? 15_000),
       })
     } catch (err) {
-      throw new Error(`API 请求失败 ${request.method.toUpperCase()} ${url}:${err instanceof Error ? err.message : String(err)}`)
+      throw new TestPilotError('ENVIRONMENT_UNAVAILABLE', `API 请求失败 ${request.method.toUpperCase()} ${url}:${err instanceof Error ? err.message : String(err)}`, { cause: err })
     }
 
     const bodyText = await res.text()
@@ -80,7 +80,7 @@ export class ApiAdapter implements TestAdapter {
     if (!this.last) throw new Error('尚未发起任何 API 请求,无法断言响应')
     if (!this.last.bodyText.includes(expected)) {
       const snippet = this.last.bodyText.slice(0, 200)
-      throw new Error(`响应体不包含 "${expected}":HTTP ${this.last.status} ${snippet}`)
+      throw new TestPilotError('ASSERTION_FAILED', `响应体不包含 "${expected}":HTTP ${this.last.status} ${snippet}`)
     }
   }
 

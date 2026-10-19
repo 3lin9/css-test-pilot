@@ -1,5 +1,6 @@
 import { createServer, type Server } from 'node:http'
 import { afterAll, beforeAll, describe, expect, test } from 'vitest'
+import { TestPilotError } from '@testpilot/core'
 import { redactHeaders } from '@testpilot/adapter-core'
 import { ApiAdapter, apiAdapterFactory } from './index'
 
@@ -87,5 +88,28 @@ describe('adapter-api', () => {
     expect(redacted.authorization).toBe('[REDACTED]')
     expect(redacted['x-api-key']).toBe('[REDACTED]')
     expect(redacted['content-type']).toBe('application/json')
+  })
+})
+
+describe('adapter-api 错误码', () => {
+  test('连接失败 → ENVIRONMENT_UNAVAILABLE', async () => {
+    const adapter = new ApiAdapter({ baseUrl: 'http://127.0.0.1:1' })
+    const err = await adapter.request({ method: 'GET', url: '/x' }).then(
+      () => null,
+      (e) => e,
+    )
+    expect(err).toBeInstanceOf(TestPilotError)
+    expect((err as TestPilotError).code).toBe('ENVIRONMENT_UNAVAILABLE')
+  })
+
+  test('assertResponse 不包含 → ASSERTION_FAILED(带码)', async () => {
+    const adapter = new ApiAdapter({ baseUrl: base })
+    await adapter.request({ method: 'GET', url: '/login' })
+    const err = await adapter.assertResponse('nope').then(
+      () => null,
+      (e) => e,
+    )
+    expect(err).toBeInstanceOf(TestPilotError)
+    expect((err as TestPilotError).code).toBe('ASSERTION_FAILED')
   })
 })
