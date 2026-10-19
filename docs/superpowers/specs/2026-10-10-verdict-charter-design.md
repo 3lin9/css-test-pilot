@@ -1,7 +1,7 @@
 # 设计:三态判定与 charter 视角矩阵
 
 - 日期:2026-10-10
-- 状态:brainstorming 设计已口头批准,spec 待 review
+- 状态:**已实现并合并**(merge d914273:三态判定 + charter 视角矩阵)。2026-10-19 增补:charter 步骤新增三分判定规则(见特性③变更点),纯 workflow 文字,无代码改动
 - 来源:`docs/research/github-testcase-generation-landscape.md` §2.16(tester-army/e2e 三态判定)、§2.9(TestGen-LLM 过滤器链)、§4 共性模式 ⑥
 - 配套蓝图:`2026-10-10-replay-cache-blueprint.md`(特性①,不在本 spec 实现范围)
 
@@ -105,6 +105,7 @@ case 状态由步骤 verdict 汇总,优先级 **failed > inconclusive > blocked 
 
 1. **`skills/testpilot/workflows/test-requirements-review.md`**:
    - 「建立规则矩阵」之后插入一步「**套用 charter 视角矩阵**」(后续步骤号顺延):逐视角过 checklist,为每个 TP 标注视角(可多个);**某视角在本需求内无任何 TP 时必须显式记录「不适用 + 需求证据」,禁止静默跳过**。
+   - **三分判定规则**(视角 checklist 的出口):想到需求未覆盖的场景(重复点击 / 非法输入 / 文案细节等)时,按「需求是否给出预期结果」当场归类,三选一,禁止静默丢弃——① 需求已有预期 → 纳入 TP(打视角 tag);② 无预期且伤业务(资损 / 核心流程 / 数据一致性)→ 澄清问题,标注视角与风险等级,整单结论至多「有条件可测」,答复后回流为新 TP;③ 无预期且不伤业务 → 视角覆盖表记「暂缓 + 理由」。
    - 测试点清单表增加「视角」列。
    - 评审产物(`tests/e2e/reviews/<slug>-coverage.md` 同级)增加「视角覆盖表」:视角 × TP 列表 / 不适用理由。
 2. **`skills/testpilot/workflows/create-case.md`**:新增规则——TP 的视角写入 case `tags`(命名表如上),与既有 tag(如 `smoke`)共存;一个 TP 多视角则多 tag。
@@ -117,6 +118,7 @@ case 状态由步骤 verdict 汇总,优先级 **failed > inconclusive > blocked 
 ### 验收
 
 - 对一个真实需求跑一次评审工作流,产物含视角覆盖表且无不适用静默项。
+- 三分判定三种去向均有显式记录:覆盖(TP)/ 澄清(带视角与风险等级)/ 暂缓(带理由),不存在第四种出口。
 - `docs/` 或 `examples/` 中的示例 case(如 `order-create.yaml`)补 charter tag 作示范。
 
 ---
