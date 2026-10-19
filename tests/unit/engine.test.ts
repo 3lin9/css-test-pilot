@@ -3,7 +3,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, test } from 'vitest'
 import type { CaseLocator } from '@testpilot/dsl'
-import { AdapterResolver, TestRunner } from '@testpilot/execution-engine'
+import { TestPilotError } from '@testpilot/core'
+import { AdapterResolver, ExecutionContext, TestRunner } from '@testpilot/execution-engine'
 import type { CapturedRequest, TestAdapter } from '@testpilot/adapter-core'
 
 /** 进程内 mock adapter:验证引擎编排,不启动真实浏览器 */
@@ -284,5 +285,33 @@ describe('TestRunner(引擎编排)', () => {
         ],
       }),
     ])
+  })
+})
+
+describe('ExecutionContext.resolve 未定义变量', () => {
+  test('已定义变量正常替换(Review Focus 3)', () => {
+    const context = new ExecutionContext()
+    context.seed({ orderId: '42' })
+    expect(context.resolve('order-${orderId}')).toBe('order-42')
+  })
+  test('普通变量未定义 → PREREQ_VARIABLE_MISSING', () => {
+    const context = new ExecutionContext()
+    try {
+      context.resolve('${missingVar}')
+      expect.unreachable()
+    } catch (err) {
+      expect((err as TestPilotError).code).toBe('PREREQ_VARIABLE_MISSING')
+    }
+  })
+  test('凭据 JSON 缺字段 → ACCOUNT_UNAVAILABLE(Review Focus 2)', () => {
+    const context = new ExecutionContext()
+    context.seedAccount('{"username":"a"}')
+    expect(context.resolve('${account.username}')).toBe('a')
+    try {
+      context.resolve('${account.password}')
+      expect.unreachable()
+    } catch (err) {
+      expect((err as TestPilotError).code).toBe('ACCOUNT_UNAVAILABLE')
+    }
   })
 })
