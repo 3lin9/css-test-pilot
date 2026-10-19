@@ -15,12 +15,16 @@ const INFRA_CODES: ReadonlySet<string> = new Set([
   'CONFIG_MISSING',
 ])
 
+/** unverified 桶:规则本轮没测到 → inconclusive(典型:前置 extract 失败,后续 assert 空值比较) */
+const UNVERIFIED_CODES: ReadonlySet<string> = new Set(['PREREQ_VARIABLE_MISSING'])
+
 /**
  * 错误码 → verdict。未列入的码(含 undefined,如历史 run 或意外异常)
  * 一律归 product:宁红勿漏。
  */
 export function verdictFromErrorCode(code: string | undefined): Verdict {
   if (code !== undefined && INFRA_CODES.has(code)) return 'infra'
+  if (code !== undefined && UNVERIFIED_CODES.has(code)) return 'unverified'
   return 'product'
 }
 
@@ -28,6 +32,6 @@ export function verdictFromErrorCode(code: string | undefined): Verdict {
 export function caseStatusFromErrorCode(code: string | undefined): Extract<CaseStatus, 'failed' | 'blocked' | 'inconclusive'> {
   const verdict = verdictFromErrorCode(code)
   if (verdict === 'infra') return 'blocked'
-  if (code === 'PREREQ_VARIABLE_MISSING') return 'inconclusive'
+  if (verdict === 'unverified') return 'inconclusive'
   return 'failed'
 }

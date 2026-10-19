@@ -12,6 +12,9 @@ describe('verdictFromErrorCode', () => {
       expect(verdictFromErrorCode(code)).toBe('infra')
     }
   })
+  it('unverified 桶(PREREQ_VARIABLE_MISSING:断言"失败"实为"没测到")', () => {
+    expect(verdictFromErrorCode('PREREQ_VARIABLE_MISSING')).toBe('unverified')
+  })
   it('未知 code 与 undefined 默认 product(宁红勿漏)', () => {
     expect(verdictFromErrorCode('SOMETHING_NEW')).toBe('product')
     expect(verdictFromErrorCode(undefined)).toBe('product')

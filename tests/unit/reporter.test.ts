@@ -333,7 +333,23 @@ describe('classifyFromCode + 三桶分组( errorCode 优先)', () => {
         },
       ],
     }
-    const summary: RunSummary = { ...summaryFixture('r4', 'failed'), cases: [envCase, productCase] }
+    const unverifiedCase = {
+      ...summaryFixture('r4', 'failed').cases[0]!,
+      caseId: 'no-var',
+      errorCode: 'PREREQ_VARIABLE_MISSING',
+      steps: [
+        {
+          index: 0,
+          target: 'web' as const,
+          action: 'assert',
+          status: 'failed' as const,
+          durationMs: 10,
+          errorCode: 'PREREQ_VARIABLE_MISSING',
+          error: '变量 "orderId" 未定义(前置 extract 未执行或 fixture/dataset/凭据缺失)',
+        },
+      ],
+    }
+    const summary: RunSummary = { ...summaryFixture('r4', 'failed'), cases: [envCase, productCase, unverifiedCase] }
     const runDir = join(root, 'run-r4')
     await mkdir(runDir, { recursive: true })
     const written = await writeReports(runDir, summary)
@@ -343,6 +359,7 @@ describe('classifyFromCode + 三桶分组( errorCode 优先)', () => {
     const verdicts = Object.fromEntries(payload.failures.map((f) => [f.caseId, f.verdict]))
     expect(verdicts['login']).toBe('infra')
     expect(verdicts['checkout']).toBe('product')
+    expect(verdicts['no-var']).toBe('unverified')
     const html = await readFile(written.html, 'utf8')
     expect(html).toContain('产品失败')
     expect(html).toContain('环境与前置(非产品回归)')
