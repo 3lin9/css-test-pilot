@@ -22,14 +22,17 @@ export class ExecutionContext {
    * 将字符串中的 ${name} 替换为已提取的变量值;未定义的引用抛 TestPilotError——
    * 校验阶段已静态拦截"从未声明"的引用,运行时未命中即数据未兑现
    * (前置 extract 未执行或 fixture/dataset/凭据缺失),按三态归 unverified/account 桶。
-   * 名字允许点号,用于引擎注入的 account.username 一类凭据变量(用户 extract 变量名不含点号)。
+   * 凭据桶仅限 `account` 整值或 `account.*` 字段;用户变量撞 account 前缀(如 accountId)
+   * 不误归凭据桶。名字允许点号,用于引擎注入的 account.username 一类凭据变量
+   * (用户 extract 变量名不含点号)。
    */
   resolve(template: string): string {
     return template.replace(/\$\{([A-Za-z_][A-Za-z0-9_.]*)\}/g, (_match, name: string) => {
       const value = this.variables.get(name)
       if (value !== undefined) return value
+      const isAccount = name === 'account' || name.startsWith('account.')
       throw new TestPilotError(
-        name.startsWith('account') ? 'ACCOUNT_UNAVAILABLE' : 'PREREQ_VARIABLE_MISSING',
+        isAccount ? 'ACCOUNT_UNAVAILABLE' : 'PREREQ_VARIABLE_MISSING',
         `变量 "${name}" 未定义(前置 extract 未执行或 fixture/dataset/凭据缺失)`,
       )
     })

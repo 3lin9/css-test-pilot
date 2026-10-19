@@ -307,6 +307,24 @@ describe('ExecutionContext.resolve 未定义变量', () => {
       expect((err as TestPilotError).code).toBe('PREREQ_VARIABLE_MISSING')
     }
   })
+  test('用户变量撞 account 前缀(${accountId})→ 仍 PREREQ_VARIABLE_MISSING,不误归凭据桶', () => {
+    const context = new ExecutionContext()
+    try {
+      context.resolve('${accountId}')
+      expect.unreachable()
+    } catch (err) {
+      expect((err as TestPilotError).code).toBe('PREREQ_VARIABLE_MISSING')
+    }
+  })
+  test('${account} 整值未定义 → ACCOUNT_UNAVAILABLE(收窄判定后仍命中)', () => {
+    const context = new ExecutionContext()
+    try {
+      context.resolve('${account}')
+      expect.unreachable()
+    } catch (err) {
+      expect((err as TestPilotError).code).toBe('ACCOUNT_UNAVAILABLE')
+    }
+  })
   test('凭据 JSON 缺字段 → ACCOUNT_UNAVAILABLE(Review Focus 2)', () => {
     const context = new ExecutionContext()
     context.seedAccount('{"username":"a"}')
