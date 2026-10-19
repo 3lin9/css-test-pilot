@@ -193,7 +193,7 @@ describe('MiniAppAdapter 错误码', () => {
   })
 
   test('断言失败 → ASSERTION_FAILED(消息原文不变)', async () => {
-    const { program, fakeElement } = createFakeProgram()
+    const { program } = createFakeProgram()
     const adapter = new MiniAppAdapter(
       { projectPath, cliPath: 'C:/devtools/cli.bat', closeIde: false },
       { launch: vi.fn(async () => program) },

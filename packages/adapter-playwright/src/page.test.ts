@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from 'vitest'
 import { TestPilotError } from '@testpilot/core'
-import type { Browser, BrowserContext, Page } from 'playwright'
+import type { Browser, BrowserContext } from 'playwright'
 import { errors } from 'playwright'
 import { PlaywrightAdapter } from './page'
 

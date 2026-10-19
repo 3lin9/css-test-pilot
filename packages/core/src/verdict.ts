@@ -3,15 +3,8 @@ import type { CaseStatus } from './types'
 /** 三态判定:product=产品问题 / infra=环境与前置(blocked) / unverified=规则本轮没测到(inconclusive) */
 export type Verdict = 'product' | 'infra' | 'unverified'
 
-/** product 桶:产品问题(CI 红,不许静默) */
-const PRODUCT_CODES: ReadonlySet<string> = new Set([
-  'ASSERTION_FAILED',
-  'REQUEST_COUNT_MISMATCH',
-  'STATUS_MISMATCH',
-  'ELEMENT_NOT_FOUND',
-  'STEP_TIMEOUT',
-])
-
+// product 桶(ASSERTION_FAILED/REQUEST_COUNT_MISMATCH/STATUS_MISMATCH/ELEMENT_NOT_FOUND/STEP_TIMEOUT)
+// 不建集合:凡未列入 INFRA/unverified 的码一律默认 product(宁红勿漏)
 /** infra 桶:环境/前置问题 → blocked(非产品回归) */
 const INFRA_CODES: ReadonlySet<string> = new Set([
   'ENVIRONMENT_UNAVAILABLE',

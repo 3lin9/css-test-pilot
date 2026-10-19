@@ -229,6 +229,8 @@ a:hover { text-decoration: underline; }
 .badge.failed { background: #fde8ec; color: #d63362; }
 .badge.running { background: #fdf3dc; color: #a97a0c; }
 .badge.skipped { background: #eef0f6; color: #64748b; }
+.badge.blocked { background: #f2e8fd; color: #8250df; }
+.badge.inconclusive { background: #fff3cd; color: #9a6700; }
 .badge.cancelled, .badge.deleted, .badge.unknown { background: #eceef4; color: #6b7280; }
 .badge.queued { background: #e9edff; color: var(--indigo); }
 .badge.ok { background: #e2f7f0; color: #0c8f6f; }
