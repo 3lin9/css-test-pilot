@@ -39,3 +39,9 @@
 - `.env` 提供当前环境的实际值;只有 `testpilot.yaml variables` 白名单映射的值可通过 `${variable.*}` 暴露给 Case。
 - 缺失依赖会使该数据行 `skipped(dependency-not-ready)`,这只表示静态值未就绪,不保证远端业务对象有效。
 - setup/teardown 优先使用 API 造数和清理;teardown 必须可重复执行。
+
+## charter:* 视角标签
+
+- `charter:` 前缀为评审视角保留标签(命名固定,勿作他用):`charter:persona` / `charter:edge-input` / `charter:numbers-copy` / `charter:state-recovery` / `charter:error-path`。
+- 由需求评审的视角覆盖表驱动写入(见 `workflows/create-case.md`);视角在需求内不适用时不打对应 tag。
+- 按视角抽查覆盖:`npx csspilot list --tag charter:error-path`。
