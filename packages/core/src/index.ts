@@ -1,5 +1,7 @@
 export * from './types'
 export { TestPilotError } from './errors'
+export { caseStatusFromErrorCode, verdictFromErrorCode } from './verdict'
+export type { Verdict } from './verdict'
 export {
   DEFAULT_CASES_DIR,
   DEFAULT_STEP_TIMEOUT_MS,

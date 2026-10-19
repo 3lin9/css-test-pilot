@@ -17,6 +17,8 @@ export interface TestCaseInput {
   rowIndex?: number
   initialVariables?: Record<string, string>
   missingDependencies?: string[]
+  /** prepare 阶段已定案的阻塞(fixture 缺失等):case 以 blocked 进入执行,步骤不再运行 */
+  blockedError?: { code: string; message: string }
 }
 
 export interface TestRunnerOptions {
@@ -81,6 +83,7 @@ export class TestRunner {
           rowIndex: item.rowIndex ?? 0,
           initialVariables: item.initialVariables ?? {},
           missingDependencies: item.missingDependencies ?? [],
+          blockedError: item.blockedError,
           artifacts,
           bus,
           resolver: this.resolver,

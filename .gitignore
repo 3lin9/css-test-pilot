@@ -39,3 +39,6 @@ Thumbs.db
 
 # 本地临时目录
 .tmp*/
+
+# SDD 工作区(executing-plans 脚本产物)
+.superpowers/

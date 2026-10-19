@@ -28,6 +28,7 @@ export {
   type PreparedCaseExecution,
   type PrepareCaseOptions,
 } from './case-preparation'
+export { loadCaseDataFile } from './case-data'
 export {
   RunError,
   allocateRunId,

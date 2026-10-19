@@ -25,6 +25,7 @@
     "@testpilot/dsl": "workspace:^",
     "@testpilot/execution-engine": "workspace:^",
     "@testpilot/reporter": "workspace:^",
+    "@testpilot/sdk": "workspace:^",
     "@types/node": "^22.0.0",
     "eslint": "^9.0.0",
     "turbo": "^2.3.0",

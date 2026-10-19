@@ -29,6 +29,9 @@ importers:
       '@testpilot/reporter':
         specifier: workspace:^
         version: link:packages/reporter
+      '@testpilot/sdk':
+        specifier: workspace:^
+        version: link:packages/sdk
       '@types/node':
         specifier: ^22.0.0
         version: 22.20.2

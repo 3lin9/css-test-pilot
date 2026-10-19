@@ -3,7 +3,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, test } from 'vitest'
 import type { CaseLocator } from '@testpilot/dsl'
-import { AdapterResolver, TestRunner } from '@testpilot/execution-engine'
+import { TestPilotError } from '@testpilot/core'
+import { AdapterResolver, ArtifactManager, ExecutionContext, TestRunner, executeStep } from '@testpilot/execution-engine'
+import type { TestStep } from '@testpilot/dsl'
 import type { CapturedRequest, TestAdapter } from '@testpilot/adapter-core'
 
 /** 进程内 mock adapter:验证引擎编排,不启动真实浏览器 */
@@ -126,7 +128,8 @@ describe('TestRunner(引擎编排)', () => {
 
     expect(summary.status).toBe('failed')
     expect(summary.totals.passed).toBe(1)
-    expect(summary.totals.failed).toBe(2)
+    // 未注册 adapter 归 blocked(infra 桶),只有真实产品失败计入 failed
+    expect(summary.totals.failed).toBe(1)
 
     // 用例 1:extract -> input/assert 均拿到解析后的变量
     const ok = summary.cases.find((item) => item.caseId === 'extract-assert')
@@ -154,6 +157,8 @@ describe('TestRunner(引擎编排)', () => {
 
     // 用例 3:未注册 miniapp adapter -> 步骤失败并给出原因
     const mini = summary.cases.find((item) => item.caseId === 'no-miniapp')
+    expect(mini?.status).toBe('blocked')
+    expect(mini?.errorCode).toBe('ADAPTER_NOT_FOUND')
     expect(mini?.steps[0]?.error).toContain('adapter')
 
     // result.json 与 events.ndjson 落盘
@@ -284,5 +289,266 @@ describe('TestRunner(引擎编排)', () => {
         ],
       }),
     ])
+  })
+})
+
+describe('ExecutionContext.resolve 未定义变量', () => {
+  test('已定义变量正常替换(Review Focus 3)', () => {
+    const context = new ExecutionContext()
+    context.seed({ orderId: '42' })
+    expect(context.resolve('order-${orderId}')).toBe('order-42')
+  })
+  test('普通变量未定义 → PREREQ_VARIABLE_MISSING', () => {
+    const context = new ExecutionContext()
+    try {
+      context.resolve('${missingVar}')
+      expect.unreachable()
+    } catch (err) {
+      expect((err as TestPilotError).code).toBe('PREREQ_VARIABLE_MISSING')
+    }
+  })
+  test('用户变量撞 account 前缀(${accountId})→ 仍 PREREQ_VARIABLE_MISSING,不误归凭据桶', () => {
+    const context = new ExecutionContext()
+    try {
+      context.resolve('${accountId}')
+      expect.unreachable()
+    } catch (err) {
+      expect((err as TestPilotError).code).toBe('PREREQ_VARIABLE_MISSING')
+    }
+  })
+  test('${account} 整值未定义 → ACCOUNT_UNAVAILABLE(收窄判定后仍命中)', () => {
+    const context = new ExecutionContext()
+    try {
+      context.resolve('${account}')
+      expect.unreachable()
+    } catch (err) {
+      expect((err as TestPilotError).code).toBe('ACCOUNT_UNAVAILABLE')
+    }
+  })
+  test('凭据 JSON 缺字段 → ACCOUNT_UNAVAILABLE(Review Focus 2)', () => {
+    const context = new ExecutionContext()
+    context.seedAccount('{"username":"a"}')
+    expect(context.resolve('${account.username}')).toBe('a')
+    try {
+      context.resolve('${account.password}')
+      expect.unreachable()
+    } catch (err) {
+      expect((err as TestPilotError).code).toBe('ACCOUNT_UNAVAILABLE')
+    }
+  })
+})
+
+describe('executeStep 错误码化', () => {
+  class ApiMockAdapter extends MockAdapter {
+    async request(): Promise<{ status: number; statusText: string; bodyText?: string }> {
+      return { status: 500, statusText: 'Internal Server Error', bodyText: 'boom' }
+    }
+  }
+
+  async function runStep(step: TestStep, adapter: MockAdapter) {
+    const root = await mkdtemp(join(tmpdir(), 'testpilot-step-'))
+    const artifacts = new ArtifactManager(join(root, 'run'))
+    await artifacts.prepare()
+    return executeStep(step, 0, adapter, new ExecutionContext(), artifacts, { screenshotName: 's0' })
+  }
+
+  test('普通 Error → errorCode 为 undefined,error 保留消息', async () => {
+    const result = await runStep({ target: 'web', action: 'click', locator: { css: '.missing' } }, new MockAdapter())
+    expect(result.status).toBe('failed')
+    expect(result.error).toContain('element not found')
+    expect(result.errorCode).toBeUndefined()
+  })
+
+  test('请求次数不匹配 → REQUEST_COUNT_MISMATCH', async () => {
+    const result = await runStep(
+      {
+        target: 'web',
+        action: 'click',
+        locator: { css: '.request-once' },
+        expectRequests: [{ method: 'POST', urlContains: '/api/orders', count: 2, windowMs: 0 }],
+      },
+      new MockAdapter(),
+    )
+    expect(result.status).toBe('failed')
+    expect(result.error).toContain('请求次数不匹配')
+    expect(result.errorCode).toBe('REQUEST_COUNT_MISMATCH')
+  })
+
+  test('request 步骤状态码不匹配 → STATUS_MISMATCH', async () => {
+    const result = await runStep(
+      { target: 'api', action: 'request', url: 'https://api.test/orders', expected: '200' },
+      new ApiMockAdapter(),
+    )
+    expect(result.status).toBe('failed')
+    expect(result.error).toContain('HTTP 状态码 500')
+    expect(result.errorCode).toBe('STATUS_MISMATCH')
+  })
+
+  test('引用未定义变量 → PREREQ_VARIABLE_MISSING', async () => {
+    const result = await runStep({ target: 'web', action: 'click', locator: { css: '${missingVar}' } }, new MockAdapter())
+    expect(result.status).toBe('failed')
+    expect(result.error).toContain('missingVar')
+    expect(result.errorCode).toBe('PREREQ_VARIABLE_MISSING')
+  })
+})
+
+describe('runCase 三态汇总', () => {
+  class CodedAssertAdapter extends MockAdapter {
+    async assert(): Promise<void> {
+      throw new TestPilotError('ASSERTION_FAILED', '断言失败:期望 x,实际 y')
+    }
+  }
+
+  async function runWith(data: Record<string, unknown>, adapter: MockAdapter) {
+    const root = await mkdtemp(join(tmpdir(), 'testpilot-verdict-'))
+    const resolver = new AdapterResolver()
+    resolver.register({ target: 'web', create: async () => adapter })
+    const runner = new TestRunner({ resolver, runsRoot: join(root, 'runs') })
+    const summary = await runner.run([{ file: 'case.yaml', data: data as never }])
+    return summary
+  }
+
+  test('未注册 adapter → case blocked + errorCode', async () => {
+    const summary = await runWith(
+      { id: 'no-adapter', name: '未注册', steps: [{ target: 'miniapp', action: 'launch' }] },
+      new MockAdapter(),
+    )
+    const item = summary.cases[0]
+    expect(item?.status).toBe('blocked')
+    expect(item?.errorCode).toBe('ADAPTER_NOT_FOUND')
+  })
+
+  test('blockedError 预阻塞(fixture 缺失)→ case blocked,步骤不执行', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'testpilot-preblocked-'))
+    const resolver = new AdapterResolver()
+    resolver.register({ target: 'web', create: async () => new MockAdapter() })
+    const runner = new TestRunner({ resolver, runsRoot: join(root, 'runs') })
+    const summary = await runner.run([
+      {
+        file: 'case.yaml',
+        data: { id: 'no-fixture', name: '数据缺失', steps: [{ target: 'web', action: 'click', locator: { css: '.x' } }] } as never,
+        blockedError: { code: 'FIXTURE_MISSING', message: '数据文件不存在:data/order.yaml' },
+      },
+    ])
+    const item = summary.cases[0]
+    expect(item?.status).toBe('blocked')
+    expect(item?.errorCode).toBe('FIXTURE_MISSING')
+    // 合成的失败步骤携带错误码,reporter 三桶/CLI 计数由此自然生效
+    expect(item?.steps[0]?.errorCode).toBe('FIXTURE_MISSING')
+    expect(summary.status).toBe('blocked')
+  })
+
+  test('步骤 PREREQ_VARIABLE_MISSING → case inconclusive', async () => {
+    const summary = await runWith(
+      {
+        id: 'prereq',
+        name: '前置缺失',
+        steps: [{ target: 'web', action: 'click', locator: { css: '${missingVar}' } }],
+      },
+      new MockAdapter(),
+    )
+    const item = summary.cases[0]
+    expect(item?.status).toBe('inconclusive')
+    expect(item?.errorCode).toBe('PREREQ_VARIABLE_MISSING')
+  })
+
+  test('步骤 ASSERTION_FAILED → case failed(产品问题优先暴露)', async () => {
+    const summary = await runWith(
+      {
+        id: 'assert-fail',
+        name: '断言失败',
+        steps: [{ target: 'web', action: 'assert', locator: { css: '.order-id' }, expected: 'x' }],
+      },
+      new CodedAssertAdapter(),
+    )
+    const item = summary.cases[0]
+    expect(item?.status).toBe('failed')
+    expect(item?.errorCode).toBe('ASSERTION_FAILED')
+  })
+
+  test('run 状态优先级 failed > inconclusive > blocked > passed,totals 三桶计数', async () => {
+    const blockedData = {
+      id: 'blk',
+      name: '环境阻塞',
+      steps: [{ target: 'miniapp', action: 'launch' }],
+    }
+    const inconclusiveData = {
+      id: 'inc',
+      name: '前置缺失',
+      steps: [{ target: 'web', action: 'click', locator: { css: '${missingVar}' } }],
+    }
+    const failedData = {
+      id: 'fail',
+      name: '断言失败',
+      steps: [{ target: 'web', action: 'assert', locator: { css: '.order-id' }, expected: 'x' }],
+    }
+
+    // 1) 单 blocked → run blocked,totals.blocked === 1
+    const onlyBlocked = await runWith(blockedData, new MockAdapter())
+    expect(onlyBlocked.status).toBe('blocked')
+    expect(onlyBlocked.totals.blocked).toBe(1)
+
+    // 2) 单 inconclusive → run inconclusive
+    const onlyInconclusive = await runWith(inconclusiveData, new MockAdapter())
+    expect(onlyInconclusive.status).toBe('inconclusive')
+    expect(onlyInconclusive.totals.inconclusive).toBe(1)
+
+    // 3) failed + blocked → failed(产品失败优先暴露)
+    const failedAndBlocked = await runWith(failedData, new CodedAssertAdapter())
+    // 单 case 版:failed 优先于 blocked 的混合见下一条;这里先钉单 failed
+    expect(failedAndBlocked.status).toBe('failed')
+
+    const mixed = await (async () => {
+      const root = await mkdtemp(join(tmpdir(), 'testpilot-mixed-'))
+      const resolver = new AdapterResolver()
+      resolver.register({ target: 'web', create: async () => new CodedAssertAdapter() })
+      const runner = new TestRunner({ resolver, runsRoot: join(root, 'runs') })
+      return runner.run([
+        { file: 'fail.yaml', data: failedData as never },
+        { file: 'blk.yaml', data: blockedData as never },
+        { file: 'inc.yaml', data: inconclusiveData as never },
+      ])
+    })()
+    expect(mixed.status).toBe('failed')
+    expect(mixed.totals).toMatchObject({ failed: 1, blocked: 1, inconclusive: 1 })
+
+    // 4) blocked + inconclusive(无 failed)→ inconclusive
+    const blockedAndInconclusive = await (async () => {
+      const root = await mkdtemp(join(tmpdir(), 'testpilot-mixed2-'))
+      const resolver = new AdapterResolver()
+      resolver.register({ target: 'web', create: async () => new MockAdapter() })
+      const runner = new TestRunner({ resolver, runsRoot: join(root, 'runs') })
+      return runner.run([
+        { file: 'blk.yaml', data: blockedData as never },
+        { file: 'inc.yaml', data: inconclusiveData as never },
+      ])
+    })()
+    expect(blockedAndInconclusive.status).toBe('inconclusive')
+
+    // 5) 单 passed → passed(现状回归)
+    const onlyPassed = await runWith(
+      { id: 'ok', name: '通过', steps: [{ target: 'web', action: 'navigate', url: 'https://example.com' }] },
+      new MockAdapter(),
+    )
+    expect(onlyPassed.status).toBe('passed')
+    // totals.blocked/inconclusive 按契约只在有值时输出
+    expect(onlyPassed.totals).not.toHaveProperty('blocked')
+    expect(onlyPassed.totals).not.toHaveProperty('inconclusive')
+  })
+
+  test('teardown 失败仍为 warning,不影响 case 状态(现状回归)', async () => {
+    const summary = await runWith(
+      {
+        id: 'teardown-warn',
+        name: 'teardown 警告',
+        steps: [{ target: 'web', action: 'navigate', url: 'https://example.com' }],
+        teardown: [{ target: 'web', action: 'click', locator: { css: '.missing' } }],
+      },
+      new MockAdapter(),
+    )
+    const item = summary.cases[0]
+    expect(item?.status).toBe('passed')
+    expect(item?.errorCode).toBeUndefined()
+    expect(item?.warnings?.[0]).toContain('element not found')
   })
 })

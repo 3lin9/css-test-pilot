@@ -1,6 +1,7 @@
 import { readFile, realpath } from 'node:fs/promises'
 import { extname, isAbsolute, relative, resolve } from 'node:path'
 import { parse as parseYaml } from 'yaml'
+import { TestPilotError } from '@testpilot/core'
 
 export type DataObject = Record<string, unknown>
 
@@ -22,6 +23,10 @@ export async function loadCaseDataFile(
   const [realDataDir, realTarget] = await Promise.all([
     realpath(dataDir).catch(() => dataDir),
     realpath(target).catch((error: unknown) => {
+      // 文件不存在 → 机器可读的 FIXTURE_MISSING(环境/前置桶);其余读取异常保持普通 Error(编写错误)
+      if (error instanceof Error && (error as NodeJS.ErrnoException).code === 'ENOENT') {
+        throw new TestPilotError('FIXTURE_MISSING', `数据文件不存在:${reference}`)
+      }
       throw new Error(
         `读取数据文件失败:${reference}:${error instanceof Error ? error.message : String(error)}`,
       )

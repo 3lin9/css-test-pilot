@@ -4,7 +4,7 @@
  */
 
 export type StepStatus = 'passed' | 'failed' | 'skipped' | 'warning'
-export type CaseStatus = 'passed' | 'failed' | 'skipped'
+export type CaseStatus = 'passed' | 'failed' | 'blocked' | 'skipped' | 'inconclusive'
 export type RunStatus = CaseStatus
 export type StepPhase = 'setup' | 'steps' | 'teardown'
 
@@ -16,6 +16,8 @@ export interface StepResult {
   phase?: StepPhase
   durationMs: number
   error?: string
+  /** TestPilotError.code,三态判定依据 */
+  errorCode?: string
   /** 相对 run 目录的截图路径 */
   screenshot?: string
   /** extract 步骤捕获的变量 */
@@ -58,6 +60,8 @@ export interface CaseResult {
   durationMs: number
   /** 用例级错误(如 adapter 缺失) */
   error?: string
+  /** TestPilotError.code,三态判定依据(取第一个失败来源的码) */
+  errorCode?: string
   skipReason?: 'dependency-not-ready'
   missingDependencies?: string[]
   warnings?: string[]
@@ -72,6 +76,10 @@ export interface RunTotals {
   cases: number
   passed: number
   failed: number
+  /** 环境与前置问题导致的 blocked 数(有值时输出) */
+  blocked?: number
+  /** 规则本轮没测到的 inconclusive 数(有值时输出) */
+  inconclusive?: number
   skipped?: number
   warnings?: number
   steps: number

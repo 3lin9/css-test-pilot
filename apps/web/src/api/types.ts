@@ -51,7 +51,7 @@ export interface SyncStatus {
   branches: BranchSyncStatus[]
 }
 
-export type RunStatus = 'running' | 'passed' | 'failed' | 'skipped' | 'cancelled'
+export type RunStatus = 'running' | 'passed' | 'failed' | 'blocked' | 'inconclusive' | 'skipped' | 'cancelled'
 
 export interface Run {
   id: string
@@ -111,7 +111,9 @@ export interface CaseResult {
   file: string
   rowId?: string
   rowIndex?: number
-  status: 'passed' | 'failed' | 'skipped'
+  status: 'passed' | 'failed' | 'blocked' | 'inconclusive' | 'skipped'
+  /** 第一个失败步骤的错误码(三态判定依据) */
+  errorCode?: string
   steps: StepResult[]
   startedAt: string
   finishedAt: string
@@ -129,7 +131,7 @@ export interface RunSummary {
   startedAt: string
   finishedAt: string
   durationMs: number
-  status: 'passed' | 'failed' | 'skipped'
+  status: 'passed' | 'failed' | 'blocked' | 'inconclusive' | 'skipped'
   cancelled?: boolean
   cases: CaseResult[]
   totals: {

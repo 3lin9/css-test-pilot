@@ -2,7 +2,7 @@ import type { AdapterFactory } from '@testpilot/adapter-core'
 import { MiniAppAdapter } from './ide'
 import { resolveMiniappConfig, type MiniappConfigInput } from './project'
 
-export { MiniAppAdapter } from './ide'
+export { MiniAppAdapter, automatorLauncher } from './ide'
 export type { AutomatorProgram } from './ide'
 export { resolveMiniappConfig } from './project'
 export type { MiniappAdapterConfig, MiniappConfigInput } from './project'

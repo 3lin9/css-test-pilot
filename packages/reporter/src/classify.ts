@@ -30,3 +30,25 @@ export function classifyFailure(message: string | undefined): FailureCategory {
   }
   return 'other'
 }
+
+/** 错误码 → 分类(确定性映射,优先于 message regex);未知码返回 undefined 交给 legacy 路径 */
+const CODE_CATEGORIES: Readonly<Record<string, FailureCategory>> = {
+  ASSERTION_FAILED: 'assert',
+  REQUEST_COUNT_MISMATCH: 'assert',
+  STATUS_MISMATCH: 'assert',
+  STEP_TIMEOUT: 'assert',
+  ELEMENT_NOT_FOUND: 'element',
+  ADAPTER_NOT_FOUND: 'adapter',
+  UNSUPPORTED_ACTION: 'adapter',
+  CONFIG_MISSING: 'adapter',
+  ENVIRONMENT_UNAVAILABLE: 'env',
+  FIXTURE_MISSING: 'env',
+  ACCOUNT_UNAVAILABLE: 'env',
+  PREREQ_VARIABLE_MISSING: 'other',
+}
+
+/** 从步骤/用例错误码直接映射分类;无码或未知码返回 undefined */
+export function classifyFromCode(code: string | undefined): FailureCategory | undefined {
+  if (code === undefined) return undefined
+  return CODE_CATEGORIES[code]
+}

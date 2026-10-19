@@ -44,6 +44,7 @@ export interface AnalysisReport {
     | 'case-issue'
     | 'env-issue'
     | 'timeout'
+    | 'unverified'
     | 'product-bug-or-unknown'
   summary: string
   failedSteps: Array<{
@@ -66,7 +67,7 @@ export interface AnalysisReport {
     stepsFailed: number
     stepsSkipped: number
   }
-  status?: 'passed' | 'failed' | 'skipped' | 'cancelled'
+  status?: 'passed' | 'failed' | 'blocked' | 'skipped' | 'inconclusive' | 'cancelled'
 }
 
 export interface AgentJobResult {

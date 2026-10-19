@@ -11,7 +11,7 @@ export type {
   SummaryRunInput,
   SummaryRunPoint,
 } from './summary-report'
-export { classifyFailure, categoryLabel, FAILURE_CATEGORIES } from './classify'
+export { classifyFromCode, classifyFailure, categoryLabel, FAILURE_CATEGORIES } from './classify'
 export type { FailureCategory } from './classify'
 export { collectHistory } from './history'
 export type { HistoryPoint } from './history'

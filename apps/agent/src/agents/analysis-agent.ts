@@ -96,7 +96,7 @@ export class AnalysisAgent {
 
 type FailedStep = AnalysisReport['failedSteps'][number]
 
-function classify(
+export function classify(
   summary: RunSummary,
   failedSteps: FailedStep[],
   isDraft?: boolean,
@@ -104,6 +104,8 @@ function classify(
   if (summary.cancelled) return 'cancelled'
   if (summary.status === 'passed') return 'passed'
   if (summary.status === 'skipped') return 'skipped'
+  if (summary.status === 'blocked') return 'env-issue'
+  if (summary.status === 'inconclusive') return 'unverified'
   if (isDraft) return 'draft-placeholder'
   const errors = failedSteps.map((step) => (step.error ?? '').toLowerCase()).join(' ')
   if (/timeout|timed out/.test(errors)) return 'timeout'
@@ -113,7 +115,7 @@ function classify(
   return 'product-bug-or-unknown'
 }
 
-function buildSuggestions(
+export function buildSuggestions(
   verdict: AnalysisReport['verdict'],
   input: AnalysisInput,
   failedSteps: FailedStep[],
@@ -137,6 +139,10 @@ function buildSuggestions(
       break
     case 'timeout':
       tips.push('加大 wait / 确认页面已就绪;排除环境过慢')
+      break
+    case 'unverified':
+      tips.push('规则本轮没测到:前置数据未兑现(extract 来源 / fixture / dataset / 凭据),补齐后重跑')
+      tips.push('不是产品缺陷:不要把「没测到」按失败证据报告')
       break
     case 'cancelled':
       tips.push('任务已取消,可重新提交 Agent Job')

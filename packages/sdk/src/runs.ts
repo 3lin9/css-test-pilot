@@ -3,6 +3,7 @@ import { isAbsolute, join } from 'node:path'
 import {
   RUNS_DIR,
   RESULT_FILE,
+  TestPilotError,
   type RunSummary,
   type TestpilotConfig,
 } from '@testpilot/core'
@@ -144,7 +145,25 @@ export async function runCases(options: RunOptions = {}): Promise<RunResult> {
             variables: config.variables,
             accounts: options.accounts,
           },
-        ),
+        ).catch((err) => {
+          // FIXTURE_MISSING 不中止整次 run:该 case 以 blocked 进入执行(合成失败步骤),
+          // 其余 case 照常;exit code 走 blocked=2 契约
+          if (err instanceof TestPilotError && err.code === 'FIXTURE_MISSING') {
+            return [
+              {
+                data: item.case!,
+                file: item.file,
+                templateId: item.case!.id,
+                rowId: 'default',
+                rowIndex: 0,
+                initialVariables: {},
+                missingDependencies: [],
+                blockedError: { code: err.code, message: err.message },
+              },
+            ]
+          }
+          throw err
+        }),
       ),
     )
   ).flat()

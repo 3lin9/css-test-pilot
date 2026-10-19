@@ -1,4 +1,4 @@
-import type { CaseResult } from '@testpilot/core'
+import { TestPilotError, caseStatusFromErrorCode, type CaseResult } from '@testpilot/core'
 import type { TestCase, StepTarget } from '@testpilot/dsl'
 import type { TestAdapter } from '@testpilot/adapter-core'
 import type { ArtifactManager } from '../artifacts'
@@ -15,6 +15,8 @@ export interface RunCaseOptions {
   rowIndex: number
   initialVariables: Record<string, string>
   missingDependencies: string[]
+  /** prepare 阶段已定案的阻塞(fixture 缺失等):case 以 blocked 进入执行,步骤不再运行 */
+  blockedError?: { code: string; message: string }
   artifacts: ArtifactManager
   bus: EventBus
   resolver: AdapterResolver
@@ -37,6 +39,7 @@ export class ExecutionEngine {
     const warnings: string[] = []
     const evidenceAdapters = new Map<StepTarget, TestAdapter>()
     let caseError: string | undefined
+    let caseErrorCode: string | undefined
     const executionId = safeArtifactName(`${data.id}-${rowId}`)
 
     await bus.emit({
@@ -122,6 +125,7 @@ export class ExecutionEngine {
             status: 'failed',
             durationMs: 0,
             error: err instanceof Error ? err.message : String(err),
+            errorCode: err instanceof TestPilotError ? err.code : undefined,
           }
         }
         result.phase = phase
@@ -152,6 +156,7 @@ export class ExecutionEngine {
         if (result.status === 'failed') {
           passed = false
           caseError = result.error
+          caseErrorCode = result.errorCode
           for (const [skipIndex, skippedStep] of phaseSteps.entries()) {
             if (skipIndex <= index) continue
             steps.push({
@@ -169,25 +174,46 @@ export class ExecutionEngine {
       return passed
     }
 
-    const setupPassed = await runPhase('setup', data.setup ?? [])
-    if (setupPassed) {
-      await runPhase('steps', data.steps)
-    } else {
-      for (const [index, step] of data.steps.entries()) {
+    if (options.blockedError) {
+      // prepare 阶段已定案的阻塞(fixture 缺失等):合成失败步骤后走既有 caseError 链路,
+      // 状态由 caseStatusFromErrorCode 推导(blocked),totals/reporter/exit code 自然生效
+      const first = data.setup?.[0] ?? data.steps[0]
+      if (first) {
         steps.push({
-          index,
-          phase: 'steps',
-          target: step.target,
-          action: step.action,
-          status: 'skipped',
+          index: 0,
+          phase: 'setup',
+          target: first.target,
+          action: first.action,
+          status: 'failed',
           durationMs: 0,
+          error: options.blockedError.message,
+          errorCode: options.blockedError.code,
         })
       }
+      caseError = options.blockedError.message
+      caseErrorCode = options.blockedError.code
+    } else {
+      const setupPassed = await runPhase('setup', data.setup ?? [])
+      if (setupPassed) {
+        await runPhase('steps', data.steps)
+      } else {
+        for (const [index, step] of data.steps.entries()) {
+          steps.push({
+            index,
+            phase: 'steps',
+            target: step.target,
+            action: step.action,
+            status: 'skipped',
+            durationMs: 0,
+          })
+        }
+      }
+      await runPhase('teardown', data.teardown ?? [])
     }
-    await runPhase('teardown', data.teardown ?? [])
 
     const finishedAt = new Date()
-    const status = caseError ? 'failed' : 'passed'
+    // case 状态按第一个失败步骤的错误码推导:failed(产品) / inconclusive(没测到) / blocked(环境)
+    const status = caseError ? caseStatusFromErrorCode(caseErrorCode) : 'passed'
     const caseResult: CaseResult = {
       caseId: data.id,
       caseName: data.name,
@@ -201,6 +227,7 @@ export class ExecutionEngine {
       durationMs: finishedAt.getTime() - startedAt.getTime(),
     }
     if (caseError) caseResult.error = caseError
+    if (caseErrorCode) caseResult.errorCode = caseErrorCode
     if (warnings.length > 0) caseResult.warnings = warnings
 
     // 收尾用例级取证(video/trace),失败不影响测试结果

@@ -14,6 +14,19 @@
    - 从需求与项目证据中识别最小 `requires`;项目没有账号/优惠/PPM 等概念时不要生成对应依赖
    - 公共参数写入 `tests/e2e/data/` fixture;环境参数先加入 `testpilot.yaml variables` 白名单
    - 造数与清理使用 `setup` / `teardown`;UI 动作需验证接口调用次数时使用 `expectRequests`
+   - 把该 Case 关联 TP 的每个 charter 视角写入 `tags`,与既有 tag(如 `smoke`)共存;一个 TP 多视角则多 tag。映射(视角定义见 `test-requirements-review` 步骤 6):
+
+     | 评审视角 | case tag |
+     | --- | --- |
+     | persona | `charter:persona` |
+     | 边界输入 | `charter:edge-input` |
+     | 数字与文案 | `charter:numbers-copy` |
+     | 状态恢复 | `charter:state-recovery` |
+     | 错误路径 | `charter:error-path` |
+
+     ```yaml
+     tags: [smoke, charter:persona, charter:error-path]
+     ```
 6. 执行 `npx csspilot validate tests/e2e/cases/<case-id>.yaml`。
 7. 校验失败则修复 Case 后重新 validate,直到通过。
 
