@@ -8,6 +8,10 @@ name: 用户创建订单
 tags:
   - smoke
   - golden
+  # charter 视角(评审视角覆盖表驱动,见 skills/testpilot/workflows/create-case.md):
+  # 正向下单主流程 -> persona;订单号跨端一致性断言 -> numbers-copy
+  - charter:persona
+  - charter:numbers-copy
 
 steps:
   # 小程序端:下单
