@@ -18,7 +18,7 @@ export interface SummaryCase {
   passed: number
   failed: number
   passRate: number
-  lastStatus: 'passed' | 'failed' | 'skipped' | 'unknown'
+  lastStatus: 'passed' | 'failed' | 'blocked' | 'skipped' | 'inconclusive' | 'unknown'
   lastCategory?: FailureCategory
   /** 窗口内又过又挂(Flaky) */
   flaky: boolean
@@ -69,7 +69,7 @@ export function buildSummaryData(runs: readonly SummaryRunInput[]): SummaryRepor
     rowId?: string
     identity: string
     caseName: string
-    status: 'passed' | 'failed' | 'skipped'
+    status: 'passed' | 'failed' | 'blocked' | 'skipped' | 'inconclusive'
     category?: FailureCategory
     platforms: string[]
   }> = []

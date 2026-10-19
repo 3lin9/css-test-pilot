@@ -66,7 +66,7 @@ export interface AnalysisReport {
     stepsFailed: number
     stepsSkipped: number
   }
-  status?: 'passed' | 'failed' | 'skipped' | 'cancelled'
+  status?: 'passed' | 'failed' | 'blocked' | 'skipped' | 'inconclusive' | 'cancelled'
 }
 
 export interface AgentJobResult {
