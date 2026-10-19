@@ -2,6 +2,13 @@ import { join } from 'node:path'
 import { Command } from 'commander'
 import { TestPilotClient, type RunEvent } from '@testpilot/sdk'
 
+/** run 的退出码契约:0=全过/跳过,1=产品失败或证据不足,2=环境/前置阻塞(非产品回归) */
+export function exitCodeForSummary(status: 'passed' | 'failed' | 'blocked' | 'skipped' | 'inconclusive'): 0 | 1 | 2 {
+  if (status === 'failed' || status === 'inconclusive') return 1
+  if (status === 'blocked') return 2
+  return 0
+}
+
 export function makeRunCommand(): Command {
   return new Command('run')
     .description('执行测试用例(默认运行 testpilot.yaml 配置的 Case)')
@@ -31,11 +38,11 @@ export function makeRunCommand(): Command {
           .join(',')
         console.log('')
         console.log(
-          `Run ${summary.runId}${summary.cancelled ? '(已取消)' : ''}: ${summary.status.toUpperCase()} — 模板 ${summary.totals.templates ?? summary.totals.cases},数据行 ✓${summary.totals.passed} ✗${summary.totals.failed} ↷${summary.totals.skipped ?? 0} ⚠${summary.totals.warnings ?? 0},步骤 ✓${summary.totals.stepsPassed} ✗${summary.totals.stepsFailed} ↷${summary.totals.stepsSkipped} ⚠${summary.totals.stepsWarning ?? 0}${notes ? `(${notes})` : ''}`,
+          `Run ${summary.runId}${summary.cancelled ? '(已取消)' : ''}: ${summary.status.toUpperCase()} — 模板 ${summary.totals.templates ?? summary.totals.cases},数据行 ✓${summary.totals.passed} ✗${summary.totals.failed} ⊘${summary.totals.blocked ?? 0} ?${summary.totals.inconclusive ?? 0} ↷${summary.totals.skipped ?? 0} ⚠${summary.totals.warnings ?? 0},步骤 ✓${summary.totals.stepsPassed} ✗${summary.totals.stepsFailed} ↷${summary.totals.stepsSkipped} ⚠${summary.totals.stepsWarning ?? 0}${notes ? `(${notes})` : ''}`,
         )
         console.log(`产物目录:${join('.testpilot', 'artifacts', 'runs', summary.runId)}`)
         console.log('查看报告:npx csspilot report')
-        if (summary.status === 'failed') process.exitCode = 1
+        process.exitCode = exitCodeForSummary(summary.status)
       } catch (err) {
         console.error(err instanceof Error ? err.message : err)
         process.exitCode = 1
