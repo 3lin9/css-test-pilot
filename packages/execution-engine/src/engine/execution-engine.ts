@@ -1,4 +1,4 @@
-import type { CaseResult } from '@testpilot/core'
+import { TestPilotError, caseStatusFromErrorCode, type CaseResult } from '@testpilot/core'
 import type { TestCase, StepTarget } from '@testpilot/dsl'
 import type { TestAdapter } from '@testpilot/adapter-core'
 import type { ArtifactManager } from '../artifacts'
@@ -37,6 +37,7 @@ export class ExecutionEngine {
     const warnings: string[] = []
     const evidenceAdapters = new Map<StepTarget, TestAdapter>()
     let caseError: string | undefined
+    let caseErrorCode: string | undefined
     const executionId = safeArtifactName(`${data.id}-${rowId}`)
 
     await bus.emit({
@@ -122,6 +123,7 @@ export class ExecutionEngine {
             status: 'failed',
             durationMs: 0,
             error: err instanceof Error ? err.message : String(err),
+            errorCode: err instanceof TestPilotError ? err.code : undefined,
           }
         }
         result.phase = phase
@@ -152,6 +154,7 @@ export class ExecutionEngine {
         if (result.status === 'failed') {
           passed = false
           caseError = result.error
+          caseErrorCode = result.errorCode
           for (const [skipIndex, skippedStep] of phaseSteps.entries()) {
             if (skipIndex <= index) continue
             steps.push({
@@ -187,7 +190,8 @@ export class ExecutionEngine {
     await runPhase('teardown', data.teardown ?? [])
 
     const finishedAt = new Date()
-    const status = caseError ? 'failed' : 'passed'
+    // case 状态按第一个失败步骤的错误码推导:failed(产品) / inconclusive(没测到) / blocked(环境)
+    const status = caseError ? caseStatusFromErrorCode(caseErrorCode) : 'passed'
     const caseResult: CaseResult = {
       caseId: data.id,
       caseName: data.name,
@@ -201,6 +205,7 @@ export class ExecutionEngine {
       durationMs: finishedAt.getTime() - startedAt.getTime(),
     }
     if (caseError) caseResult.error = caseError
+    if (caseErrorCode) caseResult.errorCode = caseErrorCode
     if (warnings.length > 0) caseResult.warnings = warnings
 
     // 收尾用例级取证(video/trace),失败不影响测试结果
