@@ -428,6 +428,76 @@ describe('runCase 三态汇总', () => {
     expect(item?.errorCode).toBe('ASSERTION_FAILED')
   })
 
+  test('run 状态优先级 failed > inconclusive > blocked > passed,totals 三桶计数', async () => {
+    const blockedData = {
+      id: 'blk',
+      name: '环境阻塞',
+      steps: [{ target: 'miniapp', action: 'launch' }],
+    }
+    const inconclusiveData = {
+      id: 'inc',
+      name: '前置缺失',
+      steps: [{ target: 'web', action: 'click', locator: { css: '${missingVar}' } }],
+    }
+    const failedData = {
+      id: 'fail',
+      name: '断言失败',
+      steps: [{ target: 'web', action: 'assert', locator: { css: '.order-id' }, expected: 'x' }],
+    }
+
+    // 1) 单 blocked → run blocked,totals.blocked === 1
+    const onlyBlocked = await runWith(blockedData, new MockAdapter())
+    expect(onlyBlocked.status).toBe('blocked')
+    expect(onlyBlocked.totals.blocked).toBe(1)
+
+    // 2) 单 inconclusive → run inconclusive
+    const onlyInconclusive = await runWith(inconclusiveData, new MockAdapter())
+    expect(onlyInconclusive.status).toBe('inconclusive')
+    expect(onlyInconclusive.totals.inconclusive).toBe(1)
+
+    // 3) failed + blocked → failed(产品失败优先暴露)
+    const failedAndBlocked = await runWith(failedData, new CodedAssertAdapter())
+    // 单 case 版:failed 优先于 blocked 的混合见下一条;这里先钉单 failed
+    expect(failedAndBlocked.status).toBe('failed')
+
+    const mixed = await (async () => {
+      const root = await mkdtemp(join(tmpdir(), 'testpilot-mixed-'))
+      const resolver = new AdapterResolver()
+      resolver.register({ target: 'web', create: async () => new CodedAssertAdapter() })
+      const runner = new TestRunner({ resolver, runsRoot: join(root, 'runs') })
+      return runner.run([
+        { file: 'fail.yaml', data: failedData as never },
+        { file: 'blk.yaml', data: blockedData as never },
+        { file: 'inc.yaml', data: inconclusiveData as never },
+      ])
+    })()
+    expect(mixed.status).toBe('failed')
+    expect(mixed.totals).toMatchObject({ failed: 1, blocked: 1, inconclusive: 1 })
+
+    // 4) blocked + inconclusive(无 failed)→ inconclusive
+    const blockedAndInconclusive = await (async () => {
+      const root = await mkdtemp(join(tmpdir(), 'testpilot-mixed2-'))
+      const resolver = new AdapterResolver()
+      resolver.register({ target: 'web', create: async () => new MockAdapter() })
+      const runner = new TestRunner({ resolver, runsRoot: join(root, 'runs') })
+      return runner.run([
+        { file: 'blk.yaml', data: blockedData as never },
+        { file: 'inc.yaml', data: inconclusiveData as never },
+      ])
+    })()
+    expect(blockedAndInconclusive.status).toBe('inconclusive')
+
+    // 5) 单 passed → passed(现状回归)
+    const onlyPassed = await runWith(
+      { id: 'ok', name: '通过', steps: [{ target: 'web', action: 'navigate', url: 'https://example.com' }] },
+      new MockAdapter(),
+    )
+    expect(onlyPassed.status).toBe('passed')
+    // totals.blocked/inconclusive 按契约只在有值时输出
+    expect(onlyPassed.totals).not.toHaveProperty('blocked')
+    expect(onlyPassed.totals).not.toHaveProperty('inconclusive')
+  })
+
   test('teardown 失败仍为 warning,不影响 case 状态(现状回归)', async () => {
     const summary = await runWith(
       {
