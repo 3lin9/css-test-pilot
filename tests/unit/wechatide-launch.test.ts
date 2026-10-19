@@ -70,7 +70,10 @@ test('自动化端口等待超时 → ENVIRONMENT_UNAVAILABLE', async () => {
     const pending = automatorLauncher.launch({ projectPath: 'p', cliPath: 'cli.bat' })
     pending.catch(() => {}) // 拒绝发生在推时钟期间,先挂 handler 免被标记 unhandled;断言仍走下方 then
     // 冲刷微任务:automator.launch 拒绝 → startCliAuto + 首次 poll(连接失败 → 安排 500ms 重试)
-    await vi.advanceTimersByTimeAsync(0)
+    // 单次冲刷深度在全量并发负载下不可靠(偶发差一拍,首次 poll 不发生),循环推进直至连接出现
+    for (let i = 0; i < 20 && mocks.createConnection.mock.calls.length === 0; i++) {
+      await vi.advanceTimersByTimeAsync(0)
+    }
     // 推进假时钟越过 AUTO_PORT_FALLBACK_WAIT_MS(90s)并触发重试 poll(仍连不上 → 端口超时)
     await vi.advanceTimersByTimeAsync(91_000)
     // 500ms 节奏持续重试(次数是实现细节),失败前至少完成过一次重试
