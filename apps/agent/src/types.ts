@@ -44,6 +44,7 @@ export interface AnalysisReport {
     | 'case-issue'
     | 'env-issue'
     | 'timeout'
+    | 'unverified'
     | 'product-bug-or-unknown'
   summary: string
   failedSteps: Array<{
