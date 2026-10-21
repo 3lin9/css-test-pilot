@@ -74,6 +74,25 @@ describe('cli:init:项目检测', () => {
     expect(info.language).toBe('TypeScript')
     expect(info.name).toBe('ts-app')
   })
+
+  test('原生小程序(无 package.json)按源码扩展名推断语言', async () => {
+    const jsMiniapp = await makeProject({
+      'project.config.json': '{}',
+      'app.json': '{}',
+      'app.js': 'App({})',
+      'pages/index/index.js': 'Page({})',
+    })
+    const info = await detectProject(jsMiniapp)
+    expect(info.language).toBe('JavaScript')
+
+    const tsMiniapp = await makeProject({
+      'project.config.json': '{}',
+      'app.json': '{}',
+      'app.ts': 'App({})',
+      'pages/index/index.ts': 'Page({})',
+    })
+    expect(await detectProject(tsMiniapp).then((item) => item.language)).toBe('TypeScript')
+  })
 })
 
 describe('cli:init:新项目', () => {

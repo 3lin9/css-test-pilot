@@ -1,3 +1,5 @@
+> 📄 **历史设计文档**:记录 V0.1 时期的设计决策,内容不再随现状更新;当前架构与范围以 [docs/architecture.md](docs/architecture.md) 和 [README.md](README.md) 为准。
+
 # TestPilot V0.1 最终架构与 CLI / Skill 开工设计
 
 ## 1. 产品定位

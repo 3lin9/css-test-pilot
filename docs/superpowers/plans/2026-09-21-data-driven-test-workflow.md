@@ -1,5 +1,7 @@
 # TestPilot Data-Driven Test Workflow Implementation Plan
 
+> **状态:已实现**(commit 10f12c1)。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add evidence-driven requirement matrices, QA coverage mapping, data-driven Case execution, static dependency preflight, setup/teardown phases, fixture/config variables, and cross-platform UI request-count assertions.

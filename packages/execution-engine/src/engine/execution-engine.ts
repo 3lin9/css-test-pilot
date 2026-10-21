@@ -117,6 +117,14 @@ export class ExecutionEngine {
           result = await executeStep(step, index, adapter, context, artifacts, {
             screenshotName: `${executionId}-${phase}-${String(index).padStart(2, '0')}`,
           })
+
+          // mockWxApi 捕获的调用参数刷新到 ExecutionContext(供后续 ${capture.*} 引用)
+          if (step.capture !== undefined && typeof adapter.readWxApiCaptures === 'function') {
+            const captures = adapter.readWxApiCaptures()
+            if (captures && captures.calls.length > 0) {
+              context.seedObject(step.capture, captures.calls[0]?.options ?? null)
+            }
+          }
         } catch (err) {
           result = {
             index,
@@ -246,6 +254,11 @@ export class ExecutionEngine {
           `evidence stop failed for ${target}: ${err instanceof Error ? err.message : String(err)}`,
         )
       }
+    }
+
+    // 恢复 mock 的 wx API(用例结束),失败不影响测试结果
+    for (const [, adapter] of evidenceAdapters) {
+      await adapter.restoreWxMock?.().catch(() => undefined)
     }
 
     await bus.emit({

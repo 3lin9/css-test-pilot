@@ -17,6 +17,9 @@ function createFakeProgram() {
   const fakePage = {
     $: vi.fn(async () => fakeElement),
     waitFor: vi.fn(),
+    data: vi.fn(async () => ({ orderId: '67890' })),
+    setData: vi.fn(async () => undefined),
+    callMethod: vi.fn(async () => undefined),
   }
   const program: AutomatorProgram = {
     reLaunch: vi.fn(async () => undefined),
@@ -193,19 +196,28 @@ describe('MiniAppAdapter 错误码', () => {
   })
 
   test('断言失败 → ASSERTION_FAILED(消息原文不变)', async () => {
-    const { program } = createFakeProgram()
-    const adapter = new MiniAppAdapter(
-      { projectPath, cliPath: 'C:/devtools/cli.bat', closeIde: false },
-      { launch: vi.fn(async () => program) },
-    )
-    await adapter.launch()
-    const err = await adapter.assert({ css: '.order-id' }, '已发货').then(
-      () => null,
-      (e) => e,
-    )
-    expect(err).toBeInstanceOf(TestPilotError)
-    expect((err as TestPilotError).code).toBe('ASSERTION_FAILED')
-    expect((err as Error).message).toContain('断言失败:期望包含 "已发货"')
+    vi.useFakeTimers()
+    try {
+      const { program, fakeElement } = createFakeProgram()
+      // 文本始终不含期望值 → assert 轮询至超时(数据绑定未完成时的等待语义)
+      fakeElement.text = vi.fn(async () => '订单号 67890 已创建')
+      const adapter = new MiniAppAdapter(
+        { projectPath, cliPath: 'C:/devtools/cli.bat', closeIde: false },
+        { launch: vi.fn(async () => program) },
+      )
+      await adapter.launch()
+      const pending = adapter.assert({ css: '.order-id' }, '已发货').then(
+        () => null,
+        (e) => e,
+      )
+      await vi.advanceTimersByTimeAsync(11_000)
+      const err = await pending
+      expect(err).toBeInstanceOf(TestPilotError)
+      expect((err as TestPilotError).code).toBe('ASSERTION_FAILED')
+      expect((err as Error).message).toContain('等待 10000ms):期望包含 "已发货"')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   test('select 能力缺口 → UNSUPPORTED_ACTION', async () => {

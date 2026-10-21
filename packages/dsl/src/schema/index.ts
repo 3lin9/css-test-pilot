@@ -23,6 +23,10 @@ export const ACTIONS = [
   'extract',
   'screenshot',
   'request',
+  'callMethod',
+  'mockWxApi',
+  'trigger',
+  'setData',
 ] as const
 export type ActionName = (typeof ACTIONS)[number]
 
@@ -60,6 +64,24 @@ export const stepSchema = z.strictObject({
   timeout: z.number().int().positive().optional(),
   /** UI 动作触发的网络请求精确次数断言 */
   expectRequests: z.array(requestExpectationSchema).min(1).optional(),
+  /** callMethod:要调用的 Page / 组件方法名(仅 miniapp;页面级调用不写 locator) */
+  methodName: z.string().min(1).optional(),
+  /** callMethod 的入参(支持 ${var} 模板) */
+  args: z.array(z.unknown()).optional(),
+  /** mockWxApi:要 mock 的 wx.* API 名(如 showModal / request) */
+  wxApi: z.string().min(1).optional(),
+  /** mockWxApi:mock 返回值(对象按原样注入;capture 时真实调用先上报再返回 mock 值) */
+  result: z.record(z.string(), z.unknown()).optional(),
+  /** mockWxApi:捕获真实调用参数的变量名(${<capture>.options} / ${<capture>.called}) */
+  capture: z.string().min(1).optional(),
+  /** trigger:触发的事件类型(如 getphonenumber;空 detail 即"用户拒绝/取消"类分支) */
+  eventType: z.string().min(1).optional(),
+  /** trigger:作为事件 e.detail 注入(值支持 ${var} 模板) */
+  detail: z.record(z.string(), z.unknown()).optional(),
+  /** setData:写入页面 data 的补丁(值支持 ${var} 模板) */
+  patch: z.record(z.string(), z.unknown()).optional(),
+  /** assert:页面 data 路径断言(与 locator 互斥,仅 miniapp) */
+  dataPath: z.string().min(1).optional(),
 })
 
 export const datasetReferenceSchema = z.strictObject({

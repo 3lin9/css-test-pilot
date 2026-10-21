@@ -1,3 +1,5 @@
+> 📄 **历史设计文档**:本篇为增量设计的早期版本(已被 v4 取代),内容不再随现状更新;当前架构与范围以 [docs/architecture.md](docs/architecture.md) 和 [README.md](README.md) 为准。
+
 # TestPilot V0.1 — Web / Backend / Agent 增量设计
 
 > 本文只描述在已经完成的 TestPilot V0.1 Core 架构基础上的新增与调整内容，不推翻现有 Core / DSL / Execution Engine / Adapter / Case 设计。

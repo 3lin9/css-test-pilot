@@ -71,7 +71,15 @@ export async function executeStep(
       case 'wait':
         await adapter.wait(locator, step.timeout)
         break
-      case 'assert':
+      case 'assert': {
+        // dataPath 模式:断言页面 data(仅 miniapp);locator 模式:断言元素文本
+        if (step.dataPath !== undefined) {
+          if (!adapter.assertData) {
+            throw new TestPilotError('UNSUPPORTED_ACTION', `当前 ${step.target} adapter 不支持 dataPath 断言`)
+          }
+          await adapter.assertData(context.resolve(step.dataPath), context.resolve(step.expected ?? ''))
+          break
+        }
         // api 端断言最近一次响应体;UI 端断言元素文本
         if (step.target === 'api') {
           if (!adapter.assertResponse) throw new TestPilotError('UNSUPPORTED_ACTION', '当前 adapter 不支持 api 断言')
@@ -80,6 +88,7 @@ export async function executeStep(
           await adapter.assert(locator!, context.resolve(step.expected ?? ''))
         }
         break
+      }
       case 'extract': {
         // api 端按 JSON path 从最近响应提取;UI 端提取元素文本
         const value =
@@ -125,6 +134,43 @@ export async function executeStep(
             )
           }
         }
+        break
+      }
+      case 'callMethod': {
+        // miniapp 端调用 Page / 组件方法(人工操作步骤快速自动化;定位/入参支持 ${var} 模板)
+        if (typeof adapter.callMethod !== 'function') {
+          throw new TestPilotError('UNSUPPORTED_ACTION', `当前 ${step.target} adapter 不支持 callMethod`)
+        }
+        const methodName = context.resolve(step.methodName ?? '')
+        if (!methodName) throw new TestPilotError('MISSING_METHOD_NAME', 'callMethod 必须提供 methodName')
+        const callArgs = (step.args ?? []).map((arg) => resolveDeep(arg, context))
+        await adapter.callMethod(locator, methodName, callArgs)
+        break
+      }
+      case 'mockWxApi': {
+        if (typeof adapter.mockWxApi !== 'function') {
+          throw new TestPilotError('UNSUPPORTED_ACTION', `当前 ${step.target} adapter 不支持 mockWxApi`)
+        }
+        await adapter.mockWxApi({
+          api: context.resolve(step.wxApi ?? ''),
+          result: step.result ? (resolveDeep(step.result, context) as Record<string, unknown>) : undefined,
+          capture: step.capture,
+        })
+        break
+      }
+      case 'trigger': {
+        if (typeof adapter.trigger !== 'function') {
+          throw new TestPilotError('UNSUPPORTED_ACTION', `当前 ${step.target} adapter 不支持 trigger`)
+        }
+        if (!locator) throw new TestPilotError('MISSING_LOCATOR', 'trigger 必须提供 locator(要触发事件的组件)')
+        await adapter.trigger(locator, context.resolve(step.eventType ?? ''), step.detail ? (resolveDeep(step.detail, context) as Record<string, unknown>) : undefined)
+        break
+      }
+      case 'setData': {
+        if (typeof adapter.setData !== 'function') {
+          throw new TestPilotError('UNSUPPORTED_ACTION', `当前 ${step.target} adapter 不支持 setData`)
+        }
+        await adapter.setData(resolveDeep(step.patch ?? {}, context) as Record<string, unknown>)
         break
       }
       default: {

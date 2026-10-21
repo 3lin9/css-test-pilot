@@ -40,17 +40,24 @@ describe('PlaywrightAdapter 错误码', () => {
   })
 
   test('assert 文本不匹配 → ASSERTION_FAILED(消息原文不变)', async () => {
-    const page = {
-      locator: vi.fn(() => ({
-        waitFor: vi.fn(async () => undefined),
-        innerText: vi.fn(async () => '订单号 12345 已创建'),
-      })),
+    vi.useFakeTimers()
+    try {
+      const page = {
+        locator: vi.fn(() => ({
+          waitFor: vi.fn(async () => undefined),
+          innerText: vi.fn(async () => '订单号 12345 已创建'),
+        })),
+      }
+      const adapter = adapterWithPage(page)
+      const pending = errorOf(adapter.assert({ css: '.order-id' }, '已发货'))
+      await vi.advanceTimersByTimeAsync(11_000)
+      const err = await pending
+      expect(err).toBeInstanceOf(TestPilotError)
+      expect((err as TestPilotError).code).toBe('ASSERTION_FAILED')
+      expect((err as Error).message).toContain('等待 10000ms):期望包含 "已发货"')
+    } finally {
+      vi.useRealTimers()
     }
-    const adapter = adapterWithPage(page)
-    const err = await errorOf(adapter.assert({ css: '.order-id' }, '已发货'))
-    expect(err).toBeInstanceOf(TestPilotError)
-    expect((err as TestPilotError).code).toBe('ASSERTION_FAILED')
-    expect((err as Error).message).toContain('断言失败:期望包含 "已发货"')
   })
 
   test('navigate goto 超时 → STEP_TIMEOUT', async () => {

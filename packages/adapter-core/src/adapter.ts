@@ -39,6 +39,33 @@ export interface TestAdapter {
   assertResponse?(expected: string): Promise<void>
   /** 按点号 JSON path(如 data.orderId / items.0.id)从最近一次响应提取值 */
   extractResponse?(path: string): Promise<string>
+
+  // ---- [可选能力] miniapp 端(target: miniapp) ----
+
+  /** [可选能力] 调用 Page / 组件方法(用于把人工操作步骤快速自动化;页面级调用 locator 传 undefined) */
+  callMethod?(
+    locator: CaseLocator | undefined,
+    methodName: string,
+    args: readonly unknown[],
+  ): Promise<unknown>
+  /** [可选能力] mock 任意 wx.* API:拦截调用并返回 mock 值;capture 记录真实调用参数 */
+  mockWxApi?(options: {
+    api: string
+    result?: Record<string, unknown>
+    capture?: string
+  }): Promise<void>
+  /** [可选能力] 读取 mock 期间捕获的调用参数(无激活 mock 时返回 undefined) */
+  readWxApiCaptures?(): { name: string; calls: Array<Record<string, unknown>> } | undefined
+  /** [可选能力] 恢复 mock 的 wx API(用例结束由引擎调用) */
+  restoreWxMock?(): Promise<void>
+  /** [可选能力] 触发组件事件(trigger;detail 作为 e.detail 注入,空 detail 即"用户拒绝/取消"类分支) */
+  trigger?(locator: CaseLocator, eventType: string, detail?: Record<string, unknown>): Promise<void>
+  /** [可选能力] 读取页面 data(点号路径,缺省为整个 data 对象) */
+  getData?(dataPath?: string): Promise<unknown>
+  /** [可选能力] 写入页面 data 补丁 */
+  setData?(patch: Record<string, unknown>): Promise<void>
+  /** [可选能力] 断言页面 data 路径的值包含 expected */
+  assertData?(dataPath: string, expected: string): Promise<void>
 }
 
 export interface CapturedRequest {

@@ -1,5 +1,7 @@
 # TestPilot 数据驱动测试与需求覆盖设计
 
+> **状态:已实现**(commit 10f12c1,plan 见 `docs/superpowers/plans/2026-09-21-data-driven-test-workflow.md`)。
+
 ## 1. 目标
 
 本次改造解决五类问题：

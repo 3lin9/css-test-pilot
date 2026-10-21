@@ -13,7 +13,7 @@ node examples/mock-backend/server.js
 # 2. 业务项目里接入 csspilot
 npx csspilot init
 
-# 3. csspilot.yaml 参考 examples/csspilot.yaml:
+# 3. testpilot.yaml 参考 examples/testpilot.yaml:
 #    web.baseUrl 指向后端、miniapp.projectPath 指向小程序项目(examples/miniapp-demo 可直接用)
 
 # 4. 把 cases/order-create.yaml 复制到业务项目 tests/e2e/cases/ 后执行
@@ -25,6 +25,18 @@ npx csspilot report
 ## 演示小程序(miniapp-demo/)
 
 可运行的最小小程序项目(游客 appid):点击"提交订单"会 `wx.request` 调用 mock 后端真实下单,订单号渲染在 `.order-id` 元素上(下单前该元素不存在,可直接用 wait/extract 验证异步时序)。`project.config.json` 已关闭 urlCheck 以便请求本地后端。
+
+## 数据驱动示例(promotion-discount.yaml)
+
+`tests/e2e/cases/promotion-discount.yaml` 演示数据驱动:同一 Case 模板挂 `data/discount-cases.yaml` 数据集,每个数据行展开为一次执行;`data/promotion.yaml` 作为 fixture 提供造数依赖,`requires` 做静态依赖预检(缺依赖的行 blocked,不静默失败)。适合验证"类型 × 组合"规则矩阵(折扣类型 × 门槛边界)。
+
+执行(以 examples/ 为业务项目根,需先启动 mock 后端):
+
+```bash
+cd examples
+npx csspilot run tests/e2e/cases/promotion-discount.yaml
+npx csspilot report --summary   # 汇总报告按「模板 × 数据行」分组统计
+```
 
 ## 运行前提
 

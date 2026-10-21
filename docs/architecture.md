@@ -13,7 +13,7 @@ TestPilot
 ├── CLI                用户 / AI 的入口
 ├── DSL                测试描述语言
 ├── Execution Engine   测试执行引擎
-├── Adapter            平台执行适配器(Playwright / WeChatIDE)
+├── Adapter            平台执行适配器(Playwright / WeChatIDE / API)
 ├── Evidence           截图 / Trace / 日志
 ├── Reporter           测试结果(JSON + HTML)
 └── Skill              AI 使用 TestPilot 的能力规范
@@ -35,17 +35,18 @@ TestPilot
                  Execution Engine
                           │
                     Adapter Resolver
-                     /            \
-                    ▼              ▼
-          Playwright Adapter   WeChatIDE Adapter
-                   │                │
-                   ▼                ▼
-                 Web             Mini Program
-                    \              /
-                      ▼          ▼
-                       Evidence
-                          ▼
-                        Report
+                   /        |        \
+                  ▼         ▼         ▼
+        Playwright    WeChatIDE     API
+         Adapter       Adapter     Adapter
+             │             │         │
+             ▼             ▼         ▼
+           Web      Mini Program   HTTP
+                         \        /
+                          ▼      ▼
+                        Evidence
+                           ▼
+                         Report
 ```
 
 ## 核心原则
@@ -73,11 +74,19 @@ TestPilot
 | `.testpilot`     | TestPilot Runtime 数据       |
 | `tests/e2e`      | 业务项目测试目录             |
 
-## V0.1 范围
+## V0.1 基线范围(已全部落地)
 
 CLI 六个命令:`init` / `validate` / `list` / `run` / `report` / `doctor`。
 DSL 九个基础 Action:`launch` / `navigate` / `click` / `input` / `select` / `wait` / `assert` / `extract` / `screenshot`。
 Golden Path:小程序创建订单 → extract orderId → Web 后台 assert 订单号。
+
+> 以上为 V0.1 基线设计记录。基线之后已落地的增量(**现状以此为准**,详见 [README.md](../README.md) 路线图):
+>
+> - **Web / Backend / Agent 增量**:`@testpilot/sdk` 统一编程接口、Control Plane(Fastify + SQLite + Drizzle)、Web 控制台(Vue 3)、Agent 编排;CLI 追加 `sync-metadata` / `update` / `ci init`,共九个命令
+> - **API Adapter**:`target: api` 与第 10 个 Action `request`,HTTP 造数、UI+API 混合编排与数据层断言
+> - **数据驱动测试**:数据集展开执行、setup/teardown 阶段、静态依赖预检、QA 覆盖映射
+> - **三态判定**:失败按 product / infra(blocked) / unverified(inconclusive) 三桶分流,run 退出码 0 / 1 / 2
+> - **charter 视角矩阵**:评审工作流固定 5 视角,`charter:*` tags 与三分判定规则
 
 ## 开工顺序
 
@@ -95,3 +104,5 @@ Phase 8  TestPilot Skill 完善
 ## V0.1 明确不做
 
 Dashboard、Fastify、SQLite、Drizzle、RAG、AI Planner、AI Agent Loop、自动修复、Baseline、性能/业务数据基线、SQL/MySQL Adapter、业务 Skill(login / order / payment 永远属于业务项目的 Case)、多用户、权限系统。
+
+> 其中 Fastify / SQLite / Drizzle / AI Planner(Agent 编排)已由 Web / Backend / Agent 增量落地(见上节);其余仍然不做。

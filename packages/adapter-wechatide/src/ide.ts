@@ -11,11 +11,16 @@ interface AutomatorElement {
   tap(): Promise<void>
   text(): Promise<string>
   input(value: string): Promise<void>
+  trigger(type: string, detail?: Record<string, unknown>): Promise<void>
+  callMethod(method: string, ...args: unknown[]): Promise<unknown>
 }
 
 interface AutomatorPage {
   $(selector: string): Promise<AutomatorElement | null>
   waitFor(selectorOrMs: string | number): Promise<unknown>
+  data(path?: string): Promise<unknown>
+  setData(data: Record<string, unknown>): Promise<void>
+  callMethod(method: string, ...args: unknown[]): Promise<unknown>
 }
 
 export interface AutomatorProgram {
@@ -32,7 +37,7 @@ export interface AutomatorProgram {
       options: Record<string, unknown>,
       exposedName: string,
     ) => unknown,
-    exposedName: string,
+    exposedName?: string,
   ): Promise<void>
   restoreWxMethod(method: string): Promise<void>
 }
@@ -45,6 +50,10 @@ export interface AutomatorLauncher {
 const AUTO_PORT_FALLBACK_WAIT_MS = 90_000
 const NAVIGATE_RETRY_WINDOW_MS = 45_000
 const ELEMENT_WAIT_MS = 10_000
+/** assert / extract 对元素文本的轮询窗口(数据绑定未完成时等待内容出现) */
+const TEXT_WAIT_MS = 10_000
+/** navigate 后等待页面就绪(编译 + 首屏 data 可读)的窗口 */
+const PAGE_READY_WAIT_MS = 30_000
 /** 模拟器重编译 / IDE 重启会断开自动化 ws 连接 */
 const CONNECTION_LOST = /connection closed|not connected/i
 
@@ -160,6 +169,8 @@ export class MiniAppAdapter implements TestAdapter {
         await this.runWithReconnect(async () => {
           await (await this.getProgram()).reLaunch(url)
         })
+        // reLaunch 被接受 ≠ 页面就绪:等待编译完成、页面 data 可读(就绪信号)
+        await this.waitForPageReady()
         return
       } catch (err) {
         lastError = err
@@ -167,6 +178,23 @@ export class MiniAppAdapter implements TestAdapter {
       }
     }
     throw lastError instanceof Error ? lastError : new Error(String(lastError))
+  }
+
+  /** 等待页面就绪:模拟器编译期间 currentPage / data 会失败或挂起,轮询至可响应 */
+  private async waitForPageReady(timeoutMs = PAGE_READY_WAIT_MS): Promise<void> {
+    const startedAt = Date.now()
+    for (;;) {
+      const page = await (await this.getProgram()).currentPage()
+      const data = await page.data().catch(() => undefined)
+      if (data !== undefined && data !== null) return
+      if (Date.now() - startedAt > timeoutMs) {
+        throw new TestPilotError(
+          'PAGE_READY_TIMEOUT',
+          `等待页面就绪超时(${timeoutMs}ms):模拟器可能仍在编译,或项目未被信任`,
+        )
+      }
+      await delay(300)
+    }
   }
 
   async click(locator: CaseLocator): Promise<void> {
@@ -195,10 +223,19 @@ export class MiniAppAdapter implements TestAdapter {
   async assert(locator: CaseLocator, expected: string): Promise<void> {
     await this.runWithReconnect(async () => {
       const element = await this.element(locator)
-      const actual = (await element.text()).trim()
       const wanted = expected.trim()
-      if (!actual.includes(wanted)) {
-        throw new TestPilotError('ASSERTION_FAILED', `断言失败:期望包含 "${wanted}",实际为 "${actual.slice(0, 200)}"`)
+      // 数据绑定未完成时文本可能为空/陈旧:轮询直到包含期望内容或超时
+      const startedAt = Date.now()
+      for (;;) {
+        const actual = (await element.text()).trim()
+        if (actual.includes(wanted)) return
+        if (Date.now() - startedAt > TEXT_WAIT_MS) {
+          throw new TestPilotError(
+            'ASSERTION_FAILED',
+            `断言失败(等待 ${TEXT_WAIT_MS}ms):期望包含 "${wanted}",实际为 "${actual.slice(0, 200)}"`,
+          )
+        }
+        await delay(300)
       }
     })
   }
@@ -206,7 +243,103 @@ export class MiniAppAdapter implements TestAdapter {
   async extract(locator: CaseLocator): Promise<string> {
     return this.runWithReconnect(async () => {
       const element = await this.element(locator)
-      return (await element.text()).trim()
+      const startedAt = Date.now()
+      // 数据绑定未完成时文本可能为空:轮询直到出现内容或超时(超时后返回当前文本,可能是合法空值)
+      for (;;) {
+        const text = (await element.text()).trim()
+        if (text.length > 0 || Date.now() - startedAt > TEXT_WAIT_MS) return text
+        await delay(300)
+      }
+    })
+  }
+
+  /** 调用 Page / 组件方法;不传 locator 时为页面级调用(Page 实例方法) */
+  async callMethod(
+    locator: CaseLocator | undefined,
+    methodName: string,
+    args: readonly unknown[],
+  ): Promise<unknown> {
+    return this.runWithReconnect(async () => {
+      if (locator) {
+        const element = await this.element(locator)
+        return element.callMethod(methodName, ...args)
+      }
+      const page = await (await this.getProgram()).currentPage()
+      return page.callMethod(methodName, ...args)
+    })
+  }
+
+  // ---- miniapp 深度测试(V0.2)----
+
+  private wxMock: { api: string; captured: Array<Record<string, unknown>> } | undefined
+
+  /** mock 任意 wx.* API:拦截调用并返回 mock 值;capture 记录真实调用参数(最近调用在前) */
+  async mockWxApi(options: {
+    api: string
+    result?: Record<string, unknown>
+    capture?: string
+  }): Promise<void> {
+    if (this.wxMock?.api === options.api) await this.restoreWxMock()
+    const program = await this.getProgram()
+    const captured: Array<Record<string, unknown>> = []
+    this.wxMock = { api: options.api, captured }
+    const callbackName = options.capture ? `__tpWxCapture_${options.capture}` : undefined
+    if (callbackName) {
+      await program.exposeFunction(callbackName, (payload: unknown) => {
+        if (payload !== null && typeof payload === 'object') {
+          captured.push(payload as Record<string, unknown>)
+        }
+      })
+    }
+    await program.mockWxMethod(
+      options.api,
+      function (this: { origin(o: unknown): unknown }, invokeOptions: Record<string, unknown>, cbName: string) {
+        const callbacks = globalThis as unknown as Record<
+          string,
+          ((value: unknown) => void) | undefined
+        >
+        callbacks[cbName]?.({ options: invokeOptions })
+        return options.result ?? this.origin(invokeOptions)
+      },
+      callbackName,
+    )
+  }
+
+  /** 读取 mock 期间捕获的调用参数(最近调用在前) */
+  readCapturedWxApiCalls(api: string): Array<Record<string, unknown>> {
+    return this.wxMock?.api === api ? [...this.wxMock.captured].reverse() : []
+  }
+
+  /** 恢复 mock 的 wx API(用例结束由引擎调用) */
+  async restoreWxMock(): Promise<void> {
+    const mock = this.wxMock
+    if (!mock) return
+    this.wxMock = undefined
+    if (!this.program) return
+    await this.program.restoreWxMethod(mock.api).catch(() => undefined)
+  }
+
+  /** 触发组件事件(trigger;detail 作为 e.detail 注入,空 detail 即"用户拒绝/取消"类分支) */
+  async trigger(locator: CaseLocator, eventType: string, detail?: Record<string, unknown>): Promise<void> {
+    await this.runWithReconnect(async () => {
+      const element = await this.element(locator)
+      await element.trigger(eventType, detail)
+    })
+  }
+
+  /** 读取页面 data(点号路径,缺省为整个 data 对象) */
+  async getData(dataPath?: string): Promise<unknown> {
+    return this.runWithReconnect(async () => {
+      const page = await (await this.getProgram()).currentPage()
+      return page.data(dataPath)
+    })
+  }
+
+  /** 写入页面 data 补丁(setData 驱动 onShow/onPullDownRefresh 等真实链路) */
+  async setData(patch: Record<string, unknown>): Promise<void> {
+    await this.runWithReconnect(async () => {
+      const page = await (await this.getProgram()).currentPage()
+      await page.setData(patch)
     })
   }
 

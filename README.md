@@ -12,7 +12,7 @@ TestPilot 是**工具,不是业务测试项目**:它定义怎么描述、校验�
 
 ```text
 AI → .agents/skills/testpilot(规范) → TestPilot CLI → DSL → Execution Engine
-    → Adapter(Playwright / WeChatIDE) → Evidence → Report
+    → Adapter(Playwright / WeChatIDE / API) → Evidence → Report
 ```
 
 ## 仓库结构
@@ -28,6 +28,7 @@ AI → .agents/skills/testpilot(规范) → TestPilot CLI → DSL → Execution 
 │   ├── core/                # 通用类型、错误、常量、配置模型(testpilot.yaml)
 │   ├── dsl/                 # 用例 DSL:schema(zod)/ parser(yaml)/ validator
 │   ├── execution-engine/    # 执行引擎:engine/context/scheduler/lifecycle/events(NDJSON)/artifacts
+│   ├── adapter-api/         # HTTP 接口驱动(request/assert/extract:造数、数据层断言)
 │   ├── adapter-core/        # 适配器抽象(adapter/session/locator)
 │   ├── adapter-playwright/  # Web 驱动实现(Playwright)
 │   ├── adapter-wechatide/   # 小程序驱动实现(WeChat DevTools)
@@ -52,10 +53,14 @@ AI → .agents/skills/testpilot(规范) → TestPilot CLI → DSL → Execution 
 | `npx csspilot run [files] [--tag]` | 执行用例(Case Loader → Validator → Engine → Adapter → Evidence → Reporter)                                                                 |
 | `npx csspilot report [--run id]`   | 生成 JSON + HTML 报告(`.testpilot/artifacts/runs/<id>/`)                                                                                   |
 | `npx csspilot doctor`              | 环境体检(Node / Playwright / WeChat DevTools / 项目配置)                                                                                   |
+| `npx csspilot sync-metadata`       | 把当前 Commit 的 Case 列表快照同步到 Server(CI 专用,Git Push 后)                                                                          |
+| `npx csspilot report --summary`    | 跨 run 汇总报告(`summary.html` + `summary.json`,默认统计最近 30 次)                                                                       |
+| `npx csspilot update`              | CLI 升级后同步接入物(Skill / `.env.example`;不触碰 `.env` 与用例)                                                                          |
+| `npx csspilot ci init`             | 生成 CI 工作流模板(`.github/workflows/testpilot.yml`)                                                                                      |
 
 ## DSL(V0.1)
 
-九个基础 Action:`launch` `navigate` `click` `input` `select` `wait` `assert` `extract` `screenshot`。
+九个基础 Action:`launch` `navigate` `click` `input` `select` `wait` `assert` `extract` `screenshot`,外加 `request`(`target: api`,HTTP 造数与数据层断言)。
 
 Action 是通用测试原语,不是业务能力 —— login / order / payment 永远是业务项目里的 Case,不是 TestPilot 的 Action。示例见 [examples/cases/order-create.yaml](examples/cases/order-create.yaml)。
 
@@ -91,6 +96,11 @@ Phase 9  SDK @testpilot/sdk(✓ client/project/cases/runs/reports;CLI 已改为�
 Phase 10 Backend Control Plane + Git Metadata Sync(✓ Fastify + SQLite + Drizzle;快照式 Case 同步 + Run 编排)
 Phase 11 Web 测试控制台(✓ Vue 3 + Vite:项目概览 / Case Index / Run 详情(Step 级结果 + 截图/日志/Trace)/ 同步状态;Server 静态托管)
 Phase 12 Agent(✓ Web→Server→AgentOrchestrator→apps/agent;在 rootPath 写 YAML;push+sync-metadata 后进 Case Index)
+
+增量 2(测试方法论,spec 见 `docs/superpowers/specs/`):
+Phase 13 测试需求评审 workflow + 工具链(✓ 评审工作流、`csspilot update`、`.env` 自动加载、跨 run 汇总报告)
+Phase 14 数据驱动测试(✓ 数据集展开执行 / setup·teardown / 依赖预检 / QA 覆盖映射)
+Phase 15 三态判定 + charter 视角矩阵(✓ 失败三桶 product / infra / unverified → run 退出码 0/1/2;`charter:*` 视角 tags 与三分判定;AI 兜底回放缓存仅为蓝图,未实现)
 ```
 
 ## SDK 与 Control Plane(增量)

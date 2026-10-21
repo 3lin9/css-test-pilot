@@ -1,3 +1,5 @@
+> 📄 **历史设计文档**:Phase 9–12(SDK / Backend / Web / Agent)已全部落地,本文保留为设计记录;当前架构与范围以 [docs/architecture.md](docs/architecture.md) 和 [README.md](README.md) 为准。
+
 # TestPilot V0.1 — Web / Backend / Agent 增量设计 v3
 
 > 本文只描述在已经完成的 TestPilot V0.1 Core 架构基础上的新增与调整内容，不推翻现有 Core / DSL / Execution Engine / Adapter / Case 设计。

@@ -114,12 +114,14 @@ npx csspilot run --tag smoke                      # 按标签
 ## report —— 生成报告
 
 ```bash
-npx csspilot report               # 最近一次运行
-npx csspilot report --run 20260910-001
-npx csspilot report --open        # 生成后在浏览器打开
+npx csspilot report                     # 最近一次运行
+npx csspilot report --run 20260910-001  # 指定运行
+npx csspilot report --open              # 生成后在浏览器打开
+npx csspilot report --summary           # 跨 run 汇总报告(summary.html + summary.json)
+npx csspilot report --summary --last 50 # 汇总统计窗口改为最近 50 次
 ```
 
-在 run 目录内生成 `report.json`(结构化,供 AI 分析)与 `report.html`(人类可读,含状态徽章、步骤表、变量值、截图链接)。
+在 run 目录内生成 `report.json`(结构化,供 AI 分析)与 `report.html`(人类可读,含状态徽章、步骤表、变量值、截图链接)。`--summary` 额外生成跨 run 汇总报告,统计最近 N 次(默认 30)运行的整体通过率与趋势,按「模板 × 数据行」分组展示数据驱动用例的结果。
 
 ## 项目配置(testpilot.yaml)
 

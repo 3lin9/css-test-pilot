@@ -61,4 +61,25 @@ export class ExecutionContext {
     }
     this.variables.set('account', rawValue)
   }
+
+  /**
+   * 注入结构化对象(如 mockWxApi 的捕获结果):按点号路径展开为平铺字符串变量。
+   * 例如 seedObject('showModalCall', { called: true, args: { content: 'x' } }) 后,
+   * `${showModalCall.called}` 与 `${showModalCall.args.content}` 均可解析。
+   */
+  seedObject(name: string, value: unknown): void {
+    const flatten = (prefix: string, input: unknown): void => {
+      if (input !== null && typeof input === 'object' && !Array.isArray(input)) {
+        const entries = Object.entries(input as Record<string, unknown>)
+        if (entries.length === 0) {
+          this.variables.set(prefix, '')
+          return
+        }
+        for (const [key, item] of entries) flatten(`${prefix}.${key}`, item)
+        return
+      }
+      this.variables.set(prefix, input === undefined ? '' : String(input))
+    }
+    flatten(name, value)
+  }
 }

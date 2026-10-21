@@ -1,5 +1,7 @@
 # 三态判定 + charter 视角矩阵 Implementation Plan
 
+> **状态:已实现并合并**(merge d914273;charter 步骤的三分判定规则为后续增补,见 spec)。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 失败按 product / infra(blocked) / unverified(inconclusive) 三桶分流(CI exit 0/1/2),并把 charter 视角矩阵并入评审与建 Case 工作流。

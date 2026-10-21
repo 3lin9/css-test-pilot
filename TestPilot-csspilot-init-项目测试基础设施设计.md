@@ -1,3 +1,5 @@
+> 📄 **历史设计文档**:`csspilot init` 已实现并持续迭代,行为以 [docs/cli.md](docs/cli.md) 为准;本文保留为设计记录。
+
 # TestPilot / csspilot：项目测试基础设施初始化设计
 
 > 目标：让 AI Coding Agent 按本文直接实现 `csspilot init`，把一个普通业务项目接入 TestPilot，形成标准化、可验证、可被 Agent 使用的测试工程。

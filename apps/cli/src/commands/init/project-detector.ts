@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { readGitInfo } from '../../lib/git'
 
@@ -69,6 +69,29 @@ export function detectProjectType(root: string): ProjectType {
   return 'unknown'
 }
 
+/** 无 package.json 信号的项目(如原生小程序):按源码扩展名推断语言 */
+function detectLanguageFromSources(root: string): 'TypeScript' | 'JavaScript' | 'Unknown' {
+  const SKIP_DIRS = new Set(['node_modules', 'miniprogram_npm', 'dist', '.git'])
+  const found = { ts: false, js: false }
+  const walk = (dir: string, depth: number): void => {
+    if (depth > 4 || (found.ts && found.js)) return
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (entry.name.startsWith('.')) continue
+      const full = join(dir, entry.name)
+      if (entry.isDirectory()) {
+        if (!SKIP_DIRS.has(entry.name)) walk(full, depth + 1)
+        continue
+      }
+      if (/\.(ts|tsx)$/.test(entry.name)) found.ts = true
+      else if (/\.(js|cjs|mjs|wxml)$/.test(entry.name)) found.js = true
+    }
+  }
+  walk(root, 0)
+  if (found.ts) return 'TypeScript'
+  if (found.js) return 'JavaScript'
+  return 'Unknown'
+}
+
 /** 检测项目基础信息(设计文档 §5:名称/类型/语言/包管理器/Git/已有测试结构) */
 export async function detectProject(root: string): Promise<ProjectInfo> {
   const pkg = readPackageJson(root)
@@ -78,7 +101,7 @@ export async function detectProject(root: string): Promise<ProjectInfo> {
     ? 'TypeScript'
     : pkg || existsSync(join(root, 'src'))
       ? 'JavaScript'
-      : 'Unknown'
+      : detectLanguageFromSources(root)
 
   const packageManager = existsSync(join(root, 'pnpm-lock.yaml'))
     ? 'pnpm'

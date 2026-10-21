@@ -1,7 +1,7 @@
 import { parseCase, type DslIssue } from '../parser'
 import { type ActionName, type StepTarget, type TestCase, type TestStep } from '../schema'
 
-/** V0.1 各端 adapter 支持的 action 矩阵(小程序端 select/picker 交互暂不支持;api 端只支持 request/assert/extract) */
+/** V0.1 各端 adapter 支持的 action 矩阵(小程序端 select/picker 交互暂不支持;api 端只支持 request/assert/extract;callMethod/mockWxApi/trigger/setData 仅 miniapp) */
 const ADAPTER_SUPPORT: Record<ActionName, readonly StepTarget[]> = {
   launch: ['web', 'miniapp'],
   navigate: ['web', 'miniapp'],
@@ -13,6 +13,10 @@ const ADAPTER_SUPPORT: Record<ActionName, readonly StepTarget[]> = {
   extract: ['web', 'miniapp', 'api'],
   screenshot: ['web', 'miniapp'],
   request: ['api'],
+  callMethod: ['miniapp'],
+  mockWxApi: ['miniapp'],
+  trigger: ['miniapp'],
+  setData: ['miniapp'],
 }
 
 const LOCATOR_REQUIRED = new Set<ActionName>(['click', 'input', 'select', 'assert', 'extract'])
@@ -21,7 +25,23 @@ const REQUEST_EXPECTATION_ACTIONS = new Set<ActionName>(['navigate', 'click', 'i
 
 /** 字段只允许出现在指定 action 上(防复制粘贴/拼写错误) */
 const FIELD_ALLOWED: Record<
-  'url' | 'value' | 'expected' | 'variable' | 'timeout' | 'method' | 'headers' | 'body',
+  | 'url'
+  | 'value'
+  | 'expected'
+  | 'variable'
+  | 'timeout'
+  | 'method'
+  | 'headers'
+  | 'body'
+  | 'methodName'
+  | 'args'
+  | 'wxApi'
+  | 'result'
+  | 'capture'
+  | 'eventType'
+  | 'detail'
+  | 'patch'
+  | 'dataPath',
   readonly ActionName[]
 > = {
   url: ['navigate', 'request'],
@@ -32,6 +52,15 @@ const FIELD_ALLOWED: Record<
   method: ['request'],
   headers: ['request'],
   body: ['request'],
+  methodName: ['callMethod'],
+  args: ['callMethod'],
+  wxApi: ['mockWxApi'],
+  result: ['mockWxApi'],
+  capture: ['mockWxApi'],
+  eventType: ['trigger'],
+  detail: ['trigger'],
+  patch: ['setData'],
+  dataPath: ['assert'],
 }
 
 const VARIABLE_REF = /\$\{([A-Za-z_][A-Za-z0-9_.]*)\}/g
@@ -109,7 +138,7 @@ function checkStep(step: TestStep, at: string, declared: Set<string>, issues: Ds
   }
 
   for (const [field, actions] of Object.entries(FIELD_ALLOWED)) {
-    const key = field as 'url' | 'value' | 'expected' | 'variable' | 'timeout' | 'method' | 'headers' | 'body'
+    const key = field as 'url' | 'value' | 'expected' | 'variable' | 'timeout' | 'method' | 'headers' | 'body' | 'methodName' | 'args' | 'wxApi' | 'result' | 'capture' | 'eventType' | 'detail' | 'patch' | 'dataPath'
     if (step[key] !== undefined && !actions.includes(step.action)) {
       issues.push({
         path: `${at}.${field}`,
@@ -117,6 +146,31 @@ function checkStep(step: TestStep, at: string, declared: Set<string>, issues: Ds
         message: `字段 "${field}" 仅用于 ${actions.join(' / ')}`,
       })
     }
+  }
+
+  // mockWxApi:wx API 名与 mock 返回值必填
+  if (step.action === 'mockWxApi') {
+    if (!step.wxApi) {
+      issues.push({ path: `${at}.wxApi`, code: 'semantic', message: 'mockWxApi 必须提供 wxApi(要 mock 的 wx.* API 名)' })
+    }
+    if (!step.result) {
+      issues.push({ path: `${at}.result`, code: 'semantic', message: 'mockWxApi 必须提供 result(mock 返回值)' })
+    }
+  }
+
+  // trigger:事件类型必填
+  if (step.action === 'trigger' && !step.eventType) {
+    issues.push({ path: `${at}.eventType`, code: 'semantic', message: 'trigger 必须提供 eventType(触发的事件类型)' })
+  }
+
+  // setData:补丁必填
+  if (step.action === 'setData' && (!step.patch || Object.keys(step.patch).length === 0)) {
+    issues.push({ path: `${at}.patch`, code: 'semantic', message: 'setData 必须提供 patch(写入页面 data 的补丁)' })
+  }
+
+  // dataPath 断言仅 miniapp(web 端用 locator)
+  if (step.dataPath !== undefined && step.target !== 'miniapp') {
+    issues.push({ path: `${at}.dataPath`, code: 'semantic', message: 'dataPath 断言仅 miniapp 支持(web 端用 locator)' })
   }
 
   if (step.action === 'navigate' && !step.url) {
@@ -155,6 +209,14 @@ function checkStep(step: TestStep, at: string, declared: Set<string>, issues: Ds
 
   if (step.action === 'wait' && !step.locator && step.timeout === undefined) {
     issues.push({ path: at, code: 'semantic', message: 'wait 需要提供 locator(等待元素)或 timeout(毫秒)' })
+  }
+
+  if (step.action === 'callMethod' && !step.methodName) {
+    issues.push({
+      path: `${at}.methodName`,
+      code: 'semantic',
+      message: 'callMethod 必须提供 methodName(页面或组件的方法名)',
+    })
   }
 
   if (step.expectRequests) {
@@ -207,11 +269,17 @@ function checkVariableRefs(
   collect('value', step.value)
   collect('expected', step.expected)
   collect('url', step.url)
+  collect('methodName', step.methodName)
   collect('locator.text', step.locator?.text)
   collect('locator.css', step.locator?.css)
   if (typeof step.body === 'string') collect('body', step.body)
   else if (step.body) collect('body', JSON.stringify(step.body))
   for (const headerValue of Object.values(step.headers ?? {})) collect('headers', headerValue)
+  if (Array.isArray(step.args)) {
+    step.args.forEach((arg, index) => {
+      if (typeof arg === 'string') collect(`args[${index}]`, arg)
+    })
+  }
   for (const [index, expectation] of (step.expectRequests ?? []).entries()) {
     collect(`expectRequests[${index}].urlContains`, expectation.urlContains)
   }

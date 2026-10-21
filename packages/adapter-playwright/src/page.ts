@@ -9,6 +9,13 @@ import { TestPilotError } from '@testpilot/core'
 import type { BrowserBundle, PlaywrightAdapterOptions } from './browser'
 import { openCaseContext } from './browser'
 
+/** assert / extract 对元素文本的轮询窗口(SPA 数据绑定未完成时等待内容出现);可用 options.textWaitMs 覆盖 */
+const TEXT_WAIT_MS = 10_000
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
 interface CurrentContext {
   context: BrowserContext
   page: Page
@@ -126,17 +133,32 @@ export class PlaywrightAdapter implements TestAdapter {
 
   async assert(locator: CaseLocator, expected: string): Promise<void> {
     const target = await this.toLocator(locator)
-    await this.coded(() => target.waitFor({ state: 'visible' }))
-    const actual = (await this.coded(() => target.innerText())).trim()
     const wanted = expected.trim()
-    if (!actual.includes(wanted)) {
-      throw new TestPilotError('ASSERTION_FAILED', `断言失败:期望包含 "${wanted}",实际为 "${actual.slice(0, 200)}"`)
+    // SPA 数据绑定未完成时文本可能为空/陈旧:轮询直到包含期望内容或超时
+    const startedAt = Date.now()
+    for (;;) {
+      await this.coded(() => target.waitFor({ state: 'visible' }))
+      const actual = (await this.coded(() => target.innerText())).trim()
+      if (actual.includes(wanted)) return
+      if (Date.now() - startedAt > TEXT_WAIT_MS) {
+        throw new TestPilotError(
+          'ASSERTION_FAILED',
+          `断言失败(等待 ${TEXT_WAIT_MS}ms):期望包含 "${wanted}",实际为 "${actual.slice(0, 200)}"`,
+        )
+      }
+      await delay(300)
     }
   }
 
   async extract(locator: CaseLocator): Promise<string> {
     const target = await this.toLocator(locator)
-    return this.coded(() => target.innerText()).then((text) => text.trim())
+    const startedAt = Date.now()
+    // 数据绑定未完成时文本可能为空:轮询直到出现内容或超时(超时后返回当前文本)
+    for (;;) {
+      const text = (await this.coded(() => target.innerText())).trim()
+      if (text.length > 0 || Date.now() - startedAt > TEXT_WAIT_MS) return text
+      await delay(300)
+    }
   }
 
   async screenshot(): Promise<Buffer> {
