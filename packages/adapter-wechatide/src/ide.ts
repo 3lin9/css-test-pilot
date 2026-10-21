@@ -257,7 +257,7 @@ export class MiniAppAdapter implements TestAdapter {
   async callMethod(
     locator: CaseLocator | undefined,
     methodName: string,
-    args: readonly unknown[],
+    args: readonly unknown[] = [],
   ): Promise<unknown> {
     return this.runWithReconnect(async () => {
       if (locator) {

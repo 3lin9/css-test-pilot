@@ -13,6 +13,7 @@ function createFakeProgram() {
     tap: vi.fn(),
     text: vi.fn(async () => '订单号 67890 已创建'),
     input: vi.fn(),
+    callMethod: vi.fn(async () => 'component-result'),
   }
   const fakePage = {
     $: vi.fn(async () => fakeElement),
@@ -86,6 +87,45 @@ describe('MiniAppAdapter(miniprogram-automator 映射)', () => {
 
     await adapter.input({ css: '#keyword' }, '小米手机')
     expect(fakeElement.input).toHaveBeenCalledWith('小米手机')
+  })
+
+  test('callMethod:页面级与组件级调用', async () => {
+    const { program, fakePage, fakeElement } = createFakeProgram()
+    fakePage.callMethod = vi.fn(async () => 'page-result')
+    fakeElement.callMethod = vi.fn(async () => 'component-result')
+    const adapter = new MiniAppAdapter(
+      { projectPath, closeIde: false },
+      { launch: vi.fn(async () => program) },
+    )
+
+    // 页面级(无 locator)→ page.callMethod
+    await adapter.callMethod(undefined, 'onShow')
+    expect(fakePage.callMethod).toHaveBeenCalledWith('onShow')
+
+    // 组件级 → element.callMethod(method, ...args)
+    await adapter.callMethod({ css: '.card' }, 'submit', ['h5'])
+    expect(fakeElement.callMethod).toHaveBeenCalledWith('submit', 'h5')
+  })
+
+  test('mockWxApi:capture 记录真实调用参数', async () => {
+    const { program } = createFakeProgram()
+    const adapter = new MiniAppAdapter(
+      { projectPath, closeIde: false },
+      { launch: vi.fn(async () => program) },
+    )
+    await adapter.launch()
+    await adapter.mockWxApi({ api: 'showModal', result: { confirm: true }, capture: 'showModalCall' })
+
+    // 模拟小程序侧调用:注入的回调收到真实参数
+    const exposed = vi
+      .mocked(program.exposeFunction)
+      .mock.calls.find(([name]) => String(name).includes('showModalCall'))
+    expect(exposed?.[0]).toBe('__tpWxCapture_showModalCall')
+    vi.mocked(exposed?.[1] as (value: unknown) => void)({ options: { content: '重新选择' } })
+
+    expect(adapter.readCapturedWxApiCalls('showModal')).toEqual([
+      { options: { content: '重新选择' } },
+    ])
   })
 
   test('text locator 与 select 在小程序端不可用', async () => {
