@@ -9,7 +9,7 @@ import { makeSyncMetadataCommand } from './commands/sync-metadata'
 import { makeUpdateCommand } from './commands/update'
 import { makeValidateCommand } from './commands/validate'
 
-export const CLI_VERSION = '0.7.1'
+export const CLI_VERSION = '0.7.2'
 
 export async function createCli(): Promise<Command> {
   const program = new Command()
