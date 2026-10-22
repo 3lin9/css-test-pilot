@@ -1,0 +1,94 @@
+# 小程序深度测试全景示例:展示 V0.2/V0.3 深度 action 的典型组合
+# 注意:
+#   1. 业务 Case 属于业务项目 tests/e2e/cases/,本文件仅作为 DSL 书写示例
+#   2. 小程序端只能用 css 定位(class/id),示例类名需按真实 WXML 调整
+#   3. dataPath / count / attribute 断言绕开"文案推断",直接对页面状态机与元素属性断言
+id: miniapp-deep
+name: 小程序深度测试全景
+tags:
+  - example
+  - miniapp-deep
+
+steps:
+  - target: miniapp
+    action: launch
+
+  # callWxApi 造前置状态:清 storage 制造"未授权设备",无需换真机
+  - target: miniapp
+    action: callWxApi
+    wxApi: clearStorageSync
+
+  - target: miniapp
+    action: navigate
+    url: /pages/list/index
+
+  # 页面状态机断言:直接断言 data.status,不依赖文案
+  - target: miniapp
+    action: assert
+    dataPath: status
+    expected: ready
+
+  # 数量断言:列表项精确数量;count: 0 即"元素不存在"
+  - target: miniapp
+    action: assert
+    locator:
+      css: ".list-item"
+    count: 10
+
+  # 属性断言:按钮禁用态(attribute 全等比较)
+  - target: miniapp
+    action: assert
+    locator:
+      css: ".next-page-btn"
+    attribute: disabled
+    expected: "false"
+
+  # mock wx.request 拦截接口,消除后端造数依赖;capture 记录真实调用参数
+  - target: miniapp
+    action: mockWxApi
+    wxApi: request
+    result:
+      code: 0
+      data:
+        list: []
+
+  # trigger 绕过原生组件,直接驱动分支(如 getphonenumber 空 code = 用户拒绝)
+  - target: miniapp
+    action: trigger
+    locator:
+      css: ".refresh-btn"
+    eventType: tap
+    detail: {}
+
+  # 组件级 callMethod / setData(提供 locator 即对组件实例操作)
+  - target: miniapp
+    action: setData
+    locator:
+      css: ".custom-list"
+    patch:
+      refreshing: false
+
+  # 长按(长按识别二维码、长按删除等场景)
+  - target: miniapp
+    action: longpress
+    locator:
+      css: ".qr-code"
+
+  # scroll-view 滚动到底触发分页;swipeTo 切换 swiper 页
+  - target: miniapp
+    action: scroll
+    locator:
+      css: ".list"
+    scrollTop: 2000
+  - target: miniapp
+    action: swipeTo
+    locator:
+      css: ".banner-swiper"
+    index: 1
+
+  # 提取页面 data 值为变量(getData),供后续步骤引用
+  - target: miniapp
+    action: callMethod
+    methodName: onPullDownRefresh
+  - target: miniapp
+    action: screenshot

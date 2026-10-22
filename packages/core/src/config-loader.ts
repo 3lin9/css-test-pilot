@@ -65,15 +65,23 @@ function interpolateEnvRefs(value: string): string {
 }
 
 /**
- * 加载业务项目根目录的 .env 文件到进程环境(Node 内建 process.loadEnvFile)。
- * 已存在的环境变量优先,不会被文件覆盖;.env 缺失或不可解析时静默跳过。
- * `.env` 通常包含敏感信息,应加入 .gitignore。
+ * TestPilot 的测试环境变量文件。
+ * 刻意不用 `.env`:前端项目的 `.env` 通常已被 Vite / Next 等工具占用,
+ * 混用会互相污染;TestPilot 只读 `.env.testing`,与业务项目自身环境变量互不影响。
+ */
+export const ENV_TESTING_FILE = '.env.testing'
+
+/**
+ * 加载业务项目根目录的 .env.testing 到进程环境(Node 内建 process.loadEnvFile)。
+ * 已存在的环境变量优先,不会被文件覆盖;文件缺失或不可解析时静默跳过。
+ * 刻意不加载 `.env`:那是前端项目自身的环境文件,与本工具的测试变量无关。
+ * `.env.testing` 可能包含测试凭据,应加入 .gitignore。
  */
 export function loadProjectEnvFile(root: string = process.cwd()): void {
   try {
-    process.loadEnvFile(join(root, '.env'))
+    process.loadEnvFile(join(root, ENV_TESTING_FILE))
   } catch {
-    // .env 不存在 / 不可解析:跳过(引用了未定义变量时由 doctor / inspect 标记)
+    // .env.testing 不存在 / 不可解析:跳过(引用了未定义变量时由 doctor / inspect 标记)
   }
 }
 

@@ -91,3 +91,40 @@ describe('PlaywrightAdapter 错误码', () => {
     expect((err as Error).message).toContain('无效的 locator')
   })
 })
+
+describe('PlaywrightAdapter 交互扩展', () => {
+  function adapterWithPage(page: Record<string, unknown>): PlaywrightAdapter {
+    const context = {
+      setDefaultTimeout: vi.fn(),
+      newPage: vi.fn(async () => page),
+      close: vi.fn(),
+    } as unknown as BrowserContext
+    const browser = {
+      newContext: vi.fn(async () => context),
+      close: vi.fn(),
+    } as unknown as Browser
+    return new PlaywrightAdapter({ browser })
+  }
+
+  test('longpress 以按住 600ms 的 click 近似', async () => {
+    const click = vi.fn(async () => undefined)
+    const page = {
+      locator: vi.fn(() => ({ click })),
+    }
+    const adapter = adapterWithPage(page)
+    await adapter.longpress({ css: '.press-me' })
+    expect(click).toHaveBeenCalledWith({ delay: 600 })
+  })
+
+  test('countElements 返回匹配元素数;getElementAttribute 读取属性', async () => {
+    const page = {
+      locator: vi.fn(() => ({
+        count: vi.fn(async () => 2),
+        getAttribute: vi.fn(async () => 'true'),
+      })),
+    }
+    const adapter = adapterWithPage(page)
+    expect(await adapter.countElements({ css: '.row' })).toBe(2)
+    expect(await adapter.getElementAttribute({ css: '.btn' }, 'disabled')).toBe('true')
+  })
+})

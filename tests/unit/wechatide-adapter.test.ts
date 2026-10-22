@@ -289,3 +289,209 @@ describe('MiniAppAdapter 错误码', () => {
     expect(err).not.toBeInstanceOf(TestPilotError)
   })
 })
+
+describe('MiniAppAdapter 交互扩展与运行时诊断', () => {
+  function fakeProgramWith(args: {
+    element?: Record<string, unknown>
+    page?: Record<string, unknown>
+    program?: Record<string, unknown>
+  }) {
+    const fakeElement = {
+      tap: vi.fn(),
+      text: vi.fn(async () => '文本'),
+      input: vi.fn(),
+      callMethod: vi.fn(async () => undefined),
+      ...args.element,
+    }
+    const fakePage = {
+      $: vi.fn(async () => fakeElement),
+      $$: vi.fn(async () => [fakeElement, fakeElement]),
+      waitFor: vi.fn(),
+      data: vi.fn(async () => ({ orderId: '67890' })),
+      setData: vi.fn(async () => undefined),
+      callMethod: vi.fn(async () => undefined),
+      ...args.page,
+    }
+    const program: AutomatorProgram = {
+      reLaunch: vi.fn(async () => undefined),
+      currentPage: vi.fn(async () => fakePage),
+      screenshot: vi.fn(async () => Buffer.from('fake-png').toString('base64')),
+      disconnect: vi.fn(async () => undefined),
+      close: vi.fn(async () => undefined),
+      exposeFunction: vi.fn(async () => undefined),
+      mockWxMethod: vi.fn(async () => undefined),
+      restoreWxMethod: vi.fn(async () => undefined),
+      ...args.program,
+    }
+    return { program, fakePage, fakeElement }
+  }
+
+  function adapterOf(program: AutomatorProgram): MiniAppAdapter {
+    return new MiniAppAdapter({ projectPath, closeIde: false }, { launch: vi.fn(async () => program) })
+  }
+
+  test('callWxApi 透传 callWxMethod(参数展开)', async () => {
+    const { program } = fakeProgramWith({
+      program: { callWxMethod: vi.fn(async () => 'stored') },
+    })
+    const adapter = adapterOf(program)
+    await adapter.launch()
+    const returned = await adapter.callWxApi('setStorageSync', ['token', 'abc'])
+    expect(program.callWxMethod).toHaveBeenCalledWith('setStorageSync', 'token', 'abc')
+    expect(returned).toBe('stored')
+  })
+
+  test('longpress / touch / swipeTo / slideTo / moveTo 映射到元素方法', async () => {
+    const { program, fakeElement } = fakeProgramWith({
+      element: {
+        longpress: vi.fn(async () => undefined),
+        touchstart: vi.fn(async () => undefined),
+        touchmove: vi.fn(async () => undefined),
+        touchend: vi.fn(async () => undefined),
+        swipeTo: vi.fn(async () => undefined),
+        slideTo: vi.fn(async () => undefined),
+        moveTo: vi.fn(async () => undefined),
+      },
+    })
+    const adapter = adapterOf(program)
+    await adapter.launch()
+
+    await adapter.longpress({ css: '.qr' })
+    expect(fakeElement.longpress).toHaveBeenCalled()
+
+    const touches = [{ identifier: 0, x: 10, y: 20 }]
+    await adapter.touch({ css: '.canvas' }, 'touchstart', touches, touches)
+    expect(fakeElement.touchstart).toHaveBeenCalledWith({ touches, changedTouches: touches })
+
+    await adapter.swipeTo({ css: '.swiper' }, 2)
+    expect(fakeElement.swipeTo).toHaveBeenCalledWith(2)
+
+    await adapter.slideTo({ css: '.slider' }, 40)
+    expect(fakeElement.slideTo).toHaveBeenCalledWith(40)
+
+    await adapter.moveTo({ css: '.movable' }, 5, 6)
+    expect(fakeElement.moveTo).toHaveBeenCalledWith(5, 6)
+  })
+
+  test('scroll:有 locator 滚动元素,无 locator 走 pageScrollTo', async () => {
+    const { program, fakeElement } = fakeProgramWith({
+      element: { scrollTo: vi.fn(async () => undefined) },
+      program: { pageScrollTo: vi.fn(async () => undefined) },
+    })
+    const adapter = adapterOf(program)
+    await adapter.launch()
+
+    await adapter.scroll({ css: '.list' }, 200)
+    expect(fakeElement.scrollTo).toHaveBeenCalledWith(200)
+
+    await adapter.scroll(undefined, 300)
+    expect(program.pageScrollTo).toHaveBeenCalledWith(300)
+  })
+
+  test('countElements / attribute / property 的读取', async () => {
+    const { program, fakePage, fakeElement } = fakeProgramWith({
+      element: {
+        attribute: vi.fn(async () => 'true'),
+        property: vi.fn(async () => 'ready'),
+      },
+    })
+    const adapter = adapterOf(program)
+    await adapter.launch()
+
+    expect(await adapter.countElements({ css: '.item' })).toBe(2)
+    expect(fakePage.$$).toHaveBeenCalledWith('.item')
+
+    expect(await adapter.getElementAttribute({ css: '.btn' }, 'disabled')).toBe('true')
+    expect(fakeElement.attribute).toHaveBeenCalledWith('disabled')
+
+    expect(await adapter.getElementProperty({ css: '.comp' }, 'status')).toBe('ready')
+    expect(fakeElement.property).toHaveBeenCalledWith('status')
+  })
+
+  test('setData:locator 提供时为组件级,缺省为页面级', async () => {
+    const { program, fakePage, fakeElement } = fakeProgramWith({
+      element: { setData: vi.fn(async () => undefined) },
+    })
+    const adapter = adapterOf(program)
+    await adapter.launch()
+
+    await adapter.setData({ refreshing: false }, { css: '.comp' })
+    expect(fakeElement.setData).toHaveBeenCalledWith({ refreshing: false })
+    expect(fakePage.setData).not.toHaveBeenCalled()
+
+    await adapter.setData({ refreshing: true })
+    expect(fakePage.setData).toHaveBeenCalledWith({ refreshing: true })
+  })
+
+  test('assertData:页面 data 路径包含断言', async () => {
+    const { program, fakePage } = fakeProgramWith({
+      page: { data: vi.fn(async (path?: string) => (path === 'status' ? 'expired' : {})) },
+    })
+    const adapter = adapterOf(program)
+    await adapter.launch()
+
+    await adapter.assertData('status', 'expired')
+    expect(fakePage.data).toHaveBeenCalledWith('status')
+
+    // 失败路径:文本始终不匹配 → 轮询至超时(fake timers 推进 10s 窗口)
+    vi.useFakeTimers()
+    try {
+      const pending = adapter.assertData('status', 'valid').then(
+        () => null,
+        (e) => e,
+      )
+      await vi.advanceTimersByTimeAsync(11_000)
+      const err = await pending
+      expect(err).toBeInstanceOf(TestPilotError)
+      expect((err as TestPilotError).code).toBe('ASSERTION_FAILED')
+      expect((err as Error).message).toContain('data.status')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  test('console / exception 事件进入诊断缓冲并随 readDiagnostics 导出', async () => {
+    const listeners = new Map<string, (payload: unknown) => void>()
+    const { program } = fakeProgramWith({
+      program: {
+        on: vi.fn((event: string, listener: (payload: unknown) => void) => {
+          listeners.set(event, listener)
+        }),
+        pageStack: vi.fn(async () => [{ path: '/pages/index/index' }]),
+        systemInfo: vi.fn(async () => ({ SDKVersion: '3.7.0' })),
+      },
+    })
+    const adapter = adapterOf(program)
+    await adapter.launch()
+
+    listeners.get('console')?.({ type: 'warn', args: ['hello ', { a: 1 }] })
+    listeners.get('console')?.({ type: 'error', args: ['boom'] })
+    listeners.get('exception')?.({ message: 'appservice crashed' })
+
+    const diagnostics = await adapter.readDiagnostics()
+    expect(diagnostics.consoleLogs).toEqual([
+      expect.objectContaining({ type: 'warn', text: 'hello  {"a":1}' }),
+      expect.objectContaining({ type: 'error', text: 'boom' }),
+    ])
+    expect(diagnostics.exceptions).toEqual(['appservice crashed'])
+    expect(diagnostics.pageStack).toEqual([{ path: '/pages/index/index' }])
+    expect(diagnostics.systemInfo).toEqual({ SDKVersion: '3.7.0' })
+  })
+
+  test('readWxApiCaptures 返回引擎契约形状(带 capture 的 mock)', async () => {
+    const { program } = fakeProgramWith({})
+    const adapter = adapterOf(program)
+    await adapter.launch()
+    await adapter.mockWxApi({ api: 'showModal', result: { confirm: true }, capture: 'modal' })
+
+    const exposed = vi
+      .mocked(program.exposeFunction)
+      .mock.calls.find(([name]) => String(name).includes('modal'))
+    vi.mocked(exposed?.[1] as (value: unknown) => void)({ options: { content: '重新选择' } })
+
+    expect(adapter.readWxApiCaptures()).toEqual({
+      name: 'showModal',
+      calls: [{ options: { content: '重新选择' } }],
+    })
+  })
+})

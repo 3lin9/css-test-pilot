@@ -6,7 +6,7 @@ CLI 是入口,Skill 是 AI 能力入口,DSL 是测试语言,Execution Engine 是
 
 TestPilot 是**工具,不是业务测试项目**:它定义怎么描述、校验、执行测试;业务项目定义测什么、怎么算通过,并把 Case 保存在自己的 `tests/e2e/cases/`。
 
-完整架构见 [docs/architecture.md](docs/architecture.md),CLI 命令详见 [docs/cli.md](docs/cli.md)。
+完整架构见 [docs/architecture.md](docs/architecture.md),CLI 命令详见 [docs/cli.md](docs/cli.md),微信小程序测试能力与边界(CI 登录态、真机远期声明)见 [docs/miniapp-testing.md](docs/miniapp-testing.md)。
 
 ## 核心链路
 
@@ -55,7 +55,7 @@ AI → .agents/skills/testpilot(规范) → TestPilot CLI → DSL → Execution 
 | `npx csspilot doctor`              | 环境体检(Node / Playwright / WeChat DevTools / 项目配置)                                                                                   |
 | `npx csspilot sync-metadata`       | 把当前 Commit 的 Case 列表快照同步到 Server(CI 专用,Git Push 后)                                                                          |
 | `npx csspilot report --summary`    | 跨 run 汇总报告(`summary.html` + `summary.json`,默认统计最近 30 次)                                                                       |
-| `npx csspilot update`              | CLI 升级后同步接入物(Skill / `.env.example`;不触碰 `.env` 与用例)                                                                          |
+| `npx csspilot update`              | CLI 升级后同步接入物(Skill / `.env.testing`;不触碰 `.env` 与用例)                                                                          |
 | `npx csspilot ci init`             | 生成 CI 工作流模板(`.github/workflows/testpilot.yml`)                                                                                      |
 
 ## DSL(V0.1)
@@ -98,7 +98,7 @@ Phase 11 Web 测试控制台(✓ Vue 3 + Vite:项目概览 / Case Index / Run �
 Phase 12 Agent(✓ Web→Server→AgentOrchestrator→apps/agent;在 rootPath 写 YAML;push+sync-metadata 后进 Case Index)
 
 增量 2(测试方法论,spec 见 `docs/superpowers/specs/`):
-Phase 13 测试需求评审 workflow + 工具链(✓ 评审工作流、`csspilot update`、`.env` 自动加载、跨 run 汇总报告)
+Phase 13 测试需求评审 workflow + 工具链(✓ 评审工作流、`csspilot update`、`.env.testing` 自动加载、跨 run 汇总报告)
 Phase 14 数据驱动测试(✓ 数据集展开执行 / setup·teardown / 依赖预检 / QA 覆盖映射)
 Phase 15 三态判定 + charter 视角矩阵(✓ 失败三桶 product / infra / unverified → run 退出码 0/1/2;`charter:*` 视角 tags 与三分判定;AI 兜底回放缓存仅为蓝图,未实现)
 ```

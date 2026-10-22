@@ -13,7 +13,7 @@
 | `csspilot report [--run <id>] [--open]` | 生成交互式单文件 HTML 报告(步骤树 / 失败分类 / 历史趋势)+ report.json |
 | `csspilot sync-metadata`                | 同步 Case Metadata 到 Server(CI / git push 后) |
 | `csspilot doctor`                       | 健康检查(分组报告:error / warning)          |
-| `csspilot update [--force]`             | 同步接入物到当前 CLI 版本(Skill / .env.example;不触碰 .env 与用例) |
+| `csspilot update [--force]`             | 同步接入物到当前 CLI 版本(Skill / .env.testing;不触碰 .env 与用例) |
 | `csspilot ci init`                      | 生成 TestPilot CI 工作流模板(不改动已有 CI)   |
 
 全局:`-V` 查看版本,`-h` 查看帮助。
@@ -27,7 +27,7 @@ npx csspilot init    # 重新接入时自动同步(版本一致则跳过)
 npx csspilot update  # 只做同步;--force 版本一致时也强制覆盖 Skill
 ```
 
-同步范围:Skill 主体(SKILL.md、manifest.yaml、rules/、workflows/)、`.env.example`、`.gitignore` 忽略 `.env`;`references/` 是项目级上下文,不会被覆盖。**绝不触碰用户资产**:`.env`(真实凭据)、`tests/e2e/cases/`、`.testpilot/`、`testpilot.yaml`。`doctor` 的 Agent 段会显示 Skill 版本并提示可更新。发新版本时记得同步更新仓库里 `skills/testpilot/manifest.yaml` 的 `version`(与 CLI 版本保持一致)。
+同步范围:Skill 主体(SKILL.md、manifest.yaml、rules/、workflows/)、`.env.testing`(已存在则保留用户内容,只提示模板新增变量)、`.gitignore` 忽略 `.env.testing`;`references/` 是项目级上下文,不会被覆盖。**绝不触碰用户资产**:`.env.testing`(真实凭据)、前端项目自身的 `.env`、`tests/e2e/cases/`、`.testpilot/`、`testpilot.yaml`。`doctor` 的 Agent 段会显示 Skill 版本并提示可更新。发新版本时记得同步更新仓库里 `skills/testpilot/manifest.yaml` 的 `version`(与 CLI 版本保持一致)。
 
 ## init —— 接入业务项目
 
@@ -42,7 +42,7 @@ npx csspilot init [--server <url>]
 3. **配置初始化**:生成 `testpilot.yaml`(含 environment 环境段,baseUrl 用 `${VAR}` 引用)+ `.testpilot/{project.json,artifacts/}`;project.json 含 `version / projectId / testDir / caseDir / defaultAdapter`;Server 可达时注册项目,不可达时生成本地 ID
 4. **测试目录**:`tests/e2e/{cases,fixtures,data}`(已有直接复用;检测到其他 E2E 目录只提示不迁移)
 5. **Agent Skill**:安装到 `.agents/skills/testpilot/`,并生成项目级上下文 `references/{project,test-conventions,adapters}.md`
-6. **环境配置**:生成 `.env.example` 示例(`TEST_BASE_URL` / `STAGING_BASE_URL` / `WEB_BASE_URL` / `MINIAPP_PROJECT_PATH` 等),确保 `.gitignore` 忽略 `.env`;真实值复制为 `.env` 或设为环境变量,配置中的 `${VAR}` 引用加载时自动注入
+6. **环境配置**:生成 `.env.testing`(`TEST_BASE_URL` / `STAGING_BASE_URL` / `WEB_BASE_URL` / `MINIAPP_PROJECT_PATH` 等),确保 `.gitignore` 忽略 `.env.testing`;**直接在该文件填真实值**,CLI 运行时自动加载(刻意不读前端项目自身的 `.env`,互不影响);也可设为环境变量,配置中的 `${VAR}` 引用加载时自动注入
 7. **CI 准备**:只检测已有 CI 并提示,可用 `csspilot ci init` 生成模板
 8. **自动 Doctor**:结束时执行一次健康检查
 
@@ -52,7 +52,9 @@ npx csspilot init [--server <url>]
 npx csspilot doctor
 ```
 
-分组输出 Runtime / Project / Test / Agent / Adapters / Environment / Server,末尾汇总 errors 与 warnings;有 error 时退出码 1。Adapter 缺失是 warning;配置缺失、用例校验失败、环境变量缺失是 error;未配置 Server 时跳过 Server 段。
+分组输出 Runtime / Project / Test / Agent / Adapters / Miniapp IDE / Environment / Server,末尾汇总 errors 与 warnings;有 error 时退出码 1。Adapter 缺失是 warning;配置缺失、用例校验失败、环境变量缺失是 error;未配置 Server 时跳过 Server 段。
+
+配置了 `miniapp.projectPath` 时会额外检查 **Miniapp IDE** 段(均为 warning,不阻塞):开发者工具 CLI 可发现性、`cli islogin` 登录态、`project.config.json` 的 appid(缺失或 `touristappid` 游客模式会受限)。CI 无人值守的登录态维护见 [miniapp-testing.md](miniapp-testing.md)。
 
 ## ci init —— CI 工作流模板
 
@@ -213,7 +215,7 @@ Server 运行时优先取**运行分支绑定环境**的凭据(如 release 分�
 | `TESTPILOT_STEP_TIMEOUT`               | 单步操作超时毫秒,默认 15000                         |
 | `TESTPILOT_SKILL_DIR`                  | init 安装 Skill 的自定义源目录                      |
 
-除上表外,项目根目录的 **`.env` 文件会自动加载**(Node 内建 `process.loadEnvFile`),适合放本地敏感值;优先级为 **真实环境变量 > `.env` 文件**。`.env` 含敏感信息,务必加入 `.gitignore`。
+除上表外,项目根目录的 **`.env.testing` 文件会自动加载**(Node 内建 `process.loadEnvFile`),适合放测试环境的本地敏感值;优先级为 **真实环境变量 > `.env.testing` 文件**。刻意**不加载前端项目自身的 `.env`**(已被 Vite / Next 等构建工具占用,混用互相污染)。`.env.testing` 含测试凭据,务必加入 `.gitignore`(init 自动写入)。旧版本生成的 `.env`(TestPilot 变量)请迁移为 `.env.testing`。
 
 ## 产物目录
 
@@ -256,7 +258,7 @@ AI 不会自动知道 Skill 的存在 —— 让它生效的方式 = **让 AI �
 
    ```text
    评审:按 test-requirements-review 评审「XX 需求」,输出测试点清单和平台执行信息
-   建用例:按 create-case 基于 TP-001/TP-002 生成 Case,缺的 .env 变量问我
+   建用例:按 create-case 基于 TP-001/TP-002 生成 Case,缺的 .env.testing 变量问我
    执行:npx csspilot run --tag smoke
    分析:按 analyze-result 分析最新 run,失败给出结论(改 Case 还是产品 bug)
    ```

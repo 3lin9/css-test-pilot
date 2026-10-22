@@ -1,5 +1,5 @@
-import { execFile } from 'node:child_process'
-import { existsSync, readdirSync } from 'node:fs'
+import { exec, execFile } from 'node:child_process'
+import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { WECHAT_DEVTOOLS_CLI_PATHS } from './constants'
 
@@ -113,4 +113,60 @@ function execToString(command: string, args: string[]): Promise<string> {
       resolvePromise(new TextDecoder('gbk').decode(stdout as Buffer))
     })
   })
+}
+
+/**
+ * 查询开发者工具登录态(cli islogin)。
+ * 返回 true / false;cli 执行失败或输出无法识别时返回 undefined(调用方按「未知」处理)。
+ * 不同工具版本的输出文案有差异,这里做宽松解析。
+ */
+export async function isWechatDevToolsLoggedIn(cliPath: string): Promise<boolean | undefined> {
+  const output = await execCliToString(cliPath, ['islogin']).catch(() => undefined)
+  if (output === undefined) return undefined
+  if (/is\s*login\s*[:=]?\s*(true|yes|1)\b/i.test(output)) return true
+  if (/is\s*login\s*[:=]?\s*(false|no|0)\b/i.test(output)) return false
+  if (/\btrue\b/i.test(output)) return true
+  if (/\bfalse\b/i.test(output)) return false
+  return undefined
+}
+
+/**
+ * 执行开发者工具 cli 子命令并取回输出。
+ * cli 在 Windows 上是 .bat,Node 20.12+ 禁止直接 spawn,须走 shell;路径含空格自行加引号。
+ * 非零退出码但有输出时仍返回输出(部分子命令以退出码表达业务结果)。
+ */
+function execCliToString(cliPath: string, args: string[]): Promise<string> {
+  return new Promise((resolvePromise, rejectPromise) => {
+    const quote = (value: string) => (/\s/.test(value) ? `"${value}"` : value)
+    // exec 在 Windows 上本身即经 shell 执行,.bat 可直接运行
+    exec(
+      `"${cliPath}" ${args.map(quote).join(' ')}`,
+      { windowsHide: true, timeout: 30_000, encoding: 'buffer' },
+      (err, stdout, stderr) => {
+        const text = `${stdout.toString('utf8')}${stderr.toString('utf8')}`.trim()
+        if (err && !text) {
+          rejectPromise(err)
+          return
+        }
+        resolvePromise(text)
+      },
+    )
+  })
+}
+
+/**
+ * 读取小程序 project.config.json 的 appid(用于 doctor 校验)。
+ * 文件缺失或 JSON 损坏时返回 undefined;appid 缺失时 appid 字段为 undefined。
+ */
+export function readMiniappProjectAppid(
+  projectPath: string,
+): { appid?: string; configPath: string } | undefined {
+  const configPath = join(projectPath, 'project.config.json')
+  if (!existsSync(configPath)) return undefined
+  try {
+    const parsed = JSON.parse(readFileSync(configPath, 'utf8')) as { appid?: unknown }
+    return { appid: typeof parsed.appid === 'string' ? parsed.appid : undefined, configPath }
+  } catch {
+    return undefined
+  }
 }

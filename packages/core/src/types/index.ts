@@ -69,6 +69,8 @@ export interface CaseResult {
   video?: string
   /** 相对 run 目录的 trace 包(如 Playwright trace.zip) */
   trace?: string
+  /** 相对 run 目录的运行时诊断(仅失败用例;console 尾部/异常/页面栈/systemInfo) */
+  diagnostics?: string
 }
 
 export interface RunTotals {

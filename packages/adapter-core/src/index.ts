@@ -4,6 +4,8 @@ export type {
   ApiRequestInput,
   ApiResult,
   CapturedRequest,
+  ConsoleLogEntry,
+  RuntimeDiagnostics,
   TestAdapter,
 } from './adapter'
 export { redactHeaders } from './adapter'

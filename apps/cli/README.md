@@ -16,7 +16,7 @@
 - **JSON + HTML 报告**:单次 run 报告,或 `--summary` 跨 run 汇总;`--open` 生成后打开浏览器
 - **账号凭据不进 Case**:`accountRef` 引用环境凭据,本地用 `TESTPILOT_ACCOUNT_*` 注入,明文密码禁止写进 YAML
 - **AI Native**:内置 TestPilot Skill(规则 + 工作流 + 项目级 references),`init` 后 AI 助手即可按规范帮你写用例、跑测试、分析结果
-- **幂等接入与升级**:`init` 不覆盖已有配置与用例;`update` 只同步 Skill / `.env.example`,不碰 `.env` 与 `tests/e2e`
+- **幂等接入与升级**:`init` 不覆盖已有配置与用例;`update` 只同步 Skill / `.env.testing`(缺失时生成,不覆盖已填的真实值),不碰 `.env` 与 `tests/e2e`
 
 ## 安装
 
@@ -34,19 +34,20 @@ Web 端执行依赖 Playwright 浏览器:
 npx playwright install chromium
 ```
 
-CLI 启动时会加载项目根目录的 `.env`(真实环境变量优先于文件)。`testpilot.yaml` 里的 `${VAR}` 在运行时注入。
+CLI 启动时会加载项目根目录的 `.env.testing`(真实环境变量优先于文件;刻意不读前端项目自身的 `.env`)。`testpilot.yaml` 里的 `${VAR}` 在运行时注入。
 
 ## 快速开始
 
 ```bash
 # 1. 在业务项目根目录接入 TestPilot
-#    (检测项目与 Adapter、生成 testpilot.yaml / .env.example / .testpilot/、
+#    (检测项目与 Adapter、生成 testpilot.yaml / .env.testing / .testpilot/、
 #     创建 tests/e2e/{cases,fixtures,data}、安装 Skill、自动 doctor)
 csspilot init
 # 可选:关联 TestPilot Server
 # csspilot init --server http://127.0.0.1:3000
 
-# 2. 复制 .env.example 为 .env,填入 TEST_BASE_URL 等真实值(.env 已写入 .gitignore)
+# 2. 在 .env.testing 中直接填入 TEST_BASE_URL 等真实值(CLI 自动加载;已写入 .gitignore,
+#    刻意不读前端项目自身的 .env)
 
 # 3. 在 tests/e2e/cases/ 下写用例(可让 AI 按 Skill 规范生成)
 
@@ -68,13 +69,13 @@ csspilot report
 
 | 命令 | 作用 |
 | --- | --- |
-| `csspilot init [--server <url>]` | 把 TestPilot 接入当前业务项目(幂等)。装 Skill 到 `.agents/skills/testpilot/`、初始化 `.testpilot/`、创建/复用 `tests/e2e`、生成 `testpilot.yaml` 与 `.env.example`,并跑一次 doctor。`--server` 写入关联地址(默认读 `TESTPILOT_SERVER_URL`) |
+| `csspilot init [--server <url>]` | 把 TestPilot 接入当前业务项目(幂等)。装 Skill 到 `.agents/skills/testpilot/`、初始化 `.testpilot/`、创建/复用 `tests/e2e`、生成 `testpilot.yaml` 与 `.env.testing`,并跑一次 doctor。`--server` 写入关联地址(默认读 `TESTPILOT_SERVER_URL`) |
 | `csspilot validate [paths...]` | 校验用例(DSL schema / action / locator / 变量引用 / adapter 支持);不传路径则按 `testpilot.yaml` 的 cases 目录 |
 | `csspilot list [--tag <tag>]` | 列出用例(含无效文件提示) |
 | `csspilot run [paths...] [--tag <tag>]` | 执行用例;校验失败的文件跳过。本地账号凭据来自 `TESTPILOT_ACCOUNT_<REF>` |
 | `csspilot report [--run <id>] [--open] [--summary] [--last <n>]` | 生成 JSON + HTML。默认最近一次 run;`--summary` 生成跨 run 汇总(`summary.html` / `summary.json`),窗口默认最近 30 次 |
 | `csspilot doctor` | 健康检查(Runtime / Project / Test / Skill / Adapter / 环境变量 / Server) |
-| `csspilot update [--force]` | 把 Skill 主体与 `.env.example` 同步到当前 CLI 版本。不覆盖 `.env`、用例、`testpilot.yaml`、`references/`。版本一致时需 `--force` 才覆盖本地 Skill 修改 |
+| `csspilot update [--force]` | 把 Skill 主体与 `.env.testing` 同步到当前 CLI 版本(后者缺失时生成,已存在只提示新增变量)。不覆盖 `.env`、用例、`testpilot.yaml`、`references/`。版本一致时需 `--force` 才覆盖本地 Skill 修改 |
 | `csspilot ci init` | 生成 `.github/workflows/testpilot.yml`(validate + sync-metadata);已有则跳过,不改动其他 CI |
 | `csspilot sync-metadata [--server <url>]` | 把当前 Git commit 的 Case Metadata 快照同步到 TestPilot Server。面向 CI / git push,本地未 push 的 Case 不应进入团队视图 |
 
@@ -82,7 +83,7 @@ csspilot report
 
 ## 配置与环境变量
 
-`init` 生成的 `testpilot.yaml` 是项目配置源。环境相关字段只放 `${VAR}` 引用,真实值写在 `.env`:
+`init` 生成的 `testpilot.yaml` 是项目配置源。环境相关字段只放 `${VAR}` 引用,真实值写在 `.env.testing`:
 
 | 变量 | 用途 |
 | --- | --- |

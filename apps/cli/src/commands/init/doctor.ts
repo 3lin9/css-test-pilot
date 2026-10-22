@@ -1,6 +1,11 @@
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
-import { loadTestpilotConfig } from '@testpilot/core'
+import {
+  findWechatDevToolsCli,
+  isWechatDevToolsLoggedIn,
+  loadTestpilotConfig,
+  readMiniappProjectAppid,
+} from '@testpilot/core'
 import { collectCases, readProjectLink } from '@testpilot/sdk'
 import { detectAdapters, type AdapterInfo } from './adapter-detector'
 import { collectEnvVarRefs } from './environment-initializer'
@@ -125,12 +130,49 @@ export async function runDoctor(root: string): Promise<DoctorReport> {
     ),
   )
 
+  // ---- Miniapp IDE(配置了小程序项目才检查;登录态/appid 问题为 warning,不阻塞) ----
+  const miniappProjectPath = config?.miniapp?.projectPath
+  if (miniappProjectPath) {
+    const miniappItems: DoctorItem[] = []
+    const cliPath = process.env.WECHAT_DEVTOOLS_CLI ?? config?.miniapp?.cliPath ?? (await findWechatDevToolsCli())
+    if (!cliPath) {
+      miniappItems.push(
+        warn('微信开发者工具 CLI 未找到', '安装微信开发者工具,或设置 WECHAT_DEVTOOLS_CLI 指向 cli'),
+      )
+    } else {
+      miniappItems.push(ok(`开发者工具 CLI(${cliPath})`))
+      const loggedIn = await isWechatDevToolsLoggedIn(cliPath)
+      if (loggedIn === true) miniappItems.push(ok('开发者工具已登录'))
+      else if (loggedIn === false)
+        miniappItems.push(
+          warn('开发者工具未登录', '打开工具扫码登录;CI 无人值守的登录态维护见 docs/miniapp-testing.md'),
+        )
+      else
+        miniappItems.push(
+          warn('开发者工具登录态未知', 'cli islogin 无有效输出;请确认工具已登录且 安全设置->服务端口 已开启'),
+        )
+    }
+    const appidInfo = readMiniappProjectAppid(miniappProjectPath)
+    if (!appidInfo) {
+      miniappItems.push(warn('project.config.json 缺失', `${miniappProjectPath} 下未找到,自动化无法定位项目`))
+    } else if (!appidInfo.appid) {
+      miniappItems.push(warn('project.config.json 缺少 appid', '自动化与预览能力受限,请填写真实 appid'))
+    } else if (appidInfo.appid === 'touristappid') {
+      miniappItems.push(
+        warn('appid 为 touristappid(游客模式)', '部分自动化/预览能力受限,请在 project.config.json 填写真实 appid'),
+      )
+    } else {
+      miniappItems.push(ok(`小程序 appid(${appidInfo.appid})`))
+    }
+    push('Miniapp IDE', miniappItems)
+  }
+
   // ---- Environment(配置引用的环境变量 + Case 声明的账号凭据,§12 Required secrets) ----
   const refs = await collectEnvVarRefs(root)
   const envItems: DoctorItem[] = refs.map((name) =>
     process.env[name] !== undefined
       ? ok(name)
-      : error(`${name} missing`, '在运行环境(.env / CI Secret)中设置'),
+      : error(`${name} missing`, '在 .env.testing(旧版本为 .env,请迁移)或 CI Secret 中设置'),
   )
 
   // accountRef 凭据:本地用 TESTPILOT_ACCOUNT_<REF> 提供;Server 触发时按环境凭据解析,缺失只警告

@@ -1,5 +1,6 @@
 import { access, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { basename, join } from 'node:path'
+import { ENV_TESTING_FILE } from '@testpilot/core'
 import { readProjectLink, writeProjectLink, type ProjectLink } from '@testpilot/sdk'
 import type { AdapterInfo } from './adapter-detector'
 import { adaptersFor, defaultAdapterFor, type ProjectInfo } from './project-detector'
@@ -9,7 +10,7 @@ export interface ConfigInitResult {
   runtimeDir: string
   projectLink: ProjectLink
   projectLinkFile: string
-  envExample: 'created' | 'reused'
+  envTesting: 'created' | 'reused'
   gitignore: 'created' | 'updated' | 'exists'
 }
 
@@ -48,7 +49,7 @@ environment:
   staging:
     baseUrl: \${STAGING_BASE_URL}
 
-# Case 可见的项目变量白名单(值来自 .env / CI Secret;Case 用 \${variable.<name>} 引用)
+# Case 可见的项目变量白名单(值来自 .env.testing / CI Secret;Case 用 \${variable.<name>} 引用)
 # variables:
 #   ppmProjectId: \${PPM_PROJECT_ID}
 
@@ -65,21 +66,26 @@ ${adapters}
 # server:
 #   baseUrl: http://127.0.0.1:3000
 
-# Web 端:navigate 相对 url 的基准地址(每人的地址不同,值放 .env)
+# Web 端:navigate 相对 url 的基准地址(每人的地址不同,值放 .env.testing)
 # web:
 #   baseUrl: \${WEB_BASE_URL}
 
-# 小程序端:填入小程序项目目录后即可执行 target: miniapp 的步骤(路径每人不同,走 .env)
+# 小程序端:填入小程序项目目录后即可执行 target: miniapp 的步骤(路径每人不同,走 .env.testing)
 # miniapp:
 #   projectPath: \${MINIAPP_PROJECT_PATH}
 #   cliPath: \${MINIAPP_CLI_PATH}
 `
 }
 
-/** 生成 .env.example 示例(提交到 Git;真实值放 .env,.env 不提交) */
-export function renderDotEnvExample(): string {
-  return `# TestPilot 环境变量示例:复制为 .env 并填入真实值(.env 含敏感信息,不要提交到 Git)
-# 优先级:真实环境变量 > .env 文件;testpilot.yaml 中的 \${VAR} 引用运行时自动注入
+/**
+ * 生成 .env.testing(测试环境变量文件,CLI 运行时自动加载)。
+ * 刻意不用 .env:前端项目的 .env 通常已被构建工具(Vite / Next 等)占用,混用互相污染;
+ * .env.testing 直接填真实值,不需要"复制为 .env"这一步。含测试凭据,init 会写入 .gitignore。
+ */
+export function renderDotEnvTesting(): string {
+  return `# TestPilot 测试环境变量(CLI 自动加载本文件,直接填入真实值即可,无需复制)
+# 只放测试相关变量,与前端项目自身的 .env 互不影响;本文件含测试凭据,已加入 .gitignore
+# 优先级:真实环境变量 > 本文件;testpilot.yaml 中的 \${VAR} 引用运行时自动注入
 
 # 环境配置(environment 段)
 TEST_BASE_URL=http://127.0.0.1:8080
@@ -131,14 +137,16 @@ export async function initTestPilotConfig(
     yaml = 'created'
   }
 
-  // 2. .env.example(已存在则保留)+ .gitignore 忽略 .env
-  const envExamplePath = join(root, '.env.example')
-  let envExample: 'created' | 'reused' = 'reused'
-  if (!(await exists(envExamplePath))) {
-    await writeFile(envExamplePath, renderDotEnvExample(), 'utf8')
-    envExample = 'created'
+  // 2. .env.testing(已存在则保留用户填好的值)+ .gitignore 忽略 .env.testing
+  const envTestingPath = join(root, ENV_TESTING_FILE)
+  let envTesting: 'created' | 'reused' = 'reused'
+  if (!(await exists(envTestingPath))) {
+    await writeFile(envTestingPath, renderDotEnvTesting(), 'utf8')
+    envTesting = 'created'
   }
-  const gitignore = await ensureGitignoreEntry(root, '.env')
+  const gitignore = await ensureGitignoreEntry(root, ENV_TESTING_FILE)
+  // 旧版本 init 忽略过 .env;前端项目的 .env 本就应被忽略,保留该条目无害
+  await ensureGitignoreEntry(root, '.env')
 
   // 3. Runtime 目录
   const runtimeDir = join(root, '.testpilot', 'artifacts')
@@ -175,7 +183,7 @@ export async function initTestPilotConfig(
     runtimeDir: join(root, '.testpilot'),
     projectLink: link,
     projectLinkFile,
-    envExample,
+    envTesting,
     gitignore,
   }
 }

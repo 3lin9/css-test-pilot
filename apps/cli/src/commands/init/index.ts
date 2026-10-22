@@ -61,14 +61,14 @@ export async function runInit(root: string, options: InitOptions = {}): Promise<
   const serverMode = config.projectLink.serverUrl ? `Server:${config.projectLink.serverUrl}` : '本地模式'
   console.log(`✓ 项目关联          ${config.projectLink.projectId}(${serverMode})`)
   console.log(
-    config.envExample === 'created'
-      ? '✓ 环境变量示例      .env.example(复制为 .env 填入真实值)'
-      : '✓ 环境变量示例      .env.example(已存在,保留)',
+    config.envTesting === 'created'
+      ? '✓ 测试环境变量      .env.testing(直接填入真实值,CLI 自动加载)'
+      : '✓ 测试环境变量      .env.testing(已存在,保留)',
   )
   console.log(
     config.gitignore === 'exists'
-      ? '✓ Git 忽略          .env(已在 .gitignore)'
-      : `✓ Git 忽略          .env(已写入 .gitignore)`,
+      ? '✓ Git 忽略          .env.testing(已在 .gitignore)'
+      : `✓ Git 忽略          .env.testing(已写入 .gitignore)`,
   )
 
   // 4. 测试目录(§6)

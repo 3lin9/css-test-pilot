@@ -62,10 +62,59 @@ export interface TestAdapter {
   trigger?(locator: CaseLocator, eventType: string, detail?: Record<string, unknown>): Promise<void>
   /** [可选能力] 读取页面 data(点号路径,缺省为整个 data 对象) */
   getData?(dataPath?: string): Promise<unknown>
-  /** [可选能力] 写入页面 data 补丁 */
-  setData?(patch: Record<string, unknown>): Promise<void>
+  /** [可选能力] 写入 data 补丁;locator 缺省为页面级,提供时为组件级(仅 miniapp) */
+  setData?(patch: Record<string, unknown>, locator?: CaseLocator): Promise<void>
   /** [可选能力] 断言页面 data 路径的值包含 expected */
   assertData?(dataPath: string, expected: string): Promise<void>
+
+  // ---- [可选能力] miniapp 交互扩展(对照官方 automator Element/MiniProgram API) ----
+
+  /** [可选能力] 长按元素(web 端以按住 ~600ms 的 click 近似) */
+  longpress?(locator: CaseLocator): Promise<void>
+  /** [可选能力] 主动调用 wx.* API(如 setStorageSync / clearStorageSync 造前置状态);返回值供引擎捕获为变量 */
+  callWxApi?(api: string, args: readonly unknown[]): Promise<unknown>
+  /** [可选能力] 派发触摸事件(phase: touchstart / touchmove / touchend) */
+  touch?(
+    locator: CaseLocator,
+    phase: string,
+    touches: ReadonlyArray<Record<string, unknown>>,
+    changedTouches: ReadonlyArray<Record<string, unknown>>,
+  ): Promise<void>
+  /** [可选能力] 滚动:locator 提供时滚动 scroll-view 元素,缺省滚动页面 */
+  scroll?(locator: CaseLocator | undefined, scrollTop: number): Promise<void>
+  /** [可选能力] swiper 切换到指定页 */
+  swipeTo?(locator: CaseLocator, index: number): Promise<void>
+  /** [可选能力] slider 滑到指定值 */
+  slideTo?(locator: CaseLocator, value: number): Promise<void>
+  /** [可选能力] movable-view 移动到指定坐标 */
+  moveTo?(locator: CaseLocator, x: number, y: number): Promise<void>
+  /** [可选能力] 统计匹配元素数量(存在性/计数断言;单次读取,重试语义由引擎负责) */
+  countElements?(locator: CaseLocator): Promise<number>
+  /** [可选能力] 读取元素 attribute;不存在时返回 undefined/null */
+  getElementAttribute?(locator: CaseLocator, name: string): Promise<unknown>
+  /** [可选能力] 读取元素 property(miniapp 自定义组件实例属性) */
+  getElementProperty?(locator: CaseLocator, name: string): Promise<unknown>
+  /** [可选能力] 导出运行时诊断(console 尾部 / 异常 / 页面栈 / systemInfo),供失败取证落盘 */
+  readDiagnostics?(): Promise<RuntimeDiagnostics>
+}
+
+/** 运行时诊断快照(小程序端失败取证的数据源) */
+export interface RuntimeDiagnostics {
+  /** console 消息尾部(环形缓冲,已在 adapter 侧序列化为文本) */
+  consoleLogs: ConsoleLogEntry[]
+  /** appservice 未捕获异常(official automator exception 事件) */
+  exceptions: string[]
+  /** 当前页面栈(读取失败或缺省时为 undefined) */
+  pageStack?: Array<{ path?: string; [key: string]: unknown }>
+  /** 系统/基础库信息(读取失败或缺省时为 undefined) */
+  systemInfo?: Record<string, unknown>
+}
+
+/** 一条 console 取证记录(args 已序列化为文本并截断) */
+export interface ConsoleLogEntry {
+  ts: string
+  type: string
+  text: string
 }
 
 export interface CapturedRequest {

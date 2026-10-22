@@ -68,14 +68,15 @@ describe('loadTestpilotConfig 环境变量注入', () => {
     expect(config.variables).toEqual({ missingValue: '${MISSING_VAR_X}' })
   })
 
-  test('项目根目录 .env 文件自动加载', async () => {
-    await writeFile(join(dir, '.env'), 'DOTENV_TEST_BASE=http://from-dotenv\n')
+  test('项目根目录 .env.testing 自动加载,前端的 .env 不受影响', async () => {
+    await writeFile(join(dir, '.env'), 'DOTENV_TEST_BASE=http://from-frontend-env\n')
+    await writeFile(join(dir, '.env.testing'), 'DOTENV_TEST_BASE=http://from-env-testing\n')
     const config = await writeAndLoad('web:\n  baseUrl: ${DOTENV_TEST_BASE}\n')
-    expect(config.web?.baseUrl).toBe('http://from-dotenv')
+    expect(config.web?.baseUrl).toBe('http://from-env-testing')
   })
 
-  test('真实环境变量优先于 .env 文件', async () => {
-    await writeFile(join(dir, '.env'), 'DOTENV_PRIORITY=from-dotenv\n')
+  test('真实环境变量优先于 .env.testing 文件', async () => {
+    await writeFile(join(dir, '.env.testing'), 'DOTENV_PRIORITY=from-env-testing\n')
     process.env.DOTENV_PRIORITY = 'from-real-env'
     const config = await writeAndLoad('web:\n  baseUrl: ${DOTENV_PRIORITY}\n')
     expect(config.web?.baseUrl).toBe('from-real-env')

@@ -1,7 +1,7 @@
 import { mkdtemp, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { describe, expect, test } from 'vitest'
+import { describe, expect, test, vi } from 'vitest'
 import type { CaseLocator } from '@testpilot/dsl'
 import { TestPilotError } from '@testpilot/core'
 import { AdapterResolver, ArtifactManager, ExecutionContext, TestRunner, executeStep } from '@testpilot/execution-engine'
@@ -550,5 +550,153 @@ describe('runCase 三态汇总', () => {
     expect(item?.status).toBe('passed')
     expect(item?.errorCode).toBeUndefined()
     expect(item?.warnings?.[0]).toContain('element not found')
+  })
+})
+
+describe('executeStep 交互扩展(assert count/attribute、callWxApi)', () => {
+  class DeepMockAdapter extends MockAdapter {
+    count = 3
+    attributeValue: unknown = 'true'
+    readonly wxCalls: Array<{ api: string; args: unknown[] }> = []
+
+    async countElements(): Promise<number> {
+      return this.count
+    }
+
+    async getElementAttribute(): Promise<unknown> {
+      return this.attributeValue
+    }
+
+    async callWxApi(api: string, args: readonly unknown[]): Promise<unknown> {
+      this.wxCalls.push({ api, args: [...args] })
+      return { code: 0 }
+    }
+  }
+
+  /** 产物目录先于 fake timers 准备好(fs 操作不被假时钟包裹) */
+  async function makeArtifacts() {
+    const root = await mkdtemp(join(tmpdir(), 'testpilot-deep-'))
+    const artifacts = new ArtifactManager(join(root, 'run'))
+    await artifacts.prepare()
+    return artifacts
+  }
+
+  function runDeepStep(
+    step: TestStep,
+    adapter: DeepMockAdapter,
+    artifacts: ArtifactManager,
+  ) {
+    return executeStep(step, 0, adapter, new ExecutionContext(), artifacts, { screenshotName: 's0' })
+  }
+
+  test('count 断言:匹配即通过,不匹配报 ASSERTION_FAILED', async () => {
+    const adapter = new DeepMockAdapter()
+    const ok = await runDeepStep(
+      { target: 'web', action: 'assert', locator: { css: '.row' }, count: 3 },
+      adapter,
+      await makeArtifacts(),
+    )
+    expect(ok.status).toBe('passed')
+
+    // 不匹配走轮询窗口(fake timers 推进,避免真实等待)
+    const artifacts = await makeArtifacts()
+    vi.useFakeTimers()
+    try {
+      const pending = runDeepStep(
+        { target: 'web', action: 'assert', locator: { css: '.row' }, count: 5 },
+        adapter,
+        artifacts,
+      ).then(
+        (r) => r,
+        (e) => e,
+      )
+      await vi.advanceTimersByTimeAsync(11_000)
+      const failed = (await pending) as import('@testpilot/core').StepResult
+      expect(failed.status).toBe('failed')
+      expect(failed.error).toContain('实际 3,期望 5')
+      expect(failed.errorCode).toBe('ASSERTION_FAILED')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  test('count: 0(元素不存在)断言只需短 settle 窗口', async () => {
+    const adapter = new DeepMockAdapter()
+    adapter.count = 0
+    const artifacts = await makeArtifacts()
+    vi.useFakeTimers()
+    try {
+      const pending = runDeepStep(
+        { target: 'miniapp', action: 'assert', locator: { css: '.toast' }, count: 0 },
+        adapter,
+        artifacts,
+      ).then(
+        (r) => r,
+        (e) => e,
+      )
+      await vi.advanceTimersByTimeAsync(2_500)
+      const result = (await pending) as import('@testpilot/core').StepResult
+      expect(result.status).toBe('passed')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  test('attribute 断言:String(值) 全等;缺失记为 <absent>', async () => {
+    const adapter = new DeepMockAdapter()
+    const ok = await runDeepStep(
+      { target: 'web', action: 'assert', locator: { css: '.btn' }, attribute: 'disabled', expected: 'true' },
+      adapter,
+      await makeArtifacts(),
+    )
+    expect(ok.status).toBe('passed')
+
+    adapter.attributeValue = null
+    const artifacts = await makeArtifacts()
+    vi.useFakeTimers()
+    try {
+      const pending = runDeepStep(
+        { target: 'web', action: 'assert', locator: { css: '.btn' }, attribute: 'disabled', expected: 'true' },
+        adapter,
+        artifacts,
+      ).then(
+        (r) => r,
+        (e) => e,
+      )
+      await vi.advanceTimersByTimeAsync(11_000)
+      const failed = (await pending) as import('@testpilot/core').StepResult
+      expect(failed.error).toContain('<absent>')
+      expect(failed.errorCode).toBe('ASSERTION_FAILED')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  test('callWxApi:透传 wxApi/args,返回值可捕获为变量', async () => {
+    const adapter = new DeepMockAdapter()
+    const result = await runDeepStep(
+      {
+        target: 'miniapp',
+        action: 'callWxApi',
+        wxApi: 'getStorageInfo',
+        args: ['token', 123],
+        variable: 'info',
+      },
+      adapter,
+      await makeArtifacts(),
+    )
+    expect(adapter.wxCalls).toEqual([{ api: 'getStorageInfo', args: ['token', 123] }])
+    expect(result.extracted).toEqual({ info: '{"code":0}' })
+    expect(result.status).toBe('passed')
+  })
+
+  test('adapter 缺少能力 → UNSUPPORTED_ACTION', async () => {
+    const result = await runDeepStep(
+      { target: 'web', action: 'assert', locator: { css: '.row' }, count: 1 },
+      new MockAdapter() as DeepMockAdapter,
+      await makeArtifacts(),
+    )
+    expect(result.status).toBe('failed')
+    expect(result.errorCode).toBe('UNSUPPORTED_ACTION')
   })
 })

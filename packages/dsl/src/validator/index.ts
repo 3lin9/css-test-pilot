@@ -1,7 +1,7 @@
 import { parseCase, type DslIssue } from '../parser'
 import { type ActionName, type StepTarget, type TestCase, type TestStep } from '../schema'
 
-/** V0.1 各端 adapter 支持的 action 矩阵(小程序端 select/picker 交互暂不支持;api 端只支持 request/assert/extract;callMethod/mockWxApi/trigger/setData 仅 miniapp) */
+/** 各端 adapter 支持的 action 矩阵(小程序端 select/picker 交互暂不支持;api 端只支持 request/assert/extract;callMethod/mockWxApi/trigger/setData 及小程序交互扩展仅 miniapp) */
 const ADAPTER_SUPPORT: Record<ActionName, readonly StepTarget[]> = {
   launch: ['web', 'miniapp'],
   navigate: ['web', 'miniapp'],
@@ -17,10 +17,28 @@ const ADAPTER_SUPPORT: Record<ActionName, readonly StepTarget[]> = {
   mockWxApi: ['miniapp'],
   trigger: ['miniapp'],
   setData: ['miniapp'],
+  longpress: ['web', 'miniapp'],
+  callWxApi: ['miniapp'],
+  touch: ['miniapp'],
+  scroll: ['miniapp'],
+  swipeTo: ['miniapp'],
+  slideTo: ['miniapp'],
+  moveTo: ['miniapp'],
 }
 
-const LOCATOR_REQUIRED = new Set<ActionName>(['click', 'input', 'select', 'assert', 'extract'])
-const VALUE_REQUIRED = new Set<ActionName>(['input', 'select'])
+const LOCATOR_REQUIRED = new Set<ActionName>([
+  'click',
+  'input',
+  'select',
+  'assert',
+  'extract',
+  'longpress',
+  'touch',
+  'swipeTo',
+  'slideTo',
+  'moveTo',
+])
+const VALUE_REQUIRED = new Set<ActionName>(['input', 'select', 'slideTo'])
 const REQUEST_EXPECTATION_ACTIONS = new Set<ActionName>(['navigate', 'click', 'input', 'select'])
 
 /** 字段只允许出现在指定 action 上(防复制粘贴/拼写错误) */
@@ -41,26 +59,46 @@ const FIELD_ALLOWED: Record<
   | 'eventType'
   | 'detail'
   | 'patch'
-  | 'dataPath',
+  | 'dataPath'
+  | 'attribute'
+  | 'property'
+  | 'count'
+  | 'phase'
+  | 'touches'
+  | 'changedTouches'
+  | 'scrollTop'
+  | 'index'
+  | 'x'
+  | 'y',
   readonly ActionName[]
 > = {
   url: ['navigate', 'request'],
-  value: ['input', 'select', 'extract'],
+  value: ['input', 'select', 'extract', 'slideTo'],
   expected: ['assert', 'request'],
-  variable: ['extract'],
+  variable: ['extract', 'callWxApi'],
   timeout: ['wait'],
   method: ['request'],
   headers: ['request'],
   body: ['request'],
   methodName: ['callMethod'],
-  args: ['callMethod'],
-  wxApi: ['mockWxApi'],
+  args: ['callMethod', 'callWxApi'],
+  wxApi: ['mockWxApi', 'callWxApi'],
   result: ['mockWxApi'],
   capture: ['mockWxApi'],
   eventType: ['trigger'],
   detail: ['trigger'],
   patch: ['setData'],
   dataPath: ['assert'],
+  attribute: ['assert'],
+  property: ['assert'],
+  count: ['assert'],
+  phase: ['touch'],
+  touches: ['touch'],
+  changedTouches: ['touch'],
+  scrollTop: ['scroll'],
+  index: ['swipeTo'],
+  x: ['moveTo'],
+  y: ['moveTo'],
 }
 
 const VARIABLE_REF = /\$\{([A-Za-z_][A-Za-z0-9_.]*)\}/g
@@ -138,13 +176,72 @@ function checkStep(step: TestStep, at: string, declared: Set<string>, issues: Ds
   }
 
   for (const [field, actions] of Object.entries(FIELD_ALLOWED)) {
-    const key = field as 'url' | 'value' | 'expected' | 'variable' | 'timeout' | 'method' | 'headers' | 'body' | 'methodName' | 'args' | 'wxApi' | 'result' | 'capture' | 'eventType' | 'detail' | 'patch' | 'dataPath'
+    const key = field as keyof typeof FIELD_ALLOWED
     if (step[key] !== undefined && !actions.includes(step.action)) {
       issues.push({
         path: `${at}.${field}`,
         code: 'semantic',
         message: `字段 "${field}" 仅用于 ${actions.join(' / ')}`,
       })
+    }
+  }
+
+  // callWxApi:主动调用的 wx.* API 名必填
+  if (step.action === 'callWxApi' && !step.wxApi) {
+    issues.push({ path: `${at}.wxApi`, code: 'semantic', message: 'callWxApi 必须提供 wxApi(要主动调用的 wx.* API 名,如 setStorageSync)' })
+  }
+
+  // touch:触摸阶段与触摸点必填
+  if (step.action === 'touch') {
+    if (!step.phase) {
+      issues.push({ path: `${at}.phase`, code: 'semantic', message: 'touch 必须提供 phase(touchstart / touchmove / touchend)' })
+    }
+    if (!step.touches || step.touches.length === 0) {
+      issues.push({ path: `${at}.touches`, code: 'semantic', message: 'touch 必须提供 touches(触摸点数组,如 [{identifier: 0, x: 0, y: 0}])' })
+    }
+  }
+
+  // scroll:滚动位置必填(locator 可选:提供时滚动 scroll-view 元素,缺省滚动页面)
+  if (step.action === 'scroll' && step.scrollTop === undefined) {
+    issues.push({ path: `${at}.scrollTop`, code: 'semantic', message: 'scroll 必须提供 scrollTop(滚动位置像素)' })
+  }
+
+  if (step.action === 'swipeTo' && step.index === undefined) {
+    issues.push({ path: `${at}.index`, code: 'semantic', message: 'swipeTo 必须提供 index(swiper 目标页索引)' })
+  }
+
+  if (step.action === 'moveTo' && (step.x === undefined || step.y === undefined)) {
+    issues.push({ path: `${at}.x`, code: 'semantic', message: 'moveTo 必须提供 x 与 y(movable-view 目标坐标)' })
+  }
+
+  // assert 的四种模式互斥:dataPath(页面 data)/ attribute / property / count(元素数量);缺省为文本断言
+  if (step.action === 'assert') {
+    const modes = [
+      step.dataPath !== undefined,
+      step.attribute !== undefined,
+      step.property !== undefined,
+      step.count !== undefined,
+    ].filter(Boolean).length
+    if (modes > 1) {
+      issues.push({ path: `${at}.assert`, code: 'semantic', message: 'assert 的 dataPath / attribute / property / count 只能提供其一(缺省为元素文本断言)' })
+    }
+    if (step.property !== undefined && step.target !== 'miniapp') {
+      issues.push({ path: `${at}.property`, code: 'semantic', message: 'property 断言仅 miniapp 支持(自定义组件实例属性)' })
+    }
+    if ((step.attribute !== undefined || step.property !== undefined) && !step.locator) {
+      issues.push({ path: `${at}.locator`, code: 'semantic', message: 'attribute / property 断言必须提供 locator' })
+    }
+    if (step.count !== undefined && !step.locator) {
+      issues.push({ path: `${at}.locator`, code: 'semantic', message: 'count 断言必须提供 locator(统计匹配元素)' })
+    }
+    if (step.count !== undefined && step.expected !== undefined) {
+      issues.push({ path: `${at}.assert`, code: 'semantic', message: 'count 断言以 count 为期望值,不需要 expected' })
+    }
+    if (step.target === 'api' && (step.attribute !== undefined || step.property !== undefined || step.count !== undefined)) {
+      issues.push({ path: `${at}.assert`, code: 'semantic', message: 'api 端 assert 仅支持 expected(响应体包含)' })
+    }
+    if (step.dataPath !== undefined && step.target !== 'miniapp') {
+      issues.push({ path: `${at}.dataPath`, code: 'semantic', message: 'dataPath 断言仅 miniapp 支持(web 端用 locator)' })
     }
   }
 
@@ -168,11 +265,6 @@ function checkStep(step: TestStep, at: string, declared: Set<string>, issues: Ds
     issues.push({ path: `${at}.patch`, code: 'semantic', message: 'setData 必须提供 patch(写入页面 data 的补丁)' })
   }
 
-  // dataPath 断言仅 miniapp(web 端用 locator)
-  if (step.dataPath !== undefined && step.target !== 'miniapp') {
-    issues.push({ path: `${at}.dataPath`, code: 'semantic', message: 'dataPath 断言仅 miniapp 支持(web 端用 locator)' })
-  }
-
   if (step.action === 'navigate' && !step.url) {
     issues.push({ path: `${at}.url`, code: 'semantic', message: 'navigate 必须提供 url' })
   }
@@ -181,7 +273,8 @@ function checkStep(step: TestStep, at: string, declared: Set<string>, issues: Ds
     issues.push({ path: `${at}.url`, code: 'semantic', message: 'request 必须提供 url(相对路径按 api.baseUrl 解析)' })
   }
 
-  if (VALUE_REQUIRED.has(step.action) && !step.value) {
+  // value 可为数字 0(slideTo),仅按"未提供/空串"判定缺失
+  if (VALUE_REQUIRED.has(step.action) && (step.value === undefined || step.value === '')) {
     issues.push({ path: `${at}.value`, code: 'semantic', message: `action "${step.action}" 必须提供 value` })
   }
 
@@ -189,7 +282,8 @@ function checkStep(step: TestStep, at: string, declared: Set<string>, issues: Ds
     issues.push({ path: `${at}.value`, code: 'semantic', message: 'api 端 extract 必须提供 value(点号 JSON path,如 data.orderId)' })
   }
 
-  if (step.action === 'assert' && !step.expected) {
+  // count 断言以 count 为期望值,不需要 expected;其余模式必须提供 expected
+  if (step.action === 'assert' && step.count === undefined && !step.expected) {
     issues.push({ path: `${at}.expected`, code: 'semantic', message: 'assert 必须提供 expected' })
   }
 
@@ -235,6 +329,8 @@ function checkStep(step: TestStep, at: string, declared: Set<string>, issues: Ds
 function checkLocator(step: TestStep, at: string, issues: DslIssue[]): void {
   const locator = step.locator
   if (!locator) {
+    // dataPath 断言走页面 data,不需要元素定位
+    if (step.action === 'assert' && step.dataPath !== undefined) return
     if (LOCATOR_REQUIRED.has(step.action)) {
       issues.push({
         path: `${at}.locator`,
@@ -266,7 +362,7 @@ function checkVariableRefs(
       if (match[1]) refs.push([field, match[1]])
     }
   }
-  collect('value', step.value)
+  collect('value', step.value === undefined ? undefined : String(step.value))
   collect('expected', step.expected)
   collect('url', step.url)
   collect('methodName', step.methodName)

@@ -1,6 +1,6 @@
-import { redactHeaders, type CapturedRequest, type TestAdapter } from '@testpilot/adapter-core'
+import { describeLocator, redactHeaders, type CapturedRequest, type TestAdapter } from '@testpilot/adapter-core'
 import { TestPilotError, type StepResult } from '@testpilot/core'
-import type { TestStep } from '@testpilot/dsl'
+import type { CaseLocator, TestStep } from '@testpilot/dsl'
 import type { ArtifactManager } from '../artifacts'
 import type { ExecutionContext } from '../context'
 
@@ -11,6 +11,10 @@ export interface StepExecutorOptions {
 
 /** 取证片段长度上限(请求体/响应体) */
 const SNIPPET_LIMIT = 400
+/** count / attribute 断言的轮询窗口(与 adapter 侧文本断言一致,容忍数据绑定延迟) */
+const ASSERT_POLL_MS = 10_000
+/** "元素不存在"(count: 0)断言的 settle 窗口:只等 UI 稳定,不拖满轮询窗口 */
+const ABSENT_SETTLE_MS = 2_000
 
 /**
  * 执行单步:解析模板变量 -> 调用 adapter -> 捕获变量 / 截图。
@@ -63,15 +67,28 @@ export async function executeStep(
         await adapter.click(locator!)
         break
       case 'input':
-        await adapter.input(locator!, context.resolve(step.value ?? ''))
+        await adapter.input(locator!, resolveValueText(step.value, context))
         break
       case 'select':
-        await adapter.select(locator!, context.resolve(step.value ?? ''))
+        await adapter.select(locator!, resolveValueText(step.value, context))
         break
       case 'wait':
         await adapter.wait(locator, step.timeout)
         break
       case 'assert': {
+        // count 模式:元素数量断言(0 即"元素不存在");引擎持有重试语义,adapter 单次读取
+        if (step.count !== undefined) {
+          if (!adapter.countElements) {
+            throw new TestPilotError('UNSUPPORTED_ACTION', `当前 ${step.target} adapter 不支持 count 断言`)
+          }
+          await assertElementCount(adapter, locator!, step.count)
+          break
+        }
+        // attribute / property 模式:元素属性断言(String(值) 与 expected 全等)
+        if (step.attribute !== undefined || step.property !== undefined) {
+          await assertElementAttribute(adapter, locator!, step, context)
+          break
+        }
         // dataPath 模式:断言页面 data(仅 miniapp);locator 模式:断言元素文本
         if (step.dataPath !== undefined) {
           if (!adapter.assertData) {
@@ -93,7 +110,7 @@ export async function executeStep(
         // api 端按 JSON path 从最近响应提取;UI 端提取元素文本
         const value =
           step.target === 'api'
-            ? await extractApiResponse(adapter, context.resolve(step.value ?? ''))
+            ? await extractApiResponse(adapter, resolveValueText(step.value, context))
             : await adapter.extract(locator!)
         if (step.variable) {
           context.set(step.variable, value)
@@ -170,7 +187,70 @@ export async function executeStep(
         if (typeof adapter.setData !== 'function') {
           throw new TestPilotError('UNSUPPORTED_ACTION', `当前 ${step.target} adapter 不支持 setData`)
         }
-        await adapter.setData(resolveDeep(step.patch ?? {}, context) as Record<string, unknown>)
+        await adapter.setData(resolveDeep(step.patch ?? {}, context) as Record<string, unknown>, locator)
+        break
+      }
+      case 'longpress': {
+        if (typeof adapter.longpress !== 'function') {
+          throw new TestPilotError('UNSUPPORTED_ACTION', `当前 ${step.target} adapter 不支持 longpress`)
+        }
+        await adapter.longpress(locator!)
+        break
+      }
+      case 'callWxApi': {
+        // 主动调用 wx.* API 造前置状态(如 setStorageSync / clearStorageSync);返回值可捕获为变量
+        if (typeof adapter.callWxApi !== 'function') {
+          throw new TestPilotError('UNSUPPORTED_ACTION', `当前 ${step.target} adapter 不支持 callWxApi`)
+        }
+        const wxApi = context.resolve(step.wxApi ?? '')
+        if (!wxApi) throw new TestPilotError('MISSING_WX_API', 'callWxApi 必须提供 wxApi')
+        const callArgs = (step.args ?? []).map((arg) => resolveDeep(arg, context))
+        const returned = await adapter.callWxApi(wxApi, callArgs)
+        if (step.variable) {
+          const captured = typeof returned === 'string' ? returned : JSON.stringify(returned) ?? ''
+          context.set(step.variable, captured)
+          result.extracted = { [step.variable]: captured }
+        }
+        break
+      }
+      case 'touch': {
+        if (typeof adapter.touch !== 'function') {
+          throw new TestPilotError('UNSUPPORTED_ACTION', `当前 ${step.target} adapter 不支持 touch`)
+        }
+        if (!locator) throw new TestPilotError('MISSING_LOCATOR', 'touch 必须提供 locator')
+        const touches = (step.touches ?? []).map((point) => resolveDeep(point, context) as Record<string, unknown>)
+        const changed = (step.changedTouches ?? step.touches ?? []).map(
+          (point) => resolveDeep(point, context) as Record<string, unknown>,
+        )
+        await adapter.touch(locator, step.phase ?? '', touches, changed)
+        break
+      }
+      case 'scroll': {
+        if (typeof adapter.scroll !== 'function') {
+          throw new TestPilotError('UNSUPPORTED_ACTION', `当前 ${step.target} adapter 不支持 scroll`)
+        }
+        await adapter.scroll(locator, step.scrollTop ?? 0)
+        break
+      }
+      case 'swipeTo': {
+        if (typeof adapter.swipeTo !== 'function') {
+          throw new TestPilotError('UNSUPPORTED_ACTION', `当前 ${step.target} adapter 不支持 swipeTo`)
+        }
+        await adapter.swipeTo(locator!, step.index ?? 0)
+        break
+      }
+      case 'slideTo': {
+        if (typeof adapter.slideTo !== 'function') {
+          throw new TestPilotError('UNSUPPORTED_ACTION', `当前 ${step.target} adapter 不支持 slideTo`)
+        }
+        await adapter.slideTo(locator!, Number(resolveValueText(step.value, context)))
+        break
+      }
+      case 'moveTo': {
+        if (typeof adapter.moveTo !== 'function') {
+          throw new TestPilotError('UNSUPPORTED_ACTION', `当前 ${step.target} adapter 不支持 moveTo`)
+        }
+        await adapter.moveTo(locator!, step.x ?? 0, step.y ?? 0)
         break
       }
       default: {
@@ -227,6 +307,59 @@ async function extractApiResponse(adapter: TestAdapter, path: string): Promise<s
   if (!adapter.extractResponse) throw new TestPilotError('UNSUPPORTED_ACTION', '当前 adapter 不支持 api 提取')
   if (!path) throw new TestPilotError('UNSUPPORTED_ACTION', 'api 端 extract 需要提供 value(点号 JSON path)')
   return adapter.extractResponse(path)
+}
+
+/** value 字段可为数字(slideTo)或模板字符串;统一解析为文本 */
+function resolveValueText(value: string | number | undefined, context: ExecutionContext): string {
+  return value === undefined ? '' : context.resolve(String(value))
+}
+
+/** 元素数量断言:期望 > 0 时按数据绑定窗口轮询;期望 0(不存在)只等短 settle 窗口,避免负向断言拖满超时 */
+async function assertElementCount(
+  adapter: TestAdapter,
+  locator: CaseLocator,
+  expected: number,
+): Promise<void> {
+  const windowMs = expected > 0 ? ASSERT_POLL_MS : ABSENT_SETTLE_MS
+  const startedAt = Date.now()
+  for (;;) {
+    const actual = await adapter.countElements!(locator)
+    if (actual === expected) return
+    if (Date.now() - startedAt > windowMs) {
+      throw new TestPilotError(
+        'ASSERTION_FAILED',
+        `元素数量断言失败(等待 ${windowMs}ms):${describeLocator(locator)} 实际 ${actual},期望 ${expected}`,
+      )
+    }
+    await delay(300)
+  }
+}
+
+/** attribute / property 断言:String(值) 与 expected 全等;属性缺失时实际值记为 <absent> */
+async function assertElementAttribute(
+  adapter: TestAdapter,
+  locator: CaseLocator,
+  step: TestStep,
+  context: ExecutionContext,
+): Promise<void> {
+  const useProperty = step.property !== undefined
+  const name = (useProperty ? step.property : step.attribute) ?? ''
+  const wanted = context.resolve(step.expected ?? '').trim()
+  const startedAt = Date.now()
+  for (;;) {
+    const actual = useProperty
+      ? await adapter.getElementProperty!(locator, name)
+      : await adapter.getElementAttribute!(locator, name)
+    const actualText = actual === undefined || actual === null ? '<absent>' : String(actual)
+    if (actualText.trim() === wanted) return
+    if (Date.now() - startedAt > ASSERT_POLL_MS) {
+      throw new TestPilotError(
+        'ASSERTION_FAILED',
+        `属性断言失败(等待 ${ASSERT_POLL_MS}ms):${describeLocator(locator)} 的 ${useProperty ? 'property' : 'attribute'} "${name}" 期望 "${wanted}",实际为 "${actualText.slice(0, 200)}"`,
+      )
+    }
+    await delay(300)
+  }
 }
 
 /** 请求头值模板解析 */

@@ -9,7 +9,7 @@ export const HTTP_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD'] as
 export type HttpMethod = (typeof HTTP_METHODS)[number]
 
 /**
- * V0.1 稳定 Action:通用测试原语,不含业务动作
+ * 稳定 Action:通用测试原语,不含业务动作
  * (login / order / payment 是业务 Case,不是 Action)
  */
 export const ACTIONS = [
@@ -27,7 +27,18 @@ export const ACTIONS = [
   'mockWxApi',
   'trigger',
   'setData',
+  'longpress',
+  'callWxApi',
+  'touch',
+  'scroll',
+  'swipeTo',
+  'slideTo',
+  'moveTo',
 ] as const
+
+/** touch action 的触摸阶段(对应 automator element.touchstart/touchmove/touchend) */
+export const TOUCH_PHASES = ['touchstart', 'touchmove', 'touchend'] as const
+export type TouchPhase = (typeof TOUCH_PHASES)[number]
 export type ActionName = (typeof ACTIONS)[number]
 
 export const locatorSchema = z
@@ -49,7 +60,7 @@ export const stepSchema = z.strictObject({
   action: z.enum(ACTIONS),
   locator: locatorSchema.optional(),
   url: z.string().min(1).optional(),
-  value: z.string().optional(),
+  value: z.union([z.string(), z.number()]).optional(),
   expected: z.string().optional(),
   /** api target:request 的 HTTP 方法(默认 GET) */
   method: z.enum(HTTP_METHODS).optional(),
@@ -78,10 +89,29 @@ export const stepSchema = z.strictObject({
   eventType: z.string().min(1).optional(),
   /** trigger:作为事件 e.detail 注入(值支持 ${var} 模板) */
   detail: z.record(z.string(), z.unknown()).optional(),
-  /** setData:写入页面 data 的补丁(值支持 ${var} 模板) */
+  /** setData:写入页面 data 的补丁(值支持 ${var} 模板);提供 locator 时为组件级 setData */
   patch: z.record(z.string(), z.unknown()).optional(),
-  /** assert:页面 data 路径断言(与 locator 互斥,仅 miniapp) */
+  /** assert:页面 data 路径断言(与 locator/attribute/property/count 互斥,仅 miniapp) */
   dataPath: z.string().min(1).optional(),
+  /** assert:元素 attribute 名(与 expected 组合做属性断言;web/miniapp) */
+  attribute: z.string().min(1).optional(),
+  /** assert:元素 property 名(自定义组件实例属性;仅 miniapp) */
+  property: z.string().min(1).optional(),
+  /** assert:匹配元素的精确数量(0 即"元素不存在"断言;与 expected/attribute/property/dataPath 互斥) */
+  count: z.number().int().nonnegative().optional(),
+  /** touch:触摸阶段 */
+  phase: z.enum(TOUCH_PHASES).optional(),
+  /** touch:触摸点数组(元素如 [{identifier: 0, x: 100, y: 200}],值支持 ${var} 模板) */
+  touches: z.array(z.record(z.string(), z.unknown())).min(1).optional(),
+  /** touch:changedTouches 触摸点数组;缺省复用 touches */
+  changedTouches: z.array(z.record(z.string(), z.unknown())).optional(),
+  /** scroll:滚动位置(scroll-view 内滚动提供 locator;缺省滚动页面) */
+  scrollTop: z.number().optional(),
+  /** swipeTo:swiper 目标页索引 */
+  index: z.number().int().nonnegative().optional(),
+  /** moveTo:movable-view 目标坐标 */
+  x: z.number().optional(),
+  y: z.number().optional(),
 })
 
 export const datasetReferenceSchema = z.strictObject({

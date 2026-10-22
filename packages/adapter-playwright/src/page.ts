@@ -12,6 +12,9 @@ import { openCaseContext } from './browser'
 /** assert / extract 对元素文本的轮询窗口(SPA 数据绑定未完成时等待内容出现);可用 options.textWaitMs 覆盖 */
 const TEXT_WAIT_MS = 10_000
 
+/** longpress 的按住时长(web 端以 click delay 近似原生长按) */
+const LONG_PRESS_MS = 600
+
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
@@ -110,6 +113,24 @@ export class PlaywrightAdapter implements TestAdapter {
   async click(locator: CaseLocator): Promise<void> {
     const target = await this.toLocator(locator)
     await this.coded(() => target.click())
+  }
+
+  /** 长按元素:web 端没有原生 longpress,以按住 LONG_PRESS_MS 的 click 近似 */
+  async longpress(locator: CaseLocator): Promise<void> {
+    const target = await this.toLocator(locator)
+    await this.coded(() => target.click({ delay: LONG_PRESS_MS }))
+  }
+
+  /** 统计匹配元素数量(单次读取,不等待;重试语义由引擎负责) */
+  async countElements(locator: CaseLocator): Promise<number> {
+    const target = await this.toLocator(locator)
+    return target.count()
+  }
+
+  /** 读取元素 attribute(不存在时为 null) */
+  async getElementAttribute(locator: CaseLocator, name: string): Promise<unknown> {
+    const target = await this.toLocator(locator)
+    return this.coded(() => target.getAttribute(name))
   }
 
   async input(locator: CaseLocator, value: string): Promise<void> {

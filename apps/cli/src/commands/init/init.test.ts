@@ -142,13 +142,15 @@ describe('cli:init:新项目', () => {
     expect(yaml).toContain('projectPath: ${MINIAPP_PROJECT_PATH}')
     expect(yaml).not.toContain('http://127.0.0.1:8080')
 
-    // .env.example 示例 + .gitignore 忽略 .env
-    expect(existsSync(join(root, '.env.example'))).toBe(true)
-    const envExample = await readFile(join(root, '.env.example'), 'utf8')
-    expect(envExample).toContain('TEST_BASE_URL=')
-    expect(envExample).toContain('STAGING_BASE_URL=')
-    expect(envExample).toContain('MINIAPP_PROJECT_PATH')
+    // .env.testing(直接填值,CLI 自动加载)+ .gitignore 忽略 .env.testing 与 .env
+    expect(existsSync(join(root, '.env.testing'))).toBe(true)
+    expect(existsSync(join(root, '.env.example'))).toBe(false)
+    const envTesting = await readFile(join(root, '.env.testing'), 'utf8')
+    expect(envTesting).toContain('TEST_BASE_URL=')
+    expect(envTesting).toContain('STAGING_BASE_URL=')
+    expect(envTesting).toContain('MINIAPP_PROJECT_PATH')
     const gitignore = await readFile(join(root, '.gitignore'), 'utf8')
+    expect(gitignore.split(/\r?\n/)).toContain('.env.testing')
     expect(gitignore.split(/\r?\n/)).toContain('.env')
 
     // init 自动执行 doctor(§12)

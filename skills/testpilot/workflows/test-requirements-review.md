@@ -1,7 +1,7 @@
 # Workflow:测试需求评审(可测性评审 + 测试点分析)
 
 输入:需求文档 / PRD / 用户的一句话(如"帮我测试用户下单")。
-产出:**原子规则清单** + **规则矩阵** + **测试点清单** + **视角覆盖表** + **QA → TestPilot Coverage Map** + **平台执行信息表** + 澄清问题 + 评审结论。测试点清单是 `create-case` 的正式输入。
+产出:**原子规则清单** + **规则矩阵** + **测试点清单** + **视角覆盖表** + **QA → TestPilot Coverage Map** + **平台执行信息表** + **环境与资料准备清单** + 澄清问题 + 评审结论。测试点清单是 `create-case` 的正式输入;环境与资料准备清单决定 Case 能否直接执行。
 
 ## 步骤
 
@@ -116,14 +116,14 @@
 
 | 平台 | 必须澄清 | 落地位置 |
 | --- | --- | --- |
-| web | 测试地址(baseUrl)+ 页面入口路由 + 登录角色 | `.env` 的 `WEB_BASE_URL` / `TEST_BASE_URL`;`accountRef` |
-| miniapp | 小程序项目路径 + 起始页面路由 + 登录角色(连哪个环境后端) | `.env` 的 `MINIAPP_PROJECT_PATH`;`accountRef` |
-| api | 服务 baseUrl + 鉴权方式(token / session)+ 账号角色 | `.env` 的 `API_BASE_URL`;`accountRef` |
+| web | 测试地址(baseUrl)+ 页面入口路由 + 登录角色 | `.env.testing` 的 `WEB_BASE_URL` / `TEST_BASE_URL`;`accountRef` |
+| miniapp | 小程序项目路径 + 起始页面路由 + 登录角色(连哪个环境后端) | `.env.testing` 的 `MINIAPP_PROJECT_PATH`;`accountRef` |
+| api | 服务 baseUrl + 鉴权方式(token / session)+ 账号角色 | `.env.testing` 的 `API_BASE_URL`;`accountRef` |
 
 规则:
 
 - **登录角色**:每个平台确认用什么角色(普通用户 / 管理员 / 游客),映射为 `accountRef`(如 `admin` / `test-user`);真实凭据放 `TESTPILOT_ACCOUNT_<REF大写>` 环境变量或 Server Secrets,**禁止写进 Case**
-- **测试地址**:一律指向测试环境,写入 `.env`(如 `WEB_BASE_URL`);**禁止把内网 / 生产地址写进 Case 或 testpilot.yaml**
+- **测试地址**:一律指向测试环境,写入 `.env.testing`(如 `WEB_BASE_URL`);**禁止把内网 / 生产地址写进 Case 或 testpilot.yaml**
 - **使用 Workspace 的项目**:以上信息应登记为 Workspace 的绑定(项目 → 环境),Case 用 `workspace: <名称>` 声明,不逐条硬编码
 
 ### 澄清问题示例(多平台需求)
@@ -131,11 +131,48 @@
 - Web 后台的测试地址是什么?订单查询页面的入口路由是?
 - 小程序连接哪个环境的后端?小程序项目目录在本机哪里?
 - 各平台分别用什么角色登录(普通用户 / 管理员)?该角色是否有完成流程所需的权限?
-- 这些地址和账号是否已写入 `.env`?缺哪个我来补?
+- 这些地址和账号是否已写入 `.env.testing`?缺哪个我来补?
+
+## 环境与资料准备清单(固定产出,禁止省略)
+
+对每条测试点自问:**「执行这条 TP 之前,哪些值必须已经存在?」**——测试地址、登录账号、业务造数字段、前置状态,凡命中就必须在清单中登记一行。**禁止"写 Case 时再说"**:评审不定下来,执行层就是确定性缺口。
+
+每项资料按落点**三分类**,这是判定规则,不得凭感觉选:
+
+| 落点 | 放什么 | 判定特征 | 例子 |
+| --- | --- | --- | --- |
+| `.env.testing` 变量 | 环境位:测试地址、小程序项目路径、Server 地址 | 与"人 / 机器 / 环境"相关,与具体业务数据无关 | `WEB_BASE_URL`、`MINIAPP_PROJECT_PATH` |
+| `accountRef` | 账号角色(只登记角色名与用途;真实凭据走 `TESTPILOT_ACCOUNT_<REF>` 或 Server Secrets) | "以谁的身份执行" | `admin`(后台)、`test-user`(下单用户) |
+| fixture / dataset 字段 | 业务造数:测试点依赖的数据及**字段名**、类型、来源 | 与业务数据本身相关(商品、订单、规则入参) | `fixture.product.styleNo`(后端造数接口生成) |
+
+模板(即使没有任何要准备的资料,**也必须输出本节**并写「无」,附一句依据;三类落点各成一表或合并为一表均可,列必须齐全):
+
+```markdown
+## 环境与资料准备清单
+
+| TP | 需要的资料 | 落点 | 变量名 / 字段名 | 来源或生成方式 | 就绪状态 |
+| --- | --- | --- | --- | --- | --- |
+| TP-001 | 测试环境地址 | .env.testing | WEB_BASE_URL | 用户提供 | 已就绪 |
+| TP-002 | vip 账号 | accountRef | vip-user | 用户提供凭据(TESTPILOT_ACCOUNT_VIP_USER) | 待补充 |
+| TP-003 | 参与促销的商品 | fixture | fixture.product.styleNo | 后端造数接口 POST /test-support/products | 待补充 |
+
+## Missing data checklist
+- [ ] TP-002: 提供 vip-user 凭据
+- [ ] TP-003: 确认造数接口可用
+```
+
+规则:
+
+- **业务造数一律进 fixture/dataset**(字段名随后写入 Case 的 `requires`),**环境位才进 `.env.testing`**,**身份一律 `accountRef`**——三者不得混放,同一项资料只能有一个落点。混放(如把商品编码塞进 env、把地址写成 fixture)是评审输出不稳定的直接来源。
+- 来源不可知的资料(谁提供、怎么造不确定)必须同时进入澄清问题清单。
+- 「就绪状态」只有两种:已就绪 / 待补充;待补充项必须出现在 Missing data checklist。
+- 本节缺失或含未登记的必要资料时,不得给出评审结论(见铁律)。
 
 ## 铁律
 
 - 没有测试点清单,不要进入 `create-case`。
+- 没有「环境与资料准备清单」一节,不得给出评审结论;空表也要输出(写「无」+ 依据)。
+- 测试点依赖的资料(账号 / 造数字段 / 环境地址 / 前置状态)必须逐项登记落点:`.env.testing`(环境位)/ `accountRef`(身份)/ fixture-dataset(业务造数),禁止混放、禁止执行时再想。
 - 涉及多平台但执行信息(地址 / 入口 / 登录角色)不全时,结论只能是"有条件可测",先澄清再建 Case。
 - 评审基于需求 + 项目代码/页面证据;两项都没有时先收集证据,不空谈。
 - 每个测试点必须可验证:都能回答"怎么判定通过"。

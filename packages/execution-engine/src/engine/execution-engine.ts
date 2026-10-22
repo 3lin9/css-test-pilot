@@ -261,6 +261,30 @@ export class ExecutionEngine {
       await adapter.restoreWxMock?.().catch(() => undefined)
     }
 
+    // 失败用例导出运行时诊断(console 尾部 / 异常 / 页面栈 / systemInfo),排查 appservice 侧问题
+    if (status !== 'passed') {
+      for (const [target, adapter] of evidenceAdapters) {
+        if (typeof adapter.readDiagnostics !== 'function') continue
+        try {
+          const diagnostics = await adapter.readDiagnostics()
+          const hasContent =
+            diagnostics.consoleLogs.length > 0 ||
+            diagnostics.exceptions.length > 0 ||
+            (diagnostics.pageStack?.length ?? 0) > 0 ||
+            diagnostics.systemInfo !== undefined
+          if (!hasContent) continue
+          caseResult.diagnostics = await artifacts.saveDiagnostics(
+            `${executionId}-${target}.json`,
+            diagnostics,
+          )
+        } catch (err) {
+          await artifacts.logger.info(
+            `diagnostics dump failed for ${target}: ${err instanceof Error ? err.message : String(err)}`,
+          )
+        }
+      }
+    }
+
     await bus.emit({
       type: 'case-finished',
       runId,

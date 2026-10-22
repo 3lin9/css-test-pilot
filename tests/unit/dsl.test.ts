@@ -266,3 +266,227 @@ steps:
     )
   })
 })
+
+describe('小程序交互扩展 action', () => {
+  test('longpress/callWxApi/touch/scroll/swipeTo/slideTo/moveTo 合法用例通过', () => {
+    const result = validateCaseSource(`
+id: miniapp-deep
+name: 小程序深度交互
+steps:
+  - target: miniapp
+    action: longpress
+    locator:
+      css: ".qr-code"
+  - target: miniapp
+    action: callWxApi
+    wxApi: setStorageSync
+    args: ["token", "abc"]
+  - target: miniapp
+    action: callWxApi
+    wxApi: getStorageInfo
+    variable: storageInfo
+  - target: miniapp
+    action: touch
+    locator:
+      css: ".canvas"
+    phase: touchstart
+    touches:
+      - identifier: 0
+        x: 10
+        y: 20
+  - target: miniapp
+    action: scroll
+    scrollTop: 300
+  - target: miniapp
+    action: scroll
+    locator:
+      css: ".list"
+    scrollTop: 200
+  - target: miniapp
+    action: swipeTo
+    locator:
+      css: ".swiper"
+    index: 2
+  - target: miniapp
+    action: slideTo
+    locator:
+      css: ".slider"
+    value: 40
+  - target: miniapp
+    action: moveTo
+    locator:
+      css: ".movable"
+    x: 5
+    y: 6
+  - target: web
+    action: longpress
+    locator:
+      text: 长按我
+`)
+    expect(result.ok).toBe(true)
+  })
+
+  test('assert 的 attribute/property/count 断言模式', () => {
+    const ok = validateCaseSource(`
+id: assert-modes
+name: 断言扩展
+steps:
+  - target: web
+    action: assert
+    locator:
+      css: ".submit"
+    attribute: disabled
+    expected: "true"
+  - target: miniapp
+    action: assert
+    locator:
+      css: ".comp"
+    property: status
+    expected: "ready"
+  - target: miniapp
+    action: assert
+    locator:
+      css: ".item"
+    count: 0
+  - target: web
+    action: assert
+    locator:
+      css: ".row"
+    count: 3
+  - target: miniapp
+    action: assert
+    dataPath: status
+    expected: ready
+`)
+    expect(ok.ok).toBe(true)
+
+    const broken = validateCaseSource(`
+id: assert-modes-bad
+name: 断言扩展误用
+steps:
+  - target: miniapp
+    action: assert
+    dataPath: status
+    attribute: disabled
+    expected: "true"
+  - target: web
+    action: assert
+    locator:
+      css: ".comp"
+    property: status
+    expected: "ready"
+  - target: miniapp
+    action: assert
+    count: 2
+  - target: miniapp
+    action: assert
+    locator:
+      css: ".item"
+    count: 1
+    expected: "x"
+  - target: api
+    action: assert
+    count: 1
+`)
+    expect(broken.ok).toBe(false)
+    const paths = broken.issues.map((issue) => issue.path)
+    expect(paths).toEqual(
+      expect.arrayContaining([
+        'steps[0].assert', // dataPath 与 attribute 互斥
+        'steps[1].property', // property 仅 miniapp
+        'steps[2].locator', // count 缺 locator
+        'steps[3].assert', // count 与 expected 互斥
+        'steps[4].assert', // api 端不支持 count
+      ]),
+    )
+
+    // 负数 count 在 schema 层拒绝;schema 失败时不做语义校验,单独验证
+    const negative = validateCaseSource(`
+id: negative-count
+name: 负数数量
+steps:
+  - target: web
+    action: assert
+    locator:
+      css: ".row"
+    count: -1
+`)
+    expect(negative.ok).toBe(false)
+    expect(negative.issues.every((issue) => issue.code === 'schema')).toBe(true)
+    expect(negative.issues.some((issue) => issue.message.includes('count') || issue.path.includes('count'))).toBe(true)
+  })
+
+  test('新 action 的必填字段与字段误用', () => {
+    const result = validateCaseSource(`
+id: deep-bad
+name: 深度交互误用
+steps:
+  - target: miniapp
+    action: callWxApi
+  - target: web
+    action: callWxApi
+    wxApi: setStorageSync
+  - target: miniapp
+    action: touch
+    locator:
+      css: ".canvas"
+  - target: miniapp
+    action: scroll
+  - target: miniapp
+    action: swipeTo
+    locator:
+      css: ".swiper"
+  - target: miniapp
+    action: slideTo
+    locator:
+      css: ".slider"
+  - target: miniapp
+    action: moveTo
+    locator:
+      css: ".movable"
+    x: 5
+  - target: miniapp
+    action: callWxApi
+    wxApi: request
+    result:
+      code: 0
+  - target: miniapp
+    action: setData
+    locator:
+      css: ".comp"
+    patch:
+      refreshing: false
+`)
+    expect(result.ok).toBe(false)
+    const paths = result.issues.map((issue) => issue.path)
+    expect(paths).toEqual(
+      expect.arrayContaining([
+        'steps[0].wxApi', // callWxApi 缺 wxApi
+        'steps[1].target', // callWxApi 仅 miniapp
+        'steps[2].phase', // touch 缺 phase
+        'steps[2].touches', // touch 缺 touches
+        'steps[3].scrollTop', // scroll 缺 scrollTop
+        'steps[4].index', // swipeTo 缺 index
+        'steps[5].value', // slideTo 缺 value
+        'steps[6].x', // moveTo 缺 y
+        'steps[7].result', // result 仅用于 mockWxApi
+      ]),
+    )
+    // 组件级 setData(locator + patch)合法
+    expect(paths).not.toContain('steps[8].locator')
+  })
+
+  test('slideTo 的 value 允许数字 0', () => {
+    const result = validateCaseSource(`
+id: slider-zero
+name: 滑块归零
+steps:
+  - target: miniapp
+    action: slideTo
+    locator:
+      css: ".slider"
+    value: 0
+`)
+    expect(result.ok).toBe(true)
+  })
+})

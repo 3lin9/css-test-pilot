@@ -2,10 +2,13 @@
 # `npx csspilot init` 会把整个 skills/testpilot/ 安装到业务项目 .agents/skills/testpilot/
 id: testpilot
 name: TestPilot
-version: 0.6.0
+version: 0.7.0
 
 description: >
   AI Native cross-platform testing skill.
+  Miniapp deep-testing actions: mockWxApi / callWxApi / trigger / callMethod /
+  setData / dataPath-assert / count-assert / attribute-assert / longpress /
+  touch / scroll / swipeTo / slideTo / moveTo.
 
 capabilities:
   - test-requirements-review

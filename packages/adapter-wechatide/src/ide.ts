@@ -3,20 +3,37 @@ import { TestPilotError } from '@testpilot/core'
 import { spawn } from 'node:child_process'
 import net from 'node:net'
 import type { CaseLocator, StepTarget } from '@testpilot/dsl'
-import type { CapturedRequest, TestAdapter } from '@testpilot/adapter-core'
+import type {
+  CapturedRequest,
+  ConsoleLogEntry,
+  RuntimeDiagnostics,
+  TestAdapter,
+} from '@testpilot/adapter-core'
 import type { MiniappAdapterConfig } from './project'
 
 /** 与 miniprogram-automator 运行时结构对应的最小类型(仅用到的能力) */
 interface AutomatorElement {
   tap(): Promise<void>
+  longpress(): Promise<void>
   text(): Promise<string>
   input(value: string): Promise<void>
   trigger(type: string, detail?: Record<string, unknown>): Promise<void>
   callMethod(method: string, ...args: unknown[]): Promise<unknown>
+  touchstart(options?: { touches?: unknown[]; changedTouches?: unknown[] }): Promise<void>
+  touchmove(options?: { touches?: unknown[]; changedTouches?: unknown[] }): Promise<void>
+  touchend(options?: { touches?: unknown[]; changedTouches?: unknown[] }): Promise<void>
+  attribute(name: string): Promise<unknown>
+  property(name: string): Promise<unknown>
+  setData(data: Record<string, unknown>): Promise<void>
+  scrollTo(scrollTop: number): Promise<void>
+  swipeTo(index: number): Promise<void>
+  slideTo(value: number): Promise<void>
+  moveTo(x: number, y: number): Promise<void>
 }
 
 interface AutomatorPage {
   $(selector: string): Promise<AutomatorElement | null>
+  $$(selector: string): Promise<AutomatorElement[]>
   waitFor(selectorOrMs: string | number): Promise<unknown>
   data(path?: string): Promise<unknown>
   setData(data: Record<string, unknown>): Promise<void>
@@ -40,6 +57,12 @@ export interface AutomatorProgram {
     exposedName?: string,
   ): Promise<void>
   restoreWxMethod(method: string): Promise<void>
+  /** 以下为可选能力:旧版本 SDK / 测试桩可能未提供 */
+  callWxMethod?(method: string, ...args: unknown[]): Promise<unknown>
+  pageScrollTo?(scrollTop: number): Promise<void>
+  pageStack?(): Promise<Array<Record<string, unknown>>>
+  systemInfo?(): Promise<Record<string, unknown>>
+  on?(event: string, listener: (payload: unknown) => void): void
 }
 
 /** 启动器抽象:便于测试注入假实现(默认绑定 miniprogram-automator SDK) */
@@ -56,6 +79,10 @@ const TEXT_WAIT_MS = 10_000
 const PAGE_READY_WAIT_MS = 30_000
 /** 模拟器重编译 / IDE 重启会断开自动化 ws 连接 */
 const CONNECTION_LOST = /connection closed|not connected/i
+/** 运行时诊断(console / exception)的环形缓冲上限 */
+const DIAGNOSTICS_BUFFER_MAX = 200
+/** 单条 console 取证文本的截断长度 */
+const CONSOLE_TEXT_LIMIT = 500
 
 export const automatorLauncher: AutomatorLauncher = {
   launch: async (options) => {
@@ -74,6 +101,24 @@ export const automatorLauncher: AutomatorLauncher = {
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+/** console 参数序列化为取证文本(不可序列化对象退化为 String) */
+function serializeConsoleArg(value: unknown): string {
+  if (typeof value === 'string') return value
+  try {
+    return JSON.stringify(value) ?? String(value)
+  } catch {
+    return String(value)
+  }
+}
+
+/** 页面 data 值转断言文本(对象 JSON 化,便于包含断言) */
+function stringifyDataValue(value: unknown): string {
+  if (value === undefined || value === null) return ''
+  if (typeof value === 'string') return value
+  if (typeof value === 'object') return JSON.stringify(value)
+  return String(value)
 }
 
 /** 建立自动化 ws 连接;IDE 冷启动 / 编译期间端口未就绪时持续重试 */
@@ -144,6 +189,10 @@ export class MiniAppAdapter implements TestAdapter {
   private requestCapture:
     | { program: AutomatorProgram; exposedName: string; requests: CapturedRequest[] }
     | undefined
+  /** console / exception 环形缓冲(失败取证的数据源);重连后继续累积 */
+  private readonly consoleLogs: ConsoleLogEntry[] = []
+  private readonly exceptions: string[] = []
+  private diagnosticsAttachedTo: AutomatorProgram | undefined
 
   constructor(
     private readonly config: MiniappAdapterConfig,
@@ -158,6 +207,7 @@ export class MiniAppAdapter implements TestAdapter {
     }
     if (this.config.cliPath) launchOptions.cliPath = this.config.cliPath
     this.program = await this.launcher.launch(launchOptions)
+    this.attachDiagnostics(this.program)
   }
 
   async navigate(url: string): Promise<void> {
@@ -305,7 +355,13 @@ export class MiniAppAdapter implements TestAdapter {
     )
   }
 
-  /** 读取 mock 期间捕获的调用参数(最近调用在前) */
+  /** 读取 mock 期间捕获的调用参数(引擎在带 capture 的 mockWxApi step 后调用;最近调用在前) */
+  readWxApiCaptures(): { name: string; calls: Array<Record<string, unknown>> } | undefined {
+    if (!this.wxMock) return undefined
+    return { name: this.wxMock.api, calls: [...this.wxMock.captured].reverse() }
+  }
+
+  /** @deprecated 引擎已改用 readWxApiCaptures();保留按 API 名读取的旧入口 */
   readCapturedWxApiCalls(api: string): Array<Record<string, unknown>> {
     return this.wxMock?.api === api ? [...this.wxMock.captured].reverse() : []
   }
@@ -335,12 +391,169 @@ export class MiniAppAdapter implements TestAdapter {
     })
   }
 
-  /** 写入页面 data 补丁(setData 驱动 onShow/onPullDownRefresh 等真实链路) */
-  async setData(patch: Record<string, unknown>): Promise<void> {
+  /** 写入 data 补丁(setData 驱动 onShow/onPullDownRefresh 等真实链路);locator 提供时为组件级 */
+  async setData(patch: Record<string, unknown>, locator?: CaseLocator): Promise<void> {
     await this.runWithReconnect(async () => {
+      if (locator) {
+        await (await this.element(locator)).setData(patch)
+        return
+      }
       const page = await (await this.getProgram()).currentPage()
       await page.setData(patch)
     })
+  }
+
+  /** 断言页面 data 路径的值包含 expected(数据绑定未完成时轮询等待) */
+  async assertData(dataPath: string, expected: string): Promise<void> {
+    await this.runWithReconnect(async () => {
+      const page = await (await this.getProgram()).currentPage()
+      const wanted = expected.trim()
+      const startedAt = Date.now()
+      for (;;) {
+        const actual = stringifyDataValue(await page.data(dataPath))
+        if (actual.includes(wanted)) return
+        if (Date.now() - startedAt > TEXT_WAIT_MS) {
+          throw new TestPilotError(
+            'ASSERTION_FAILED',
+            `页面 data 断言失败(等待 ${TEXT_WAIT_MS}ms):data.${dataPath} 期望包含 "${wanted}",实际为 "${actual.slice(0, 200)}"`,
+          )
+        }
+        await delay(300)
+      }
+    })
+  }
+
+  // ---- miniapp 交互扩展(对照官方 automator Element / MiniProgram API)----
+
+  /** 长按元素 */
+  async longpress(locator: CaseLocator): Promise<void> {
+    await this.runWithReconnect(async () => (await this.element(locator)).longpress())
+  }
+
+  /** 主动调用 wx.* API(如 setStorageSync / clearStorageSync 造前置状态) */
+  async callWxApi(api: string, args: readonly unknown[] = []): Promise<unknown> {
+    return this.runWithReconnect(async () => {
+      const program = await this.getProgram()
+      if (typeof program.callWxMethod !== 'function') {
+        throw new TestPilotError(
+          'UNSUPPORTED_ACTION',
+          '当前 miniprogram-automator 不支持 callWxMethod,请升级微信开发者工具后重试',
+        )
+      }
+      return program.callWxMethod(api, ...args)
+    })
+  }
+
+  /** 派发触摸事件(touchstart / touchmove / touchend) */
+  async touch(
+    locator: CaseLocator,
+    phase: string,
+    touches: ReadonlyArray<Record<string, unknown>>,
+    changedTouches: ReadonlyArray<Record<string, unknown>>,
+  ): Promise<void> {
+    await this.runWithReconnect(async () => {
+      const element = await this.element(locator)
+      const options = { touches: [...touches], changedTouches: [...changedTouches] }
+      if (phase === 'touchstart') await element.touchstart(options)
+      else if (phase === 'touchmove') await element.touchmove(options)
+      else if (phase === 'touchend') await element.touchend(options)
+      else throw new TestPilotError('UNSUPPORTED_ACTION', `未知触摸阶段:${phase}`)
+    })
+  }
+
+  /** 滚动:locator 提供时滚动 scroll-view 元素,缺省滚动页面 */
+  async scroll(locator: CaseLocator | undefined, scrollTop: number): Promise<void> {
+    await this.runWithReconnect(async () => {
+      if (locator) {
+        await (await this.element(locator)).scrollTo(scrollTop)
+        return
+      }
+      const program = await this.getProgram()
+      if (typeof program.pageScrollTo !== 'function') {
+        throw new TestPilotError(
+          'UNSUPPORTED_ACTION',
+          '当前 miniprogram-automator 不支持 pageScrollTo,请升级微信开发者工具后重试',
+        )
+      }
+      await program.pageScrollTo(scrollTop)
+    })
+  }
+
+  /** swiper 切换到指定页 */
+  async swipeTo(locator: CaseLocator, index: number): Promise<void> {
+    await this.runWithReconnect(async () => (await this.element(locator)).swipeTo(index))
+  }
+
+  /** slider 滑到指定值 */
+  async slideTo(locator: CaseLocator, value: number): Promise<void> {
+    await this.runWithReconnect(async () => (await this.element(locator)).slideTo(value))
+  }
+
+  /** movable-view 移动到指定坐标 */
+  async moveTo(locator: CaseLocator, x: number, y: number): Promise<void> {
+    await this.runWithReconnect(async () => (await this.element(locator)).moveTo(x, y))
+  }
+
+  /** 统计匹配元素数量(单次读取;存在性/计数断言的重试语义由引擎负责) */
+  async countElements(locator: CaseLocator): Promise<number> {
+    return this.runWithReconnect(async () => {
+      const page = await (await this.getProgram()).currentPage()
+      const elements = await page.$$(this.cssSelector(locator))
+      return elements.length
+    })
+  }
+
+  /** 读取元素 attribute(不存在时为 undefined/null) */
+  async getElementAttribute(locator: CaseLocator, name: string): Promise<unknown> {
+    return this.runWithReconnect(async () => (await this.element(locator)).attribute(name))
+  }
+
+  /** 读取元素 property(miniapp 自定义组件实例属性) */
+  async getElementProperty(locator: CaseLocator, name: string): Promise<unknown> {
+    return this.runWithReconnect(async () => (await this.element(locator)).property(name))
+  }
+
+  /** 导出运行时诊断:console 尾部 / 异常 / 页面栈 / systemInfo(失败取证由引擎落盘) */
+  async readDiagnostics(): Promise<RuntimeDiagnostics> {
+    const program = this.program
+    const pageStack = (await program?.pageStack?.().catch(() => undefined)) as
+      | RuntimeDiagnostics['pageStack']
+      | undefined
+    const systemInfo = (await program?.systemInfo?.().catch(() => undefined)) as
+      | RuntimeDiagnostics['systemInfo']
+      | undefined
+    return {
+      consoleLogs: [...this.consoleLogs],
+      exceptions: [...this.exceptions],
+      pageStack,
+      systemInfo,
+    }
+  }
+
+  /** 订阅小程序 console / exception 事件(每个 program 实例只挂一次) */
+  private attachDiagnostics(program: AutomatorProgram): void {
+    if (this.diagnosticsAttachedTo === program || typeof program.on !== 'function') return
+    this.diagnosticsAttachedTo = program
+    program.on('console', (payload) => {
+      const record = (payload ?? {}) as { type?: unknown; args?: unknown }
+      const args = Array.isArray(record.args) ? record.args : []
+      this.pushConsoleLog({
+        ts: new Date().toISOString(),
+        type: typeof record.type === 'string' ? record.type : 'log',
+        text: args.map(serializeConsoleArg).join(' ').slice(0, CONSOLE_TEXT_LIMIT),
+      })
+    })
+    program.on('exception', (payload) => {
+      const record = (payload ?? {}) as { message?: unknown }
+      const message = typeof record.message === 'string' ? record.message : String(payload)
+      this.exceptions.push(message.slice(0, CONSOLE_TEXT_LIMIT))
+      if (this.exceptions.length > DIAGNOSTICS_BUFFER_MAX) this.exceptions.shift()
+    })
+  }
+
+  private pushConsoleLog(entry: ConsoleLogEntry): void {
+    this.consoleLogs.push(entry)
+    if (this.consoleLogs.length > DIAGNOSTICS_BUFFER_MAX) this.consoleLogs.shift()
   }
 
   async screenshot(): Promise<Buffer> {
