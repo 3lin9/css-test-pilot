@@ -5,5 +5,11 @@ export function describeLocator(locator: CaseLocator | undefined): string {
   if (!locator) return '-'
   if (locator.text !== undefined) return `text="${locator.text}"`
   if (locator.css !== undefined) return `css="${locator.css}"`
+  if (locator.testId !== undefined) return `testId="${locator.testId}"`
+  if (locator.role !== undefined) {
+    return `role="${locator.role}"${locator.name !== undefined ? ` name="${locator.name}"` : ''}`
+  }
+  if (locator.label !== undefined) return `label="${locator.label}"`
+  if (locator.placeholder !== undefined) return `placeholder="${locator.placeholder}"`
   return '-'
 }

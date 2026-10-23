@@ -45,8 +45,18 @@ export const locatorSchema = z
   .strictObject({
     text: z.string().min(1).optional(),
     css: z.string().min(1).optional(),
+    /** data-testid(Playwright testId) */
+    testId: z.string().min(1).optional(),
+    /** ARIA role；可与 accessible name 组合 */
+    role: z.string().min(1).optional(),
+    /** role 的 accessible name，不是独立定位策略 */
+    name: z.string().min(1).optional(),
+    /** 关联 label 文案 */
+    label: z.string().min(1).optional(),
+    /** input/textarea placeholder */
+    placeholder: z.string().min(1).optional(),
   })
-  .describe('text 与 css 只能提供其一')
+  .describe('text/css/testId/role/label/placeholder 只能提供一种策略；name 仅配合 role')
 
 export const requestExpectationSchema = z.strictObject({
   method: z.enum(HTTP_METHODS).optional(),

@@ -8,6 +8,7 @@
   "dependencies": {
     "@testpilot/core": "workspace:^",
     "@testpilot/dsl": "workspace:^",
+    "@testpilot/observation-core": "workspace:^",
     "zod": "^4.0.0"
   }
 }

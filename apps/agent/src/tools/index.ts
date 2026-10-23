@@ -129,16 +129,19 @@ export async function validateTool(
 export async function runTool(
   client: TestPilotClient,
   ctx: AgentToolContext,
-  options: { paths?: string[]; tag?: string } = {},
+  options: { paths?: string[]; tag?: string; rehearsal?: boolean; requireReady?: boolean } = {},
 ) {
   ensureNotAborted(ctx.signal)
   ctx.emit({ type: 'tool-call', ts: now(), message: 'run', data: options })
   ctx.emit({ type: 'run-started', ts: now(), message: '开始执行' })
-  const result = await client.runCases({
+  const runOptions = {
     paths: options.paths,
     tag: options.tag,
     signal: ctx.signal,
-  })
+  }
+  const result = options.rehearsal
+    ? await client.rehearseCases(runOptions)
+    : await client.runCases({ ...runOptions, requireReady: options.requireReady })
   ctx.emit({
     type: 'run-finished',
     ts: now(),

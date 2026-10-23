@@ -7,9 +7,11 @@
 | 命令                                    | 作用                                           |
 | --------------------------------------- | ---------------------------------------------- |
 | `csspilot init`                         | 把 TestPilot 接入当前业务项目(项目测试基础设施初始化) |
-| `csspilot validate [paths...]`          | 校验用例 DSL                                   |
+| `csspilot validate [paths...] [--runtime]` | 校验 DSL；可追加真实界面只读 probe          |
+| `csspilot discover [paths...]`          | 只读 observe/probe，保存语义树/WXML/截图       |
+| `csspilot rehearse [paths...]`          | 完整彩排，通过后签发 Ready Certificate         |
 | `csspilot list [--tag <tag>]`           | 列出用例                                       |
-| `csspilot run [paths...] [--tag <tag>]` | 执行用例                                       |
+| `csspilot run [paths...] [--tag <tag>] [--require-ready]` | 确定性执行；可启用证书门禁       |
 | `csspilot report [--run <id>] [--open]` | 生成交互式单文件 HTML 报告(步骤树 / 失败分类 / 历史趋势)+ report.json |
 | `csspilot sync-metadata`                | 同步 Case Metadata 到 Server(CI / git push 后) |
 | `csspilot doctor`                       | 健康检查(分组报告:error / warning)          |
@@ -80,9 +82,28 @@ npx csspilot sync-metadata
 ```bash
 npx csspilot validate                                # 默认 casesDir 全量
 npx csspilot validate tests/e2e/cases/order.yaml    # 指定文件/目录
+npx csspilot validate --runtime                     # 静态校验 + 真实界面 observe/probe
 ```
 
 检查:YAML 格式 → DSL 结构(zod schema)→ 语义规则(action/target 支持、必填字段、字段误用、locator 合法性、变量引用)。任何失败以退出码 1 结束。
+
+## discover / rehearse —— 从草稿到 Ready
+
+```bash
+npx csspilot discover tests/e2e/cases/order.yaml
+npx csspilot discover --target miniapp --url /pages/checkout/index --intent "提交订单"
+npx csspilot rehearse tests/e2e/cases/order.yaml
+```
+
+`discover` 只执行 launch/navigate/observe/probe，不执行业务副作用动作。Web 使用 AI aria snapshot；小程序融合运行时节点、WXML、边界框与模拟器截图。产物写入 `.testpilot/artifacts/discovery/`。意图发现模式会把已验证 locator 缓存在 `.testpilot/cache/locators.json`；每次复用前重新 probe，失效后自动 observe 并替换缓存。
+
+`rehearse` 会在可重置测试环境真实执行完整 Case：locator 动作前必须唯一、可见、可操作，动作后等待稳定并验证状态变化。全部数据行通过才签发 `.testpilot/ready/<case-id>.json`。代码、Case、数据或环境指纹变化后证书失效。
+
+彩排以可信度优先，不是正式 Run 的低成本替代：每个需要验证状态变化的动作都会做动作前观察、稳定轮询和动作后观察。小程序观察会枚举最多 200 个运行时节点，并分批读取节点属性、WXML、尺寸和偏移；复杂大页面或跨多页 Case 可能耗时数分钟。CI 应只对准备发布或明确变更的 Case 执行彩排，普通回归使用 `run --require-ready`。
+
+`.testpilot/artifacts/`、`.testpilot/cache/` 和 `.testpilot/ready/` 都是绑定当前机器与测试环境的临时数据，`init` 默认写入 `.gitignore`，不要提交 Git。CI 可把产物和证书作为单次流水线 artifact 在 job 间传递；本地与 CI 分别彩排，不共享证书。`pageStateHashes` 当前用于彩排证据与诊断，正式执行仍会逐 locator 重新 probe，不提供“宽松哈希”绕过验证。
+
+小程序 `trigger` 会参与动作后状态验证。若界面无变化且没有 `expectRequests` 证明副作用，该步骤记为 warning，当前彩排不会签发 Ready Certificate。
 
 ## list —— 列出用例
 
@@ -99,6 +120,7 @@ npx csspilot list --tag smoke
 npx csspilot run                                  # 按 testpilot.yaml 配置
 npx csspilot run tests/e2e/cases/order.yaml       # 指定用例
 npx csspilot run --tag smoke                      # 按标签
+npx csspilot run --require-ready                  # 正式运行前验证 Ready Certificate
 ```
 
 链路:Case Loader → DSL Validator → Execution Engine → Adapter(Playwright / WeChatIDE)→ Evidence → Reporter。校验失败的用例跳过并在输出中标注。

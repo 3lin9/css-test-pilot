@@ -32,6 +32,8 @@ AI → .agents/skills/testpilot(规范) → TestPilot CLI → DSL → Execution 
 │   ├── adapter-core/        # 适配器抽象(adapter/session/locator)
 │   ├── adapter-playwright/  # Web 驱动实现(Playwright)
 │   ├── adapter-wechatide/   # 小程序驱动实现(WeChat DevTools)
+│   ├── observation-core/    # UI 观察、元素指纹、probe、稳定性与 Ready Certificate 合同
+│   ├── discovery-engine/    # 候选排序、定位缓存、失效重观察
 │   ├── evidence/            # 取证产物:screenshot/video/trace/log(文件系统)
 │   ├── reporter/            # 报告:report/summary/diff(JSON + HTML)
 │   └── sdk/                 # 统一编程接口:CLI/Server/Agent 都经由 SDK 访问 Core
@@ -49,14 +51,19 @@ AI → .agents/skills/testpilot(规范) → TestPilot CLI → DSL → Execution 
 | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
 | `npx csspilot init`                | 把 TestPilot 接入当前业务项目(装 Skill 到 `.agents/skills/testpilot/`、初始化 `.testpilot/`、创建/复用 `tests/e2e`、生成 `testpilot.yaml`) |
 | `npx csspilot validate [files]`    | 校验 Case(DSL schema / action / locator / 变量引用 / adapter 支持)                                                                         |
+| `npx csspilot validate --runtime`  | 静态校验后启动真实环境执行只读 observe/probe                                                                                              |
+| `npx csspilot discover [files]`    | 只读采集 Web aria / 小程序运行时 WXML + screenshot，并验证当前可达 locator                                                                |
+| `npx csspilot rehearse [files]`    | 完整彩排、动作前 Actionability、动作后稳定/状态变化验证，通过后签发 Ready Certificate                                                     |
 | `npx csspilot list [--tag]`        | 列出用例                                                                                                                                   |
-| `npx csspilot run [files] [--tag]` | 执行用例(Case Loader → Validator → Engine → Adapter → Evidence → Reporter)                                                                 |
+| `npx csspilot run --require-ready` | 使用与当前代码、Case、环境、数据匹配的证书做确定性正式执行                                                                                  |
 | `npx csspilot report [--run id]`   | 生成 JSON + HTML 报告(`.testpilot/artifacts/runs/<id>/`)                                                                                   |
 | `npx csspilot doctor`              | 环境体检(Node / Playwright / WeChat DevTools / 项目配置)                                                                                   |
 | `npx csspilot sync-metadata`       | 把当前 Commit 的 Case 列表快照同步到 Server(CI 专用,Git Push 后)                                                                          |
 | `npx csspilot report --summary`    | 跨 run 汇总报告(`summary.html` + `summary.json`,默认统计最近 30 次)                                                                       |
 | `npx csspilot update`              | CLI 升级后同步接入物(Skill / `.env.testing`;不触碰 `.env` 与用例)                                                                          |
 | `npx csspilot ci init`             | 生成 CI 工作流模板(`.github/workflows/testpilot.yml`)                                                                                      |
+
+> `rehearse` 会真实执行并反复观察页面；小程序大页面或多步骤 Case 可能耗时数分钟，只应在可重置环境运行。`.testpilot/artifacts/`、`cache/`、`ready/` 是本地或单次 CI 临时数据，默认不提交 Git。
 
 ## DSL(V0.1)
 
@@ -100,7 +107,8 @@ Phase 12 Agent(✓ Web→Server→AgentOrchestrator→apps/agent;在 rootPath �
 增量 2(测试方法论,spec 见 `docs/superpowers/specs/`):
 Phase 13 测试需求评审 workflow + 工具链(✓ 评审工作流、`csspilot update`、`.env.testing` 自动加载、跨 run 汇总报告)
 Phase 14 数据驱动测试(✓ 数据集展开执行 / setup·teardown / 依赖预检 / QA 覆盖映射)
-Phase 15 三态判定 + charter 视角矩阵(✓ 失败三桶 product / infra / unverified → run 退出码 0/1/2;`charter:*` 视角 tags 与三分判定;AI 兜底回放缓存仅为蓝图,未实现)
+Phase 15 三态判定 + charter 视角矩阵(✓ 失败三桶 product / infra / unverified → run 退出码 0/1/2;`charter:*` 视角 tags 与三分判定)
+Phase 16 自主观察与一次成功执行(✓ Web aria observe/probe/actionability/稳定等待/彩排/证书;✓ 小程序运行时节点+WXML+截图融合观察、定位缓存失效重观察)
 ```
 
 ## SDK 与 Control Plane(增量)

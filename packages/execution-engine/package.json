@@ -9,6 +9,7 @@
     "@testpilot/adapter-core": "workspace:^",
     "@testpilot/core": "workspace:^",
     "@testpilot/dsl": "workspace:^",
-    "@testpilot/evidence": "workspace:^"
+    "@testpilot/evidence": "workspace:^",
+    "@testpilot/observation-core": "workspace:^"
   }
 }

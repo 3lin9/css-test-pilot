@@ -11,9 +11,12 @@ dist/
 # 测试与报告
 coverage/
 reports/
-artifacts/
+/artifacts/
 test-results/
 playwright-report/
+.testpilot/artifacts/
+.testpilot/cache/
+.testpilot/ready/
 
 # 本地数据(SQLite)
 *.db

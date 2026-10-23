@@ -72,6 +72,57 @@ function stubAdapterFactory(target: 'web'): AdapterFactory {
   }
 }
 
+function observingAdapterFactory(): AdapterFactory {
+  let route = 'about:blank'
+  const adapter: TestAdapter = {
+    target: 'web',
+    async launch() {},
+    async navigate(url: string) {
+      route = url
+    },
+    async click() {},
+    async input() {},
+    async select() {},
+    async wait() {},
+    async assert() {},
+    async extract() {
+      return '42'
+    },
+    async screenshot() {
+      return Buffer.from('png')
+    },
+    async observe() {
+      return {
+        target: 'web',
+        route,
+        semanticTree: route,
+        interactiveElements: [],
+        observedAt: new Date().toISOString(),
+        stateHash: route,
+      }
+    },
+    async probe(candidate) {
+      return {
+        candidate,
+        matchedCount: 1,
+        unique: true,
+        visible: true,
+        enabled: true,
+        editable: false,
+        covered: false,
+        actionable: true,
+        stateHash: route,
+        fingerprint: candidate.fingerprint,
+      }
+    },
+    async waitForStable() {
+      return { stable: true, durationMs: 1, samples: 2, stateHash: route }
+    },
+    async close() {},
+  }
+  return { target: 'web', create: async () => adapter }
+}
+
 async function makeProject(files: Record<string, string>): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), 'testpilot-sdk-'))
   for (const [file, content] of Object.entries(files)) {
@@ -296,6 +347,39 @@ describe('sdk:runs', () => {
     expect(payload?.summary.runId).toBe(summary.runId)
     expect(payload?.failures).toEqual([])
     await expect(readFile(report.html, 'utf8')).resolves.toContain('TestPilot 测试报告')
+  })
+
+  test('rehearse 签发证书，requireReady 校验当前 Case 指纹', async () => {
+    const root = await makeProject({ 'tests/e2e/cases/smoke.yaml': VALID_CASE })
+    const client = new TestPilotClient({ root })
+
+    const rehearsal = await client.rehearseCases({
+      adapters: [observingAdapterFactory()],
+    })
+    expect(rehearsal.summary.status).toBe('passed')
+    expect(rehearsal.readyCertificates).toHaveLength(1)
+    await expect(readFile(join(root, '.testpilot/ready/smoke-login.json'), 'utf8')).resolves.toContain(
+      '"status": "ready"',
+    )
+
+    await expect(
+      client.runCases({
+        adapters: [observingAdapterFactory()],
+        requireReady: true,
+      }),
+    ).resolves.toMatchObject({ summary: { status: 'passed' } })
+
+    await writeFile(
+      join(root, 'tests/e2e/cases/smoke.yaml'),
+      VALID_CASE.replace('冒烟 - 打开首页', '已修改名称'),
+      'utf8',
+    )
+    await expect(
+      client.runCases({
+        adapters: [observingAdapterFactory()],
+        requireReady: true,
+      }),
+    ).rejects.toMatchObject({ code: 'ENOT_READY' })
   })
 
   test('runCases:没有用例时抛 RunError', async () => {

@@ -30,6 +30,24 @@ export {
 } from './case-preparation'
 export { loadCaseDataFile } from './case-data'
 export {
+  discoverCases,
+  discoverIntent,
+  type CaseDiscoveryResult,
+  type DiscoverIntentOptions,
+  type DiscoveryOptions,
+  type DiscoveryProbe,
+  type DiscoveryResult,
+  type DiscoverySnapshot,
+} from './discovery'
+export {
+  buildReadyCertificate,
+  readReadyCertificate,
+  validateReadyCertificate,
+  writeReadyCertificate,
+  type BuildReadyCertificateInput,
+  type ReadyFingerprintInput,
+} from './ready'
+export {
   RunError,
   allocateRunId,
   createDefaultAdapters,

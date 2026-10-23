@@ -180,6 +180,55 @@ steps:
     expect(paths).toContain('steps[1].target')
   })
 
+  test('web 支持 testId / role+name / label / placeholder 语义定位', () => {
+    const result = validateCaseSource(`
+id: semantic-locators
+name: 语义定位
+steps:
+  - target: web
+    action: click
+    locator:
+      testId: submit-order
+  - target: web
+    action: click
+    locator:
+      role: button
+      name: 提交订单
+  - target: web
+    action: input
+    locator:
+      label: 手机号
+    value: "13800000000"
+  - target: web
+    action: input
+    locator:
+      placeholder: 请输入验证码
+    value: "123456"
+`)
+    expect(result.ok).toBe(true)
+  })
+
+  test('locator 只能提供一种策略,name 只能配合 role', () => {
+    const result = validateCaseSource(`
+id: invalid-semantic-locators
+name: 非法语义定位
+steps:
+  - target: web
+    action: click
+    locator:
+      testId: submit
+      css: ".submit"
+  - target: web
+    action: click
+    locator:
+      name: 提交
+`)
+    expect(result.ok).toBe(false)
+    expect(result.issues.map((issue) => issue.path)).toEqual(
+      expect.arrayContaining(['steps[0].locator', 'steps[1].locator.name']),
+    )
+  })
+
   test('validateCase 直接接收对象', () => {
     const issues = validateCase({
       id: 'obj-case',

@@ -20,12 +20,14 @@
     "paths": {
       "@testpilot/core": ["packages/core/src/index.ts"],
       "@testpilot/dsl": ["packages/dsl/src/index.ts"],
+      "@testpilot/discovery-engine": ["packages/discovery-engine/src/index.ts"],
       "@testpilot/execution-engine": ["packages/execution-engine/src/index.ts"],
       "@testpilot/adapter-core": ["packages/adapter-core/src/index.ts"],
       "@testpilot/adapter-api": ["packages/adapter-api/src/index.ts"],
       "@testpilot/adapter-playwright": ["packages/adapter-playwright/src/index.ts"],
       "@testpilot/adapter-wechatide": ["packages/adapter-wechatide/src/index.ts"],
       "@testpilot/evidence": ["packages/evidence/src/index.ts"],
+      "@testpilot/observation-core": ["packages/observation-core/src/index.ts"],
       "@testpilot/reporter": ["packages/reporter/src/index.ts"],
       "@testpilot/sdk": ["packages/sdk/src/index.ts"],
       "@testpilot/agent": ["apps/agent/src/index.ts"]

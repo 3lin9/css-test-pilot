@@ -9,31 +9,55 @@ import type {
   RuntimeDiagnostics,
   TestAdapter,
 } from '@testpilot/adapter-core'
+import {
+  fingerprintMatches,
+  observationStateHash,
+  stableHash,
+  type ElementFingerprint,
+  type LocatorCandidate,
+  type ObservedElement,
+  type ProbeResult,
+  type StabilityOptions,
+  type StabilityResult,
+  type UIObservation,
+} from '@testpilot/observation-core'
 import type { MiniappAdapterConfig } from './project'
 
 /** 与 miniprogram-automator 运行时结构对应的最小类型(仅用到的能力) */
 interface AutomatorElement {
+  tagName?: string
   tap(): Promise<void>
   longpress(): Promise<void>
   text(): Promise<string>
   input(value: string): Promise<void>
   trigger(type: string, detail?: Record<string, unknown>): Promise<void>
   callMethod(method: string, ...args: unknown[]): Promise<unknown>
-  touchstart(options?: { touches?: unknown[]; changedTouches?: unknown[] }): Promise<void>
-  touchmove(options?: { touches?: unknown[]; changedTouches?: unknown[] }): Promise<void>
-  touchend(options?: { touches?: unknown[]; changedTouches?: unknown[] }): Promise<void>
+  touchstart(options?: { touches?: unknown[]; changeTouches?: unknown[] }): Promise<void>
+  touchmove(options?: { touches?: unknown[]; changeTouches?: unknown[] }): Promise<void>
+  touchend(options?: { touches?: unknown[]; changeTouches?: unknown[] }): Promise<void>
   attribute(name: string): Promise<unknown>
   property(name: string): Promise<unknown>
   setData(data: Record<string, unknown>): Promise<void>
-  scrollTo(scrollTop: number): Promise<void>
+  scrollTo(x: number, y: number): Promise<void>
   swipeTo(index: number): Promise<void>
   slideTo(value: number): Promise<void>
   moveTo(x: number, y: number): Promise<void>
+  size?(): Promise<{ width: number | string; height: number | string }>
+  offset?(): Promise<{
+    left?: number | string
+    top?: number | string
+    x?: number | string
+    y?: number | string
+  }>
+  outerWxml?(): Promise<string>
 }
 
 interface AutomatorPage {
+  path?: string
+  query?: Record<string, string>
   $(selector: string): Promise<AutomatorElement | null>
   $$(selector: string): Promise<AutomatorElement[]>
+  getElementsByXpath?(selector: string): Promise<AutomatorElement[]>
   waitFor(selectorOrMs: string | number): Promise<unknown>
   data(path?: string): Promise<unknown>
   setData(data: Record<string, unknown>): Promise<void>
@@ -42,9 +66,9 @@ interface AutomatorPage {
 
 export interface AutomatorProgram {
   reLaunch(url: string): Promise<unknown>
-  currentPage(): Promise<AutomatorPage>
-  screenshot(): Promise<string>
-  disconnect(): Promise<void>
+  currentPage(): Promise<AutomatorPage | undefined>
+  screenshot(): Promise<string | void>
+  disconnect(): void | Promise<void>
   close(): Promise<void>
   exposeFunction(name: string, callback: (value: unknown) => void): Promise<void>
   mockWxMethod(
@@ -60,7 +84,7 @@ export interface AutomatorProgram {
   /** 以下为可选能力:旧版本 SDK / 测试桩可能未提供 */
   callWxMethod?(method: string, ...args: unknown[]): Promise<unknown>
   pageScrollTo?(scrollTop: number): Promise<void>
-  pageStack?(): Promise<Array<Record<string, unknown>>>
+  pageStack?(): Promise<AutomatorPage[]>
   systemInfo?(): Promise<Record<string, unknown>>
   on?(event: string, listener: (payload: unknown) => void): void
 }
@@ -83,6 +107,7 @@ const CONNECTION_LOST = /connection closed|not connected/i
 const DIAGNOSTICS_BUFFER_MAX = 200
 /** 单条 console 取证文本的截断长度 */
 const CONSOLE_TEXT_LIMIT = 500
+const OBSERVATION_LIMIT = 200
 
 export const automatorLauncher: AutomatorLauncher = {
   launch: async (options) => {
@@ -234,8 +259,8 @@ export class MiniAppAdapter implements TestAdapter {
   private async waitForPageReady(timeoutMs = PAGE_READY_WAIT_MS): Promise<void> {
     const startedAt = Date.now()
     for (;;) {
-      const page = await (await this.getProgram()).currentPage()
-      const data = await page.data().catch(() => undefined)
+      const page = await this.currentPage().catch(() => undefined)
+      const data = await page?.data().catch(() => undefined)
       if (data !== undefined && data !== null) return
       if (Date.now() - startedAt > timeoutMs) {
         throw new TestPilotError(
@@ -261,9 +286,9 @@ export class MiniAppAdapter implements TestAdapter {
 
   async wait(locator: CaseLocator | undefined, timeoutMs: number | undefined): Promise<void> {
     await this.runWithReconnect(async () => {
-      const page = await (await this.getProgram()).currentPage()
+      const page = await this.currentPage()
       if (locator) {
-        await page.waitFor(this.cssSelector(locator))
+        await this.waitForElement(locator, timeoutMs ?? ELEMENT_WAIT_MS)
         return
       }
       await page.waitFor(timeoutMs ?? 1_000)
@@ -314,7 +339,7 @@ export class MiniAppAdapter implements TestAdapter {
         const element = await this.element(locator)
         return element.callMethod(methodName, ...args)
       }
-      const page = await (await this.getProgram()).currentPage()
+      const page = await this.currentPage()
       return page.callMethod(methodName, ...args)
     })
   }
@@ -386,7 +411,7 @@ export class MiniAppAdapter implements TestAdapter {
   /** 读取页面 data(点号路径,缺省为整个 data 对象) */
   async getData(dataPath?: string): Promise<unknown> {
     return this.runWithReconnect(async () => {
-      const page = await (await this.getProgram()).currentPage()
+      const page = await this.currentPage()
       return page.data(dataPath)
     })
   }
@@ -398,7 +423,7 @@ export class MiniAppAdapter implements TestAdapter {
         await (await this.element(locator)).setData(patch)
         return
       }
-      const page = await (await this.getProgram()).currentPage()
+      const page = await this.currentPage()
       await page.setData(patch)
     })
   }
@@ -406,7 +431,7 @@ export class MiniAppAdapter implements TestAdapter {
   /** 断言页面 data 路径的值包含 expected(数据绑定未完成时轮询等待) */
   async assertData(dataPath: string, expected: string): Promise<void> {
     await this.runWithReconnect(async () => {
-      const page = await (await this.getProgram()).currentPage()
+      const page = await this.currentPage()
       const wanted = expected.trim()
       const startedAt = Date.now()
       for (;;) {
@@ -453,7 +478,7 @@ export class MiniAppAdapter implements TestAdapter {
   ): Promise<void> {
     await this.runWithReconnect(async () => {
       const element = await this.element(locator)
-      const options = { touches: [...touches], changedTouches: [...changedTouches] }
+      const options = { touches: [...touches], changeTouches: [...changedTouches] }
       if (phase === 'touchstart') await element.touchstart(options)
       else if (phase === 'touchmove') await element.touchmove(options)
       else if (phase === 'touchend') await element.touchend(options)
@@ -465,7 +490,7 @@ export class MiniAppAdapter implements TestAdapter {
   async scroll(locator: CaseLocator | undefined, scrollTop: number): Promise<void> {
     await this.runWithReconnect(async () => {
       if (locator) {
-        await (await this.element(locator)).scrollTo(scrollTop)
+        await (await this.element(locator)).scrollTo(0, scrollTop)
         return
       }
       const program = await this.getProgram()
@@ -497,7 +522,7 @@ export class MiniAppAdapter implements TestAdapter {
   /** 统计匹配元素数量(单次读取;存在性/计数断言的重试语义由引擎负责) */
   async countElements(locator: CaseLocator): Promise<number> {
     return this.runWithReconnect(async () => {
-      const page = await (await this.getProgram()).currentPage()
+      const page = await this.currentPage()
       const elements = await page.$$(this.cssSelector(locator))
       return elements.length
     })
@@ -510,15 +535,19 @@ export class MiniAppAdapter implements TestAdapter {
 
   /** 读取元素 property(miniapp 自定义组件实例属性) */
   async getElementProperty(locator: CaseLocator, name: string): Promise<unknown> {
-    return this.runWithReconnect(async () => (await this.element(locator)).property(name))
+    return this.runWithReconnect(async () =>
+      (await this.element(locator)).property(name).catch(() => undefined),
+    )
   }
 
   /** 导出运行时诊断:console 尾部 / 异常 / 页面栈 / systemInfo(失败取证由引擎落盘) */
   async readDiagnostics(): Promise<RuntimeDiagnostics> {
     const program = this.program
-    const pageStack = (await program?.pageStack?.().catch(() => undefined)) as
-      | RuntimeDiagnostics['pageStack']
-      | undefined
+    const rawPageStack = await program?.pageStack?.().catch(() => undefined)
+    const pageStack = rawPageStack?.map((page) => ({
+      path: page.path,
+      ...(page.query !== undefined ? { query: page.query } : {}),
+    }))
     const systemInfo = (await program?.systemInfo?.().catch(() => undefined)) as
       | RuntimeDiagnostics['systemInfo']
       | undefined
@@ -559,8 +588,92 @@ export class MiniAppAdapter implements TestAdapter {
   async screenshot(): Promise<Buffer> {
     return this.runWithReconnect(async () => {
       const base64 = await (await this.getProgram()).screenshot()
+      if (typeof base64 !== 'string') {
+        throw new TestPilotError('SCREENSHOT_FAILED', '微信开发者工具未返回截图数据')
+      }
       return Buffer.from(base64, 'base64')
     })
+  }
+
+  /** 运行时节点树 + WXML + 模拟器截图的融合观察；不读取 input value。 */
+  async observe(intent?: string): Promise<UIObservation> {
+    return this.observePage(true, intent)
+  }
+
+  async probe(candidate: LocatorCandidate): Promise<ProbeResult> {
+    return this.runWithReconnect(async () => {
+      const page = await this.currentPage()
+      const elements = await page.$$(this.cssSelector(candidate.locator))
+      const matchedCount = elements.length
+      const unique = matchedCount === 1
+      const element = elements[0]
+      let visible = false
+      let enabled = false
+      let editable = false
+      let fingerprint: ElementFingerprint | undefined
+      if (unique && element) {
+        const observed = await this.inspectElement(element, 0)
+        visible = observed.visible
+        enabled = observed.enabled
+        editable = observed.editable
+        fingerprint = observed.fingerprint
+      }
+      const identityMatches =
+        fingerprint !== undefined && fingerprintMatches(candidate.fingerprint, fingerprint)
+      const actionable = unique && visible && enabled && identityMatches
+      return {
+        candidate,
+        matchedCount,
+        unique,
+        visible,
+        enabled,
+        editable,
+        covered: false,
+        actionable,
+        stateHash: stableHash({ route: miniappRoute(page) }),
+        fingerprint,
+        reason: actionable
+          ? undefined
+          : !unique
+            ? `locator 命中 ${matchedCount} 个元素`
+            : !identityMatches
+              ? '元素指纹与候选不一致'
+              : !visible
+                ? '元素不可见'
+                : !enabled
+                  ? '元素未启用'
+                  : '元素不可操作',
+      }
+    })
+  }
+
+  async waitForStable(options: StabilityOptions = {}): Promise<StabilityResult> {
+    const timeoutMs = options.timeoutMs ?? 5_000
+    const quietWindowMs = options.quietWindowMs ?? 500
+    const pollMs = options.pollMs ?? 100
+    const startedAt = Date.now()
+    let stableSince = startedAt
+    let previous = ''
+    let latest = ''
+    let samples = 0
+    while (Date.now() - startedAt <= timeoutMs) {
+      latest = (await this.observePage(false)).stateHash
+      samples += 1
+      if (latest !== previous) {
+        previous = latest
+        stableSince = Date.now()
+      } else if (Date.now() - stableSince >= quietWindowMs) {
+        return { stable: true, durationMs: Date.now() - startedAt, samples, stateHash: latest }
+      }
+      await delay(pollMs)
+    }
+    return {
+      stable: false,
+      durationMs: Date.now() - startedAt,
+      samples,
+      stateHash: latest,
+      reason: `页面在 ${timeoutMs}ms 内未稳定`,
+    }
   }
 
   async startRequestCapture(): Promise<void> {
@@ -615,7 +728,7 @@ export class MiniAppAdapter implements TestAdapter {
     if (this.config.closeIde) {
       await program.close().catch(() => undefined)
     } else {
-      await program.disconnect().catch(() => undefined)
+      await Promise.resolve(program.disconnect()).catch(() => undefined)
     }
   }
 
@@ -644,6 +757,14 @@ export class MiniAppAdapter implements TestAdapter {
     return this.program!
   }
 
+  private async currentPage(): Promise<AutomatorPage> {
+    const page = await (await this.getProgram()).currentPage()
+    if (!page) {
+      throw new TestPilotError('PAGE_NOT_READY', '微信开发者工具当前没有可用页面')
+    }
+    return page
+  }
+
   private cssSelector(locator: CaseLocator): string {
     if (locator.css === undefined) {
       throw new Error('小程序端仅支持 css locator(class/id),不支持 text')
@@ -651,18 +772,220 @@ export class MiniAppAdapter implements TestAdapter {
     return locator.css
   }
 
+  private async observePage(withScreenshot: boolean, intent?: string): Promise<UIObservation> {
+    return this.runWithReconnect(async () => {
+      const program = await this.getProgram()
+      const page = await this.currentPage()
+      const elements = (
+        page.getElementsByXpath
+          ? await page.getElementsByXpath('//*')
+          : await page.$$('*')
+      ).slice(0, OBSERVATION_LIMIT)
+      const interactiveElements = await inspectInBatches(
+        elements,
+        (element, index) => this.inspectElement(element, index, intent),
+      )
+      const root = await page.$('page').catch(() => null)
+      const runtimeMarkup =
+        root && typeof root.outerWxml === 'function'
+          ? await root.outerWxml().catch(() => undefined)
+          : undefined
+      const screenshotBase64 = withScreenshot ? await program.screenshot() : undefined
+      if (withScreenshot && typeof screenshotBase64 !== 'string') {
+        throw new TestPilotError('SCREENSHOT_FAILED', '微信开发者工具未返回截图数据')
+      }
+      const screenshot =
+        typeof screenshotBase64 === 'string'
+          ? Buffer.from(screenshotBase64, 'base64')
+          : undefined
+      const semanticTree = interactiveElements
+        .map((element) => {
+          const label = element.name ?? element.text ?? element.css ?? element.tag ?? 'element'
+          const box = element.box
+            ? ` [box=${element.box.x},${element.box.y},${element.box.width},${element.box.height}]`
+            : ''
+          return `- ${element.role ?? element.tag ?? 'element'} "${label}"${box}`
+        })
+        .join('\n')
+      const partial: Omit<UIObservation, 'stateHash'> = {
+        target: 'miniapp',
+        route: miniappRoute(page),
+        semanticTree,
+        runtimeMarkup,
+        screenshot,
+        interactiveElements,
+        networkActivity: (this.requestCapture?.requests ?? []).map((request) => ({
+          method: request.method,
+          url: sanitizeObservedUrl(request.url),
+        })),
+        observedAt: new Date().toISOString(),
+      }
+      return { ...partial, stateHash: observationStateHash(partial) }
+    })
+  }
+
+  private async inspectElement(
+    element: AutomatorElement,
+    index: number,
+    intent?: string,
+  ): Promise<ObservedElement> {
+    const [text, id, className, role, ariaLabel, placeholder, disabled, type, size, offset] =
+      await Promise.all([
+        element.text().catch(() => ''),
+        safeAttribute(element, 'id'),
+        safeAttribute(element, 'class'),
+        safeAttribute(element, 'role'),
+        safeAttribute(element, 'aria-label'),
+        safeAttribute(element, 'placeholder'),
+        safeAttribute(element, 'disabled'),
+        safeAttribute(element, 'type'),
+        element.size ? element.size().catch(() => undefined) : undefined,
+        element.offset ? element.offset().catch(() => undefined) : undefined,
+      ])
+    const tag = element.tagName ?? 'element'
+    const name = stringValue(ariaLabel) ?? (text.trim() || undefined)
+    const box =
+      size && offset
+        ? {
+            x: Number(offset.left ?? offset.x ?? 0),
+            y: Number(offset.top ?? offset.y ?? 0),
+            width: Number(size.width),
+            height: Number(size.height),
+          }
+        : undefined
+    const stableAttributes: Record<string, string> = {}
+    for (const [key, value] of [
+      ['id', id],
+      ['class', className],
+      ['type', type],
+      ['role', role],
+    ] as const) {
+      const normalized = stringValue(value)
+      if (normalized) stableAttributes[key] = normalized
+    }
+    const fingerprint: ElementFingerprint = {
+      tag,
+      role: stringValue(role),
+      name,
+      stableAttributes,
+      ancestorPath: [],
+      textHash: text.trim() ? stableHash(text.trim()) : undefined,
+      box,
+    }
+    const candidates: LocatorCandidate[] = []
+    const add = (css: string, baseScore: number, description: string) => {
+      const bonus =
+        intent && description.toLocaleLowerCase().includes(intent.trim().toLocaleLowerCase())
+          ? 5
+          : 0
+      candidates.push({
+        locator: { css },
+        strategy: 'css',
+        score: baseScore + bonus,
+        description,
+        fingerprint,
+      })
+    }
+    const idText = stringValue(id)
+    if (idText) add(`#${escapeCssIdentifier(idText)}`, 100, name ?? idText)
+    const classes = (stringValue(className) ?? '')
+      .split(/\s+/)
+      .filter((value) => value && !/\d{4,}|^(wx-|css|sc)-/i.test(value))
+    if (classes.length > 0) {
+      add(`.${classes.slice(0, 2).map(escapeCssIdentifier).join('.')}`, 70, name ?? classes[0]!)
+    }
+    if (tag !== 'element') add(tag, 20, name ?? tag)
+    candidates.sort((left, right) => right.score - left.score)
+    const disabledValue = stringValue(disabled)
+    return {
+      index,
+      tag,
+      role: stringValue(role),
+      name,
+      text: text.trim() || undefined,
+      placeholder: stringValue(placeholder),
+      css: idText
+        ? `#${escapeCssIdentifier(idText)}`
+        : classes.length > 0
+          ? `.${classes.slice(0, 2).map(escapeCssIdentifier).join('.')}`
+          : tag,
+      visible: box ? box.width > 0 && box.height > 0 : true,
+      enabled:
+        disabledValue === undefined ||
+        disabledValue === '' ||
+        disabledValue === 'false' ||
+        disabledValue === '0',
+      editable: tag === 'input' || tag === 'textarea',
+      covered: false,
+      box,
+      fingerprint,
+      candidates,
+    }
+  }
+
   /** 轮询等待元素出现(模拟器编译/渲染期间元素可能尚未挂载) */
   private async element(locator: CaseLocator): Promise<AutomatorElement> {
+    return this.waitForElement(locator, ELEMENT_WAIT_MS)
+  }
+
+  private async waitForElement(
+    locator: CaseLocator,
+    timeoutMs: number,
+  ): Promise<AutomatorElement> {
     const selector = this.cssSelector(locator)
     const startedAt = Date.now()
     for (;;) {
-      const page = await (await this.getProgram()).currentPage()
-      const element = await page.$(selector)
-      if (element) return element
-      if (Date.now() - startedAt > ELEMENT_WAIT_MS) {
-        throw new TestPilotError('ELEMENT_NOT_FOUND', `等待元素超时(${ELEMENT_WAIT_MS}ms):${selector}`)
+      try {
+        const page = await this.currentPage()
+        const element = await page.$(selector)
+        if (element) return element
+      } catch (err) {
+        if (!(err instanceof TestPilotError) || err.code !== 'PAGE_NOT_READY') throw err
+      }
+      if (Date.now() - startedAt > timeoutMs) {
+        throw new TestPilotError('ELEMENT_NOT_FOUND', `等待元素超时(${timeoutMs}ms):${selector}`)
       }
       await delay(500)
     }
   }
+}
+
+async function safeAttribute(element: AutomatorElement, name: string): Promise<unknown> {
+  return element.attribute(name).catch(() => undefined)
+}
+
+function stringValue(value: unknown): string | undefined {
+  if (typeof value === 'string') return value
+  if (value === undefined || value === null) return undefined
+  return String(value)
+}
+
+function miniappRoute(page: AutomatorPage): string {
+  const path = page.path ?? ''
+  const query = new URLSearchParams(page.query ?? {}).toString()
+  return query ? `${path}?${query}` : path
+}
+
+function sanitizeObservedUrl(url: string): string {
+  const query = url.indexOf('?')
+  return query >= 0 ? `${url.slice(0, query)}?<redacted>` : url
+}
+
+function escapeCssIdentifier(value: string): string {
+  return value.replace(/([^A-Za-z0-9_-])/g, '\\$1')
+}
+
+async function inspectInBatches<T, R>(
+  items: readonly T[],
+  inspect: (item: T, index: number) => Promise<R>,
+  batchSize = 20,
+): Promise<R[]> {
+  const results: R[] = []
+  for (let start = 0; start < items.length; start += batchSize) {
+    const batch = items.slice(start, start + batchSize)
+    results.push(
+      ...(await Promise.all(batch.map((item, offset) => inspect(item, start + offset)))),
+    )
+  }
+  return results
 }

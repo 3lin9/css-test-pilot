@@ -7,6 +7,7 @@ import { TestPilotError } from '@testpilot/core'
 import { AdapterResolver, ArtifactManager, ExecutionContext, TestRunner, executeStep } from '@testpilot/execution-engine'
 import type { TestStep } from '@testpilot/dsl'
 import type { CapturedRequest, TestAdapter } from '@testpilot/adapter-core'
+import type { RehearsalEvidence, UIObservation } from '@testpilot/observation-core'
 
 /** 进程内 mock adapter:验证引擎编排,不启动真实浏览器 */
 class MockAdapter implements TestAdapter {
@@ -389,6 +390,212 @@ describe('executeStep 错误码化', () => {
     expect(result.status).toBe('failed')
     expect(result.error).toContain('missingVar')
     expect(result.errorCode).toBe('PREREQ_VARIABLE_MISSING')
+  })
+})
+
+describe('executeStep 彩排验证', () => {
+  class ObservingAdapter extends MockAdapter {
+    observationIndex = 0
+    readonly states: string[]
+
+    constructor(states: string[]) {
+      super()
+      this.states = states
+    }
+
+    async observe(): Promise<UIObservation> {
+      const stateHash = this.states[Math.min(this.observationIndex++, this.states.length - 1)]!
+      return {
+        target: 'web',
+        route: '/checkout',
+        semanticTree: stateHash,
+        interactiveElements: [],
+        observedAt: new Date().toISOString(),
+        stateHash,
+      }
+    }
+
+    async probe(candidate: Parameters<NonNullable<TestAdapter['probe']>>[0]) {
+      return {
+        candidate,
+        matchedCount: 1,
+        unique: true,
+        visible: true,
+        enabled: true,
+        editable: false,
+        covered: false,
+        actionable: true,
+        stateHash: 'before',
+        fingerprint: candidate.fingerprint,
+      }
+    }
+
+    async waitForStable() {
+      return { stable: true, durationMs: 10, samples: 2, stateHash: 'after' }
+    }
+
+    async trigger(): Promise<void> {}
+  }
+
+  async function rehearseClick(adapter: ObservingAdapter) {
+    const root = await mkdtemp(join(tmpdir(), 'testpilot-rehearse-step-'))
+    const artifacts = new ArtifactManager(join(root, 'run'))
+    await artifacts.prepare()
+    const evidence: RehearsalEvidence = { verifiedLocators: [], pageStateHashes: {} }
+    const result = await executeStep(
+      { target: 'web', action: 'click', locator: { css: '.submit' } },
+      0,
+      adapter,
+      new ExecutionContext(),
+      artifacts,
+      { screenshotName: 's0', rehearsal: { phase: 'steps', evidence } },
+    )
+    return { result, evidence }
+  }
+
+  test('彩排记录 probe、稳定性和动作前后状态变化', async () => {
+    const { result, evidence } = await rehearseClick(new ObservingAdapter(['before', 'after']))
+    expect(result.status).toBe('passed')
+    expect(evidence.verifiedLocators[0]).toMatchObject({
+      phase: 'steps',
+      index: 0,
+      locator: { css: '.submit' },
+      transition: { changed: true, beforeHash: 'before', afterHash: 'after' },
+    })
+    expect(evidence.pageStateHashes['web:/checkout']).toBe('after')
+  })
+
+  test('click 没有 UI/请求变化时彩排失败，不能签发 ready', async () => {
+    const { result } = await rehearseClick(new ObservingAdapter(['same', 'same']))
+    expect(result.status).toBe('failed')
+    expect(result.errorCode).toBe('NO_STATE_CHANGE')
+  })
+
+  test('trigger 彩排无 UI/请求变化时记 warning，不能静默视为已验证', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'testpilot-rehearse-trigger-'))
+    const artifacts = new ArtifactManager(join(root, 'run'))
+    await artifacts.prepare()
+    const adapter = new ObservingAdapter(['same', 'same'])
+    const evidence: RehearsalEvidence = { verifiedLocators: [], pageStateHashes: {} }
+
+    const result = await executeStep(
+      {
+        target: 'miniapp',
+        action: 'trigger',
+        locator: { css: '.consent' },
+        eventType: 'agree',
+      },
+      0,
+      adapter,
+      new ExecutionContext(),
+      artifacts,
+      { screenshotName: 'trigger', rehearsal: { phase: 'steps', evidence } },
+    )
+
+    expect(result.status).toBe('warning')
+    expect(result.error).toContain('trigger 执行后界面状态未变化')
+    expect(evidence.verifiedLocators[0]?.transition?.changed).toBe(false)
+
+    const runnerAdapter = new ObservingAdapter(['same', 'same'])
+    const resolver = new AdapterResolver()
+    resolver.register({ target: 'miniapp', create: async () => runnerAdapter })
+    const summary = await new TestRunner({
+      resolver,
+      runsRoot: join(root, 'runs'),
+      rehearsalEvidence: {},
+    }).run([
+      {
+        file: 'trigger.case.yaml',
+        data: {
+          id: 'trigger-warning',
+          name: 'trigger 无可见副作用',
+          steps: [
+            {
+              target: 'miniapp',
+              action: 'trigger',
+              locator: { css: '.consent' },
+              eventType: 'agree',
+            },
+          ],
+        },
+      },
+    ])
+    expect(summary.cases[0]?.warnings?.[0]).toContain('trigger 执行后界面状态未变化')
+    expect(summary.totals.stepsWarning).toBe(1)
+  })
+
+  test('正式 require-ready 等待证书 locator 可操作后再执行，而非单次即时 probe', async () => {
+    vi.useFakeTimers()
+    const root = await mkdtemp(join(tmpdir(), 'testpilot-ready-step-'))
+    const artifacts = new ArtifactManager(join(root, 'run'))
+    await artifacts.prepare()
+    const adapter = new ObservingAdapter(['state'])
+    const verifiedCandidate = {
+      locator: { css: '.fresh-submit' },
+      strategy: 'css' as const,
+      score: 100,
+      description: '提交订单',
+      fingerprint: { stableAttributes: {}, ancestorPath: [] },
+    }
+    const evidence: RehearsalEvidence = {
+      pageStateHashes: {},
+      verifiedLocators: [
+        {
+          phase: 'steps',
+          index: 0,
+          target: 'web',
+          locator: { css: '.fresh-submit' },
+          probe: {
+            candidate: verifiedCandidate,
+            matchedCount: 1,
+            unique: true,
+            visible: true,
+            enabled: true,
+            editable: false,
+            covered: false,
+            actionable: true,
+            stateHash: 'state',
+            fingerprint: verifiedCandidate.fingerprint,
+          },
+        },
+      ],
+    }
+    let probeAttempts = 0
+    adapter.probe = vi.fn(async (candidate) => {
+      probeAttempts += 1
+      const actionable = probeAttempts >= 2
+      return {
+        candidate,
+        matchedCount: actionable ? 1 : 0,
+        unique: actionable,
+        visible: actionable,
+        enabled: actionable,
+        editable: false,
+        covered: false,
+        actionable,
+        stateHash: 'state',
+        fingerprint: actionable ? candidate.fingerprint : undefined,
+        reason: actionable ? undefined : 'locator 命中 0 个元素',
+      }
+    })
+    try {
+      const pending = executeStep(
+        { target: 'web', action: 'click', locator: { css: '.stale-submit' } },
+        0,
+        adapter,
+        new ExecutionContext(),
+        artifacts,
+        { screenshotName: 's0', ready: { phase: 'steps', evidence } },
+      )
+      await vi.advanceTimersByTimeAsync(200)
+      const result = await pending
+      expect(result.status).toBe('passed')
+      expect(adapter.probe).toHaveBeenCalledTimes(2)
+      expect(adapter.clicked).toContain('.fresh-submit')
+      expect(adapter.clicked).not.toContain('.stale-submit')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
 

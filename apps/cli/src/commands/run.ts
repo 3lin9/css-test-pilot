@@ -14,12 +14,14 @@ export function makeRunCommand(): Command {
     .description('执行测试用例(默认运行 testpilot.yaml 配置的 Case)')
     .argument('[paths...]', '用例文件或目录,默认按项目配置')
     .option('--tag <tag>', '按标签过滤用例')
-    .action(async (paths: string[] | undefined, options: { tag?: string }) => {
+    .option('--require-ready', '仅运行持有且匹配当前代码/环境/数据的 Ready Certificate 的 Case')
+    .action(async (paths: string[] | undefined, options: { tag?: string; requireReady?: boolean }) => {
       const client = new TestPilotClient()
       try {
         const { summary, invalid, tagFiltered, missingAccounts } = await client.runCases({
           paths,
           tag: options.tag,
+          requireReady: options.requireReady,
           accounts: collectAccountEnv(),
           onEvent: consoleEventHandler,
         })

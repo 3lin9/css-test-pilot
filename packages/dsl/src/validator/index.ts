@@ -166,12 +166,19 @@ function checkStep(step: TestStep, at: string, declared: Set<string>, issues: Ds
     checkLocator(step, at, issues)
   }
 
-  // 小程序 WXML 无法按文案查询,text locator 仅 web 可用
-  if (step.target === 'miniapp' && step.locator?.text !== undefined) {
+  // 小程序 automator 只接受 CSS selector；Web 语义定位器不能直接映射。
+  if (
+    step.target === 'miniapp' &&
+    step.locator &&
+    Object.entries(step.locator).some(([key, value]) => key !== 'css' && value !== undefined)
+  ) {
+    const unsupported = Object.keys(step.locator).find(
+      (key) => key !== 'css' && step.locator?.[key as keyof typeof step.locator] !== undefined,
+    )
     issues.push({
-      path: `${at}.locator.text`,
+      path: `${at}.locator.${unsupported ?? 'unknown'}`,
       code: 'semantic',
-      message: '小程序端暂不支持 text locator,请使用 css 定位 class/id',
+      message: '小程序端仅支持 css locator；请使用运行时观察生成稳定 class/id',
     })
   }
 
@@ -340,11 +347,25 @@ function checkLocator(step: TestStep, at: string, issues: DslIssue[]): void {
     }
     return
   }
-  const provided = [locator.text !== undefined, locator.css !== undefined].filter(Boolean).length
+  const provided = [
+    locator.text !== undefined,
+    locator.css !== undefined,
+    locator.testId !== undefined,
+    locator.role !== undefined,
+    locator.label !== undefined,
+    locator.placeholder !== undefined,
+  ].filter(Boolean).length
   if (provided === 0) {
-    issues.push({ path: `${at}.locator`, code: 'semantic', message: 'locator 必须提供 text 或 css 之一' })
-  } else if (provided === 2) {
-    issues.push({ path: `${at}.locator`, code: 'semantic', message: 'locator 的 text 与 css 只能二选一' })
+    issues.push({ path: `${at}.locator`, code: 'semantic', message: 'locator 必须提供一种定位策略' })
+  } else if (provided > 1) {
+    issues.push({ path: `${at}.locator`, code: 'semantic', message: 'locator 只能提供一种定位策略' })
+  }
+  if (locator.name !== undefined && locator.role === undefined) {
+    issues.push({
+      path: `${at}.locator.name`,
+      code: 'semantic',
+      message: 'locator.name 只能与 locator.role 配合使用',
+    })
   }
 }
 
@@ -368,6 +389,10 @@ function checkVariableRefs(
   collect('methodName', step.methodName)
   collect('locator.text', step.locator?.text)
   collect('locator.css', step.locator?.css)
+  collect('locator.testId', step.locator?.testId)
+  collect('locator.name', step.locator?.name)
+  collect('locator.label', step.locator?.label)
+  collect('locator.placeholder', step.locator?.placeholder)
   if (typeof step.body === 'string') collect('body', step.body)
   else if (step.body) collect('body', JSON.stringify(step.body))
   for (const headerValue of Object.values(step.headers ?? {})) collect('headers', headerValue)

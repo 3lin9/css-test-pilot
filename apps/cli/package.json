@@ -1,6 +1,6 @@
 {
   "name": "csspilot",
-  "version": "0.7.2",
+  "version": "0.8.0",
   "description": "TestPilot — AI Native 跨端业务测试基础设施 CLI",
   "license": "MIT",
   "repository": {
@@ -25,7 +25,7 @@
   },
   "dependencies": {
     "miniprogram-automator": "^0.12.0",
-    "playwright": "^1.53.0"
+    "playwright": "^1.63.0"
   },
   "devDependencies": {
     "@testpilot/core": "workspace:^",

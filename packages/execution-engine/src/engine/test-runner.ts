@@ -2,6 +2,7 @@ import { writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { RESULT_FILE, type CaseResult, type RunSummary } from '@testpilot/core'
 import type { TestCase } from '@testpilot/dsl'
+import type { RehearsalEvidence } from '@testpilot/observation-core'
 import { ArtifactManager } from '../artifacts'
 import { EventBus, ndjsonSubscriber, type RunEventSubscriber } from '../events'
 import { allocateRunId, ensureRunDir } from '../lifecycle'
@@ -33,6 +34,10 @@ export interface TestRunnerOptions {
   signal?: AbortSignal
   /** accountRef -> 凭据原文;用例声明 accountRef 时注入为 ${account.*} 变量 */
   accounts?: Record<string, string>
+  /** 提供时启用运行时彩排，并按 templateId 收集 probe/状态变化证据。 */
+  rehearsalEvidence?: Record<string, RehearsalEvidence>
+  /** require-ready 正式执行时，按 templateId 提供证书中的已验证 locator。 */
+  readyEvidence?: Record<string, RehearsalEvidence>
 }
 
 /** 编排一次运行:分配 runId -> 逐用例执行 -> 汇总写盘 -> 关闭 adapter */
@@ -43,6 +48,8 @@ export class TestRunner {
   private readonly extraSubscriber: RunEventSubscriber | undefined
   private readonly signal: AbortSignal | undefined
   private readonly accounts: Record<string, string> | undefined
+  private readonly rehearsalEvidence: Record<string, RehearsalEvidence> | undefined
+  private readonly readyEvidence: Record<string, RehearsalEvidence> | undefined
 
   constructor(options: TestRunnerOptions) {
     this.resolver = options.resolver
@@ -51,6 +58,8 @@ export class TestRunner {
     this.extraSubscriber = options.onEvent
     this.signal = options.signal
     this.accounts = options.accounts
+    this.rehearsalEvidence = options.rehearsalEvidence
+    this.readyEvidence = options.readyEvidence
   }
 
   async run(cases: readonly TestCaseInput[]): Promise<RunSummary> {
@@ -69,32 +78,44 @@ export class TestRunner {
 
     const engine = new ExecutionEngine()
     const results: CaseResult[] = []
-    for (const item of cases) {
-      if (this.signal?.aborted) {
-        await artifacts.logger.info(`run ${runId} cancelled before case ${item.data.id}`)
-        break
+    try {
+      for (const item of cases) {
+        if (this.signal?.aborted) {
+          await artifacts.logger.info(`run ${runId} cancelled before case ${item.data.id}`)
+          break
+        }
+        const templateId = item.templateId ?? item.data.id
+        const rehearsalEvidence = this.rehearsalEvidence
+          ? (this.rehearsalEvidence[templateId] ??= {
+              verifiedLocators: [],
+              pageStateHashes: {},
+            })
+          : undefined
+        results.push(
+          await engine.runCase(item.data, {
+            runId,
+            file: item.file,
+            templateId: item.templateId ?? item.data.id,
+            rowId: item.rowId ?? 'default',
+            rowIndex: item.rowIndex ?? 0,
+            initialVariables: item.initialVariables ?? {},
+            missingDependencies: item.missingDependencies ?? [],
+            blockedError: item.blockedError,
+            artifacts,
+            bus,
+            resolver: this.resolver,
+            accounts: this.accounts,
+            rehearsalEvidence,
+            readyEvidence: this.readyEvidence?.[templateId],
+          }),
+        )
       }
-      results.push(
-        await engine.runCase(item.data, {
-          runId,
-          file: item.file,
-          templateId: item.templateId ?? item.data.id,
-          rowId: item.rowId ?? 'default',
-          rowIndex: item.rowIndex ?? 0,
-          initialVariables: item.initialVariables ?? {},
-          missingDependencies: item.missingDependencies ?? [],
-          blockedError: item.blockedError,
-          artifacts,
-          bus,
-          resolver: this.resolver,
-          accounts: this.accounts,
-        }),
-      )
+    } finally {
+      await this.resolver.closeAll()
     }
     // 取消请求可能在最后一个用例执行期间到达,循环内不一定检查到
     const cancelled = this.signal?.aborted === true
 
-    await this.resolver.closeAll()
     const templates = new Set(cases.map((item) => item.templateId ?? item.data.id)).size
     const summary = buildRunSummary(runId, startedAt, results, { cancelled, templates })
     await bus.emit({

@@ -1,12 +1,25 @@
 import { describeLocator, redactHeaders, type CapturedRequest, type TestAdapter } from '@testpilot/adapter-core'
-import { TestPilotError, type StepResult } from '@testpilot/core'
+import { DEFAULT_STEP_TIMEOUT_MS, TestPilotError, type StepResult } from '@testpilot/core'
 import type { CaseLocator, TestStep } from '@testpilot/dsl'
+import type {
+  LocatorCandidate,
+  RehearsalEvidence,
+  VerifiedLocator,
+} from '@testpilot/observation-core'
 import type { ArtifactManager } from '../artifacts'
 import type { ExecutionContext } from '../context'
 
 export interface StepExecutorOptions {
   /** 截图文件名(不含扩展名) */
   screenshotName: string
+  rehearsal?: {
+    phase: 'setup' | 'steps' | 'teardown'
+    evidence: RehearsalEvidence
+  }
+  ready?: {
+    phase: 'setup' | 'steps' | 'teardown'
+    evidence: RehearsalEvidence
+  }
 }
 
 /** 取证片段长度上限(请求体/响应体) */
@@ -15,6 +28,26 @@ const SNIPPET_LIMIT = 400
 const ASSERT_POLL_MS = 10_000
 /** "元素不存在"(count: 0)断言的 settle 窗口:只等 UI 稳定,不拖满轮询窗口 */
 const ABSENT_SETTLE_MS = 2_000
+/** Ready/Rehearse 的指纹探针保持即时语义，由执行层在单步超时内负责重试。 */
+const ACTIONABILITY_POLL_MS = 100
+const ACTIONABLE_ACTIONS = new Set<TestStep['action']>([
+  'click',
+  'input',
+  'select',
+  'longpress',
+  'touch',
+  'scroll',
+  'swipeTo',
+  'slideTo',
+  'moveTo',
+  'trigger',
+])
+const STATE_TRANSITION_ACTIONS = new Set<TestStep['action']>([
+  'navigate',
+  'click',
+  'longpress',
+  'trigger',
+])
 
 /**
  * 执行单步:解析模板变量 -> 调用 adapter -> 捕获变量 / 截图。
@@ -40,12 +73,83 @@ export async function executeStep(
 
   try {
     // locator 支持 ${var} 模板解析(动态元素定位,如 .order-row-${orderId})
-    const locator = step.locator
-      ? {
-          text: step.locator.text !== undefined ? context.resolve(step.locator.text) : undefined,
-          css: step.locator.css !== undefined ? context.resolve(step.locator.css) : undefined,
+    let locator = resolveLocator(step.locator, context)
+    if (
+      options.ready &&
+      step.target !== 'api' &&
+      locator &&
+      !(step.action === 'assert' && step.count === 0)
+    ) {
+      if (!adapter.probe) {
+        throw new TestPilotError('UNSUPPORTED_ACTION', `当前 ${step.target} adapter 不支持 Ready locator probe`)
+      }
+      const verified = options.ready.evidence.verifiedLocators.find(
+        (item) =>
+          item.phase === options.ready!.phase &&
+          item.index === index &&
+          item.target === step.target,
+      )
+      if (!verified) {
+        throw new TestPilotError(
+          'READY_LOCATOR_MISSING',
+          `Ready Certificate 缺少 ${options.ready.phase}[${index}] 的已验证 locator`,
+        )
+      }
+      locator = verified.locator
+      const requiresActionable = ACTIONABLE_ACTIONS.has(step.action)
+      const requiresEditable = step.action === 'input' || step.action === 'select'
+      await waitForVerifiedProbe(
+        adapter,
+        {
+          ...verified.probe.candidate,
+          locator,
+          fingerprint:
+            verified.probe.fingerprint ?? verified.probe.candidate.fingerprint,
+        },
+        requiresActionable,
+        requiresEditable,
+        `Ready locator 已失效:${describeLocator(locator)}`,
+        step.timeout ?? DEFAULT_STEP_TIMEOUT_MS,
+      )
+    }
+    let beforeObservation:
+      | Awaited<ReturnType<NonNullable<TestAdapter['observe']>>>
+      | undefined
+    let verified: VerifiedLocator | undefined
+    if (options.rehearsal && step.target !== 'api') {
+      if (!adapter.observe || !adapter.waitForStable) {
+        throw new TestPilotError('UNSUPPORTED_ACTION', `当前 ${step.target} adapter 不支持运行时彩排`)
+      }
+      beforeObservation = await adapter.observe()
+      options.rehearsal.evidence.pageStateHashes[
+        `${step.target}:${beforeObservation.route}`
+      ] = beforeObservation.stateHash
+      // count:0 是“确认不存在”，不应要求 locator 当前可见。
+      if (locator && !(step.action === 'assert' && step.count === 0)) {
+        if (!adapter.probe) {
+          throw new TestPilotError('UNSUPPORTED_ACTION', `当前 ${step.target} adapter 不支持 locator probe`)
         }
-      : undefined
+        const candidate = locatorCandidate(locator)
+        const requiresActionable = ACTIONABLE_ACTIONS.has(step.action)
+        const requiresEditable = step.action === 'input' || step.action === 'select'
+        const probe = await waitForVerifiedProbe(
+          adapter,
+          candidate,
+          requiresActionable,
+          requiresEditable,
+          `locator 彩排未通过:${JSON.stringify(locator)}`,
+          step.timeout ?? DEFAULT_STEP_TIMEOUT_MS,
+        )
+        verified = {
+          phase: options.rehearsal.phase,
+          index,
+          target: step.target,
+          locator,
+          probe,
+        }
+        options.rehearsal.evidence.verifiedLocators.push(verified)
+      }
+    }
 
     if (step.expectRequests) {
       if (!adapter.startRequestCapture || !adapter.stopRequestCapture) {
@@ -259,6 +363,34 @@ export async function executeStep(
       }
     }
 
+    if (options.rehearsal && step.target !== 'api' && STATE_TRANSITION_ACTIONS.has(step.action)) {
+      const stability = await adapter.waitForStable!()
+      if (!stability.stable) {
+        throw new TestPilotError('PAGE_NOT_STABLE', stability.reason ?? '动作后页面未稳定')
+      }
+      const afterObservation = await adapter.observe!()
+      options.rehearsal.evidence.pageStateHashes[
+        `${step.target}:${afterObservation.route}`
+      ] = afterObservation.stateHash
+      const beforeHash = beforeObservation?.stateHash ?? ''
+      const transition = {
+        changed: beforeHash !== afterObservation.stateHash,
+        beforeHash,
+        afterHash: afterObservation.stateHash,
+        stability,
+      }
+      if (verified) verified.transition = transition
+      if (!transition.changed && !step.expectRequests) {
+        const message = `${step.action} 执行后界面状态未变化，且没有请求断言证明副作用`
+        if (step.action === 'trigger') {
+          result.status = 'warning'
+          result.error = message
+        } else {
+          throw new TestPilotError('NO_STATE_CHANGE', message)
+        }
+      }
+    }
+
     if (step.expectRequests) {
       const windowMs = Math.max(...step.expectRequests.map((item) => item.windowMs))
       if (windowMs > 0) await delay(windowMs)
@@ -301,6 +433,73 @@ export async function executeStep(
 
   result.durationMs = Date.now() - startedAt
   return result
+}
+
+function resolveLocator(
+  locator: CaseLocator | undefined,
+  context: ExecutionContext,
+): CaseLocator | undefined {
+  if (!locator) return undefined
+  const resolved: CaseLocator = {}
+  for (const key of ['text', 'css', 'testId', 'role', 'name', 'label', 'placeholder'] as const) {
+    const value = locator[key]
+    if (value !== undefined) resolved[key] = context.resolve(value)
+  }
+  return resolved
+}
+
+function locatorCandidate(locator: CaseLocator): LocatorCandidate {
+  const strategy =
+    locator.testId !== undefined
+      ? 'testId'
+      : locator.role !== undefined
+        ? 'role'
+        : locator.label !== undefined
+          ? 'label'
+          : locator.placeholder !== undefined
+            ? 'placeholder'
+            : locator.text !== undefined
+              ? 'text'
+              : 'css'
+  return {
+    locator,
+    strategy,
+    score: 0,
+    description: describeLocator(locator),
+    fingerprint: { stableAttributes: {}, ancestorPath: [] },
+  }
+}
+
+async function waitForVerifiedProbe(
+  adapter: TestAdapter,
+  candidate: LocatorCandidate,
+  requiresActionable: boolean,
+  requiresEditable: boolean,
+  failurePrefix: string,
+  timeoutMs: number,
+): Promise<Awaited<ReturnType<NonNullable<TestAdapter['probe']>>>> {
+  const startedAt = Date.now()
+  let lastReason = '元素尚未就绪'
+  for (;;) {
+    try {
+      const probe = await adapter.probe!(candidate)
+      const valid = requiresActionable
+        ? probe.actionable && (!requiresEditable || probe.editable)
+        : probe.unique && probe.visible
+      if (valid) return probe
+      lastReason = probe.reason ?? (requiresEditable && !probe.editable ? '元素不可编辑' : '元素尚未就绪')
+    } catch (err) {
+      // DOM 在 count/evaluate 之间被替换属于可恢复瞬态；在单步超时内继续探测。
+      lastReason = err instanceof Error ? err.message : String(err)
+    }
+    if (Date.now() - startedAt >= timeoutMs) {
+      throw new TestPilotError(
+        'LOCATOR_UNVERIFIED',
+        `${failurePrefix}(等待 ${timeoutMs}ms):${lastReason}`,
+      )
+    }
+    await delay(ACTIONABILITY_POLL_MS)
+  }
 }
 
 async function extractApiResponse(adapter: TestAdapter, path: string): Promise<string> {

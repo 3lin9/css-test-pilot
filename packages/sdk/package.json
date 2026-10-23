@@ -11,11 +11,14 @@
   },
   "dependencies": {
     "@testpilot/adapter-api": "workspace:^",
+    "@testpilot/adapter-core": "workspace:^",
     "@testpilot/adapter-playwright": "workspace:^",
     "@testpilot/adapter-wechatide": "workspace:^",
     "@testpilot/core": "workspace:^",
+    "@testpilot/discovery-engine": "workspace:^",
     "@testpilot/dsl": "workspace:^",
     "@testpilot/execution-engine": "workspace:^",
+    "@testpilot/observation-core": "workspace:^",
     "@testpilot/reporter": "workspace:^",
     "yaml": "^2.5.0"
   },

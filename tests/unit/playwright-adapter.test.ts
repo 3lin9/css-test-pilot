@@ -4,13 +4,15 @@ import { PlaywrightAdapter } from '../../packages/adapter-playwright/src'
 
 describe('PlaywrightAdapter request capture', () => {
   test('注册并移除同一个 request listener', async () => {
-    const listeners = new Set<(request: Request) => void>()
+    const listeners = new Map<string, Set<(request: Request) => void>>()
     const page = {
-      on: vi.fn((_event: string, listener: (request: Request) => void) => {
-        listeners.add(listener)
+      on: vi.fn((event: string, listener: (request: Request) => void) => {
+        const current = listeners.get(event) ?? new Set()
+        current.add(listener)
+        listeners.set(event, current)
       }),
-      off: vi.fn((_event: string, listener: (request: Request) => void) => {
-        listeners.delete(listener)
+      off: vi.fn((event: string, listener: (request: Request) => void) => {
+        listeners.get(event)?.delete(listener)
       }),
     } as unknown as Page
     const context = {
@@ -25,8 +27,9 @@ describe('PlaywrightAdapter request capture', () => {
     const adapter = new PlaywrightAdapter({ browser })
 
     await adapter.startRequestCapture()
-    expect(listeners.size).toBe(1)
-    for (const listener of listeners) {
+    // 一个常驻观察 listener + 一个本次断言 capture listener
+    expect(listeners.get('request')?.size).toBe(2)
+    for (const listener of listeners.get('request') ?? []) {
       listener({
         method: () => 'POST',
         url: () => 'https://example.test/api/orders',
@@ -36,7 +39,7 @@ describe('PlaywrightAdapter request capture', () => {
     await expect(adapter.stopRequestCapture()).resolves.toEqual([
       { method: 'POST', url: 'https://example.test/api/orders' },
     ])
-    expect(listeners.size).toBe(0)
+    expect(listeners.get('request')?.size).toBe(1)
     expect(page.off).toHaveBeenCalledWith('request', expect.any(Function))
   })
 })

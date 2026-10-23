@@ -37,6 +37,13 @@ import {
   type RunOptions,
   type RunResult,
 } from './runs'
+import {
+  discoverCases,
+  discoverIntent,
+  type DiscoverIntentOptions,
+  type DiscoveryOptions,
+  type DiscoveryResult,
+} from './discovery'
 
 /** 输入路径相对项目根目录展开,绝对路径原样保留 */
 function resolveInput(root: string, input: string): string {
@@ -116,6 +123,21 @@ export class TestPilotClient {
   /** 执行一次运行 */
   runCases(options: Omit<RunOptions, 'root'> = {}): Promise<RunResult> {
     return runCases({ ...options, root: this.root })
+  }
+
+  /** 只读运行时发现：仅 launch/navigate/observe/probe，不执行副作用动作。 */
+  discoverCases(options: Omit<DiscoveryOptions, 'root'> = {}): Promise<DiscoveryResult> {
+    return discoverCases({ ...options, root: this.root })
+  }
+
+  /** 按意图发现并缓存 locator；缓存失效会自动重新观察。 */
+  discoverIntent(options: Omit<DiscoverIntentOptions, 'root'>) {
+    return discoverIntent({ ...options, root: this.root })
+  }
+
+  /** 完整彩排；通过时签发 Ready Certificate。 */
+  rehearseCases(options: Omit<RunOptions, 'root' | 'rehearsal' | 'requireReady'> = {}): Promise<RunResult> {
+    return runCases({ ...options, root: this.root, rehearsal: true, requireReady: false })
   }
 
   /** 历史运行列表(最近的在前) */

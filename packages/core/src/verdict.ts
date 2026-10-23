@@ -13,10 +13,18 @@ const INFRA_CODES: ReadonlySet<string> = new Set([
   'FIXTURE_MISSING',
   'ACCOUNT_UNAVAILABLE',
   'CONFIG_MISSING',
+  'PAGE_NOT_STABLE',
+  'PAGE_NOT_READY',
+  'SCREENSHOT_FAILED',
 ])
 
 /** unverified 桶:规则本轮没测到 → inconclusive(典型:前置 extract 失败,后续 assert 空值比较) */
-const UNVERIFIED_CODES: ReadonlySet<string> = new Set(['PREREQ_VARIABLE_MISSING'])
+const UNVERIFIED_CODES: ReadonlySet<string> = new Set([
+  'PREREQ_VARIABLE_MISSING',
+  'LOCATOR_UNVERIFIED',
+  'NO_STATE_CHANGE',
+  'READY_LOCATOR_MISSING',
+])
 
 /**
  * 错误码 → verdict。未列入的码(含 undefined,如历史 run 或意外异常)

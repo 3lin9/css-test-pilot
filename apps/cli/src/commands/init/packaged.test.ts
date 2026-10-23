@@ -20,7 +20,8 @@ const distBin = join(
 )
 
 describe.skipIf(!existsSync(distBin))('cli:init:发布包布局', () => {
-  test('dist/bin.js init 能安装 .agents/skills/testpilot', () => {
+  // 子进程要跑完整的 init(doctor + Skill 安装),满载下远超 vitest 默认 5s,显式放宽
+  test('dist/bin.js init 能安装 .agents/skills/testpilot', { timeout: 120_000 }, () => {
     const target = mkdtempSync(join(tmpdir(), 'csspilot-pkg-'))
 
     const res = spawnSync('node', [distBin, 'init'], {

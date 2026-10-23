@@ -147,6 +147,15 @@ export async function initTestPilotConfig(
   const gitignore = await ensureGitignoreEntry(root, ENV_TESTING_FILE)
   // 旧版本 init 忽略过 .env;前端项目的 .env 本就应被忽略,保留该条目无害
   await ensureGitignoreEntry(root, '.env')
+  // 观察产物、定位缓存和 Ready Certificate 都绑定本机/当前环境，仅作临时运行数据。
+  // project.json 仍需保留，因此不能忽略整个 .testpilot 目录。
+  for (const entry of [
+    '.testpilot/artifacts/',
+    '.testpilot/cache/',
+    '.testpilot/ready/',
+  ]) {
+    await ensureGitignoreEntry(root, entry, 'TestPilot 本地运行数据（不要提交）')
+  }
 
   // 3. Runtime 目录
   const runtimeDir = join(root, '.testpilot', 'artifacts')

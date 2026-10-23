@@ -6,6 +6,7 @@ import type { CaseLocator } from '@testpilot/dsl'
 import { TestPilotError } from '@testpilot/core'
 import { MiniAppAdapter, wechatideAdapterFactory } from '@testpilot/adapter-wechatide'
 import type { AutomatorProgram } from '@testpilot/adapter-wechatide'
+import type { LocatorCandidate } from '@testpilot/observation-core'
 
 // 注入式假 automator:验证适配器的映射逻辑,不依赖微信开发者工具
 function createFakeProgram() {
@@ -361,7 +362,7 @@ describe('MiniAppAdapter 交互扩展与运行时诊断', () => {
 
     const touches = [{ identifier: 0, x: 10, y: 20 }]
     await adapter.touch({ css: '.canvas' }, 'touchstart', touches, touches)
-    expect(fakeElement.touchstart).toHaveBeenCalledWith({ touches, changedTouches: touches })
+    expect(fakeElement.touchstart).toHaveBeenCalledWith({ touches, changeTouches: touches })
 
     await adapter.swipeTo({ css: '.swiper' }, 2)
     expect(fakeElement.swipeTo).toHaveBeenCalledWith(2)
@@ -382,7 +383,7 @@ describe('MiniAppAdapter 交互扩展与运行时诊断', () => {
     await adapter.launch()
 
     await adapter.scroll({ css: '.list' }, 200)
-    expect(fakeElement.scrollTo).toHaveBeenCalledWith(200)
+    expect(fakeElement.scrollTo).toHaveBeenCalledWith(0, 200)
 
     await adapter.scroll(undefined, 300)
     expect(program.pageScrollTo).toHaveBeenCalledWith(300)
@@ -493,5 +494,106 @@ describe('MiniAppAdapter 交互扩展与运行时诊断', () => {
       name: 'showModal',
       calls: [{ options: { content: '重新选择' } }],
     })
+  })
+
+  test('observe 融合运行时节点 WXML、边界框和截图', async () => {
+    const root = {
+      outerWxml: vi.fn(async () => '<view><button id="submit">提交订单</button></view>'),
+    }
+    const element = {
+      tagName: 'button',
+      text: vi.fn(async () => '提交订单'),
+      attribute: vi.fn(async (name: string) => {
+        if (name === 'id') return 'submit'
+        if (name === 'class') return 'primary action'
+        if (name === 'type') return 'primary'
+        return undefined
+      }),
+      size: vi.fn(async () => ({ width: 100, height: 40 })),
+      offset: vi.fn(async () => ({ left: 10, top: 20 })),
+    }
+    const { program, fakePage } = fakeProgramWith({
+      page: {
+        path: '/pages/checkout/index',
+        query: { orderId: '1' },
+        $: vi.fn(async (selector: string) => (selector === 'page' ? root : element)),
+        $$: vi.fn(async () => [element]),
+        getElementsByXpath: vi.fn(async () => [element]),
+      },
+    })
+    const observation = await adapterOf(program).observe('提交订单')
+
+    expect(observation.target).toBe('miniapp')
+    expect(observation.route).toBe('/pages/checkout/index?orderId=1')
+    expect(observation.runtimeMarkup).toContain('<button id="submit">')
+    expect(observation.screenshot?.toString()).toBe('fake-png')
+    expect(fakePage.getElementsByXpath).toHaveBeenCalledWith('//*')
+    expect(observation.interactiveElements[0]?.candidates[0]).toMatchObject({
+      locator: { css: '#submit' },
+      strategy: 'css',
+    })
+  })
+
+  test('probe 对小程序候选做唯一性、可见性和指纹验证', async () => {
+    const element = {
+      tagName: 'button',
+      text: vi.fn(async () => '提交订单'),
+      attribute: vi.fn(async (name: string) => {
+        if (name === 'id') return 'submit'
+        return undefined
+      }),
+      size: vi.fn(async () => ({ width: 100, height: 40 })),
+      offset: vi.fn(async () => ({ left: 10, top: 20 })),
+    }
+    const { program } = fakeProgramWith({
+      page: {
+        path: '/pages/checkout/index',
+        $$: vi.fn(async () => [element]),
+      },
+    })
+    const candidate: LocatorCandidate = {
+      locator: { css: '#submit' },
+      strategy: 'css',
+      score: 100,
+      description: '提交订单',
+      fingerprint: {
+        tag: 'button',
+        name: '提交订单',
+        stableAttributes: { id: 'submit' },
+        ancestorPath: [],
+        box: { x: 10, y: 20, width: 100, height: 40 },
+      },
+    }
+    const result = await adapterOf(program).probe(candidate)
+    expect(result).toMatchObject({
+      matchedCount: 1,
+      unique: true,
+      visible: true,
+      enabled: true,
+      covered: false,
+      actionable: true,
+    })
+  })
+
+  test('currentPage 未就绪与 screenshot 无返回值时给出明确错误码', async () => {
+    const noPage = fakeProgramWith({
+      program: { currentPage: vi.fn(async () => undefined) },
+    })
+    const pageError = await adapterOf(noPage.program).observe().then(
+      () => null,
+      (error) => error,
+    )
+    expect(pageError).toBeInstanceOf(TestPilotError)
+    expect((pageError as TestPilotError).code).toBe('PAGE_NOT_READY')
+
+    const noScreenshot = fakeProgramWith({
+      program: { screenshot: vi.fn(async () => undefined) },
+    })
+    const screenshotError = await adapterOf(noScreenshot.program).screenshot().then(
+      () => null,
+      (error) => error,
+    )
+    expect(screenshotError).toBeInstanceOf(TestPilotError)
+    expect((screenshotError as TestPilotError).code).toBe('SCREENSHOT_FAILED')
   })
 })

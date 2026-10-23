@@ -1,15 +1,17 @@
 import { Command } from 'commander'
 import { makeCiCommand } from './commands/ci'
 import { makeDoctorCommand } from './commands/doctor'
+import { makeDiscoverCommand } from './commands/discover'
 import { makeInitCommand } from './commands/init'
 import { makeListCommand } from './commands/list'
 import { makeReportCommand } from './commands/report'
+import { makeRehearseCommand } from './commands/rehearse'
 import { makeRunCommand } from './commands/run'
 import { makeSyncMetadataCommand } from './commands/sync-metadata'
 import { makeUpdateCommand } from './commands/update'
 import { makeValidateCommand } from './commands/validate'
 
-export const CLI_VERSION = '0.7.2'
+export const CLI_VERSION = '0.8.0'
 
 export async function createCli(): Promise<Command> {
   const program = new Command()
@@ -26,6 +28,8 @@ export async function createCli(): Promise<Command> {
     .addCommand(makeInitCommand())
     .addCommand(makeValidateCommand())
     .addCommand(makeListCommand())
+    .addCommand(makeDiscoverCommand())
+    .addCommand(makeRehearseCommand())
     .addCommand(makeRunCommand())
     .addCommand(makeReportCommand())
     .addCommand(makeSyncMetadataCommand())

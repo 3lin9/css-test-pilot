@@ -1,6 +1,7 @@
 import { TestPilotError, caseStatusFromErrorCode, type CaseResult } from '@testpilot/core'
 import type { TestCase, StepTarget } from '@testpilot/dsl'
 import type { TestAdapter } from '@testpilot/adapter-core'
+import type { RehearsalEvidence } from '@testpilot/observation-core'
 import type { ArtifactManager } from '../artifacts'
 import { ExecutionContext } from '../context'
 import type { EventBus } from '../events'
@@ -22,6 +23,8 @@ export interface RunCaseOptions {
   resolver: AdapterResolver
   /** accountRef -> 凭据原文;Case 声明 accountRef 时注入为 ${account.*} 变量 */
   accounts?: Record<string, string>
+  rehearsalEvidence?: RehearsalEvidence
+  readyEvidence?: RehearsalEvidence
 }
 
 /** 引擎核心:顺序执行单条用例的全部步骤;失败后剩余步骤标记 skipped */
@@ -116,6 +119,12 @@ export class ExecutionEngine {
           }
           result = await executeStep(step, index, adapter, context, artifacts, {
             screenshotName: `${executionId}-${phase}-${String(index).padStart(2, '0')}`,
+            ...(options.rehearsalEvidence
+              ? { rehearsal: { phase, evidence: options.rehearsalEvidence } }
+              : {}),
+            ...(options.readyEvidence
+              ? { ready: { phase, evidence: options.readyEvidence } }
+              : {}),
           })
 
           // mockWxApi 捕获的调用参数刷新到 ExecutionContext(供后续 ${capture.*} 引用)
@@ -140,6 +149,8 @@ export class ExecutionEngine {
         if (phase === 'teardown' && result.status === 'failed') {
           result.status = 'warning'
           warnings.push(result.error ?? `teardown step ${index} failed`)
+        } else if (result.status === 'warning') {
+          warnings.push(result.error ?? `${phase} step ${index} completed with warning`)
         }
 
         steps.push(result)

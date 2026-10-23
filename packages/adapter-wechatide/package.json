@@ -8,6 +8,8 @@
   "dependencies": {
     "@testpilot/adapter-core": "workspace:^",
     "@testpilot/core": "workspace:^",
+    "@testpilot/dsl": "workspace:^",
+    "@testpilot/observation-core": "workspace:^",
     "miniprogram-automator": "^0.12.0"
   }
 }

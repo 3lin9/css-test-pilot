@@ -152,6 +152,9 @@ describe('cli:init:新项目', () => {
     const gitignore = await readFile(join(root, '.gitignore'), 'utf8')
     expect(gitignore.split(/\r?\n/)).toContain('.env.testing')
     expect(gitignore.split(/\r?\n/)).toContain('.env')
+    expect(gitignore.split(/\r?\n/)).toContain('.testpilot/artifacts/')
+    expect(gitignore.split(/\r?\n/)).toContain('.testpilot/cache/')
+    expect(gitignore.split(/\r?\n/)).toContain('.testpilot/ready/')
 
     // init 自动执行 doctor(§12)
     expect(summary.doctor.sections.length).toBeGreaterThan(0)

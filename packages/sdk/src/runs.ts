@@ -19,9 +19,16 @@ import { playwrightAdapterFactory } from '@testpilot/adapter-playwright'
 import { wechatideAdapterFactory } from '@testpilot/adapter-wechatide'
 import { apiAdapterFactory } from '@testpilot/adapter-api'
 import type { AdapterFactory } from '@testpilot/adapter-core'
+import type { ReadyCertificate, RehearsalEvidence } from '@testpilot/observation-core'
 import { collectCases, type CaseInfo } from './cases'
 import { prepareCaseExecutions } from './case-preparation'
 import { loadProjectConfig, resolveRoot, type ProjectOptions } from './project'
+import {
+  buildReadyCertificate,
+  readReadyCertificate,
+  validateReadyCertificate,
+  writeReadyCertificate,
+} from './ready'
 
 export interface RunOptions extends ProjectOptions {
   /** 用例文件或目录,默认按 testpilot.yaml 的 casesDir */
@@ -38,6 +45,10 @@ export interface RunOptions extends ProjectOptions {
   adapters?: readonly AdapterFactory[]
   /** accountRef -> 凭据原文;Case 声明 accountRef 时注入为 ${account.*} 变量(值可为 JSON) */
   accounts?: Record<string, string>
+  /** 启用真实 UI probe、稳定等待和动作后状态变化验证。 */
+  rehearsal?: boolean
+  /** 正式运行前要求每个 Case 持有且匹配当前代码/环境/数据的 Ready Certificate。 */
+  requireReady?: boolean
 }
 
 export interface RunResult {
@@ -48,10 +59,12 @@ export interface RunResult {
   tagFiltered: number
   /** Case 声明了 accountRef 但 accounts 未提供对应条目的引用(仍会执行,${account.*} 保持字面量) */
   missingAccounts: string[]
+  rehearsalEvidence?: Record<string, RehearsalEvidence>
+  readyCertificates?: ReadyCertificate[]
 }
 
 export class RunError extends Error {
-  readonly code: 'ENO_CASES' | 'EINVALID_CASES' | 'ENO_CONFIG'
+  readonly code: 'ENO_CASES' | 'EINVALID_CASES' | 'ENO_CONFIG' | 'ENOT_READY'
 
   constructor(code: RunError['code'], message: string) {
     super(message)
@@ -126,14 +139,6 @@ export async function runCases(options: RunOptions = {}): Promise<RunResult> {
     ),
   ]
 
-  const runner = new TestRunner({
-    resolver,
-    runsRoot: join(root, RUNS_DIR),
-    runId: options.runId,
-    onEvent: options.onEvent,
-    signal: options.signal,
-    accounts: options.accounts,
-  })
   const prepared = (
     await Promise.all(
       runnable.map((item) =>
@@ -167,7 +172,55 @@ export async function runCases(options: RunOptions = {}): Promise<RunResult> {
       ),
     )
   ).flat()
-  const summary = await runner.run(
+  const readyEvidence: Record<string, RehearsalEvidence> | undefined = options.requireReady
+    ? {}
+    : undefined
+  if (options.requireReady) {
+    const readinessErrors: string[] = []
+    for (const item of runnable) {
+      const data = item.case!
+      const certificate = await readReadyCertificate(root, data.id)
+      if (!certificate) {
+        readinessErrors.push(`${data.id}:missing-certificate`)
+        continue
+      }
+      const issues = await validateReadyCertificate(root, certificate, {
+        file: item.file,
+        data,
+        config,
+        datasetRows: prepared
+          .filter((row) => row.templateId === data.id)
+          .map((row) => row.initialVariables),
+      })
+      if (issues.length > 0) readinessErrors.push(`${data.id}:${issues.join(',')}`)
+      else {
+        readyEvidence![data.id] = {
+          verifiedLocators: certificate.verifiedLocators,
+          pageStateHashes: certificate.pageStateHashes,
+        }
+      }
+    }
+    if (readinessErrors.length > 0) {
+      throw new RunError(
+        'ENOT_READY',
+        `Ready Certificate 缺失或已失效:${readinessErrors.join('; ')}`,
+      )
+    }
+  }
+  const rehearsalEvidence: Record<string, RehearsalEvidence> | undefined = options.rehearsal
+    ? {}
+    : undefined
+  const runnerWithRehearsal = new TestRunner({
+    resolver,
+    runsRoot: join(root, RUNS_DIR),
+    runId: options.runId,
+    onEvent: options.onEvent,
+    signal: options.signal,
+    accounts: options.accounts,
+    rehearsalEvidence,
+    readyEvidence,
+  })
+  const summary = await runnerWithRehearsal.run(
     prepared.map(
       (item): {
         data: TestCase
@@ -180,7 +233,36 @@ export async function runCases(options: RunOptions = {}): Promise<RunResult> {
       } => item,
     ),
   )
-  return { summary, invalid, tagFiltered, missingAccounts }
+  const readyCertificates: ReadyCertificate[] = []
+  const rehearsalClean =
+    summary.status === 'passed' && summary.cases.every((item) => (item.warnings?.length ?? 0) === 0)
+  if (options.rehearsal && rehearsalClean && rehearsalEvidence) {
+    for (const item of runnable) {
+      const data = item.case!
+      const evidence = rehearsalEvidence[data.id]
+      if (!evidence) continue
+      const certificate = await buildReadyCertificate({
+        root,
+        file: item.file,
+        data,
+        config,
+        datasetRows: prepared
+          .filter((row) => row.templateId === data.id)
+          .map((row) => row.initialVariables),
+        evidence,
+      })
+      await writeReadyCertificate(root, certificate)
+      readyCertificates.push(certificate)
+    }
+  }
+  return {
+    summary,
+    invalid,
+    tagFiltered,
+    missingAccounts,
+    rehearsalEvidence,
+    readyCertificates,
+  }
 }
 
 export interface RunMeta {

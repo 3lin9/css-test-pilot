@@ -124,15 +124,43 @@ export class PlannerAgent {
     ctx.emit({
       type: 'step',
       ts: iso(),
-      message: 'Run(经 SDK → Execution Engine)',
+      message: 'Rehearse(真实界面 probe → 稳定等待 → 状态变化验证)',
       data: { agent: 'planner' },
     })
-    const runResult = await runTool(this.client, ctx, { paths: [caseFile] })
+    const rehearsal = await runTool(this.client, ctx, {
+      paths: [caseFile],
+      rehearsal: true,
+    })
+    if (
+      rehearsal.summary.status !== 'passed' ||
+      (rehearsal.readyCertificates?.length ?? 0) === 0
+    ) {
+      return {
+        status: rehearsal.summary.cancelled ? 'cancelled' : 'failed',
+        caseFile,
+        caseId,
+        runId: rehearsal.summary.runId,
+        fromYamlBlock: planned.fromYamlBlock,
+        skillInstalled: skill.installed,
+        message: `Planner 已生成 ${caseFile}，但彩排为 ${rehearsal.summary.status}，未签发 Ready Certificate`,
+      }
+    }
+
+    ctx.emit({
+      type: 'step',
+      ts: iso(),
+      message: 'Run --require-ready(确定性正式执行)',
+      data: { agent: 'planner' },
+    })
+    const runResult = await runTool(this.client, ctx, {
+      paths: [caseFile],
+      requireReady: true,
+    })
     const runId = runResult.summary.runId
     const testStatus = runResult.summary.status
     const status = runResult.summary.cancelled
       ? 'cancelled'
-      : testStatus === 'failed'
+      : testStatus !== 'passed' && testStatus !== 'skipped'
         ? 'failed'
         : 'passed'
 
@@ -146,7 +174,7 @@ export class PlannerAgent {
       message:
         status === 'cancelled'
           ? 'Planner 执行已取消'
-          : `Planner 已生成 ${caseFile} 并触发 run ${runId}(${testStatus})`,
+          : `Planner 已彩排、签发 Ready Certificate，并触发正式 run ${runId}(${testStatus})`,
     }
   }
 }

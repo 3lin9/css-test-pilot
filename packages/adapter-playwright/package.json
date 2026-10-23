@@ -8,6 +8,8 @@
   "dependencies": {
     "@testpilot/adapter-core": "workspace:^",
     "@testpilot/core": "workspace:^",
-    "playwright": "^1.53.0"
+    "@testpilot/dsl": "workspace:^",
+    "@testpilot/observation-core": "workspace:^",
+    "playwright": "^1.63.0"
   }
 }

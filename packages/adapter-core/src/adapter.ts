@@ -1,4 +1,11 @@
 import type { CaseLocator, StepTarget } from '@testpilot/dsl'
+import type {
+  LocatorCandidate,
+  ProbeResult,
+  StabilityOptions,
+  StabilityResult,
+  UIObservation,
+} from '@testpilot/observation-core'
 
 /**
  * 平台适配器统一接口:执行引擎只依赖此抽象,不感知 Playwright / WeChatIDE 细节。
@@ -22,6 +29,12 @@ export interface TestAdapter {
   screenshot(): Promise<Buffer>
   /** 释放底层资源(浏览器 / IDE 连接) */
   close(): Promise<void>
+  /** [可选能力] 只读观察当前真实界面；不得把敏感输入值放入结果 */
+  observe?(intent?: string): Promise<UIObservation>
+  /** [可选能力] 实测候选 locator 的唯一性、可见性和可操作性 */
+  probe?(candidate: LocatorCandidate): Promise<ProbeResult>
+  /** [可选能力] 等待 DOM/WXML 在 quiet window 内保持不变 */
+  waitForStable?(options?: StabilityOptions): Promise<StabilityResult>
 /** [可选能力] 开始用例级取证(video/trace);不支持的可不实现 */
   startEvidence?(caseId: string): Promise<void>
   /** [可选能力] 结束取证并返回产物字节;与 startEvidence 成对调用 */

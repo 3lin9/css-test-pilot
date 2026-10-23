@@ -67,8 +67,8 @@ export async function runInit(root: string, options: InitOptions = {}): Promise<
   )
   console.log(
     config.gitignore === 'exists'
-      ? '✓ Git 忽略          .env.testing(已在 .gitignore)'
-      : `✓ Git 忽略          .env.testing(已写入 .gitignore)`,
+      ? '✓ Git 忽略          环境变量与本地运行数据'
+      : '✓ Git 忽略          环境变量与本地运行数据(已写入 .gitignore)',
   )
 
   // 4. 测试目录(§6)

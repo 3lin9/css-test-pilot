@@ -28,6 +28,11 @@
      tags: [smoke, charter:persona, charter:error-path]
      ```
 6. 执行 `npx csspilot validate tests/e2e/cases/<case-id>.yaml`。
-7. 校验失败则修复 Case 后重新 validate,直到通过。
+7. 执行 `npx csspilot discover tests/e2e/cases/<case-id>.yaml`,用真实界面的语义树/运行时 WXML、截图和 probe 结果验证 locator。
+8. 在可重置测试环境执行 `npx csspilot rehearse tests/e2e/cases/<case-id>.yaml`:
+   - 动作前 locator 必须唯一、可见且可操作
+   - 动作后页面必须稳定,click/navigate 必须有 UI 状态变化或明确的 `expectRequests`
+   - 全部数据行通过后才会写入 `.testpilot/ready/<case-id>.json`
+9. validate / discover / rehearse 任一失败都不算可执行交付;修复 Case 后重新走完整链路。
 
 禁止:跳过第 3-4 步直接生成 Case(AI 不能凭空生成测试)。

@@ -5,6 +5,7 @@
 ```bash
 npx csspilot validate              # 全量
 npx csspilot validate <file>       # 指定文件
+npx csspilot validate --runtime    # 静态校验 + 真实界面只读 observe/probe
 ```
 
 检查内容:
@@ -22,4 +23,5 @@ npx csspilot validate <file>       # 指定文件
 - `expectRequests` 仅用于支持的 UI 动作
 - 当前 adapter 是否支持该 action
 
-输出 `ValidationResult`;有错误时修复 Case 后重新校验,全部通过才允许 run。
+静态校验只证明 DSL 合法,不证明 locator 在当前环境真实存在。新 Case 或页面变更后必须使用
+`--runtime`;有错误时修复 Case 后重新校验,再通过 `rehearse` 签发 Ready Certificate。

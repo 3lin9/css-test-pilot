@@ -26,8 +26,10 @@ Use TestPilot when the user wants to:
 4. Identify test target
 5. Create TestPilot Case (`tests/e2e/cases/*.yaml`, linked to test point IDs)
 6. Validate Case (`npx csspilot validate`)
-7. Run Case (`npx csspilot run`)
-8. Analyze result (`npx csspilot report`)
+7. Observe the real UI without business side effects (`npx csspilot discover`)
+8. Rehearse the complete Case in a resettable test environment (`npx csspilot rehearse`)
+9. Run deterministically with a valid Ready Certificate (`npx csspilot run --require-ready`)
+10. Analyze result (`npx csspilot report`)
 
 ## Important rules
 
@@ -38,6 +40,8 @@ Use TestPilot when the user wants to:
 - Prefer existing project conventions.
 - Never invent locators without evidence.
 - Validate before running.
+- A generated YAML draft is not ready. A Case is ready only after runtime probe and rehearsal.
+- Never let AI silently rewrite a Case during a formal run; stale certificates require a new rehearsal.
 - Generate only evidence-backed `requires`; never assume every project has accounts, coupons, promotions, or PPM.
 - Use data-driven Case groups only when the steps are the same and each row remains one decidable rule/data point.
 
@@ -46,8 +50,11 @@ Use TestPilot when the user wants to:
 ```bash
 npx csspilot init      # install TestPilot into the current project
 npx csspilot validate  # validate cases against the DSL
+npx csspilot validate --runtime  # static validation + read-only runtime probe
+npx csspilot discover  # observe/probe real UI without business side effects
+npx csspilot rehearse  # full rehearsal and Ready Certificate issuance
 npx csspilot list      # list cases (--tag smoke)
-npx csspilot run       # run cases (file paths / --tag)
+npx csspilot run --require-ready  # deterministic run gated by current certificate
 npx csspilot report    # generate JSON + HTML report
 npx csspilot doctor    # health check (config / cases / adapters / env / server)
 npx csspilot ci init   # generate TestPilot CI workflow template
