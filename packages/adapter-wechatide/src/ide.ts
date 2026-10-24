@@ -92,6 +92,8 @@ export interface AutomatorProgram {
 /** 启动器抽象:便于测试注入假实现(默认绑定 miniprogram-automator SDK) */
 export interface AutomatorLauncher {
   launch(options: { projectPath: string; cliPath?: string }): Promise<AutomatorProgram>
+  /** [可选] 连接已在运行的自动化会话;端口预检命中时复用,避免重复拉起会话互相打架 */
+  connect?(wsEndpoint: string, timeoutMs: number): Promise<AutomatorProgram>
 }
 
 const AUTO_PORT_FALLBACK_WAIT_MS = 90_000
@@ -117,11 +119,31 @@ export const automatorLauncher: AutomatorLauncher = {
       // Node 20.12+ 禁止 spawn 直接执行 .bat(需 shell:true),automator 内部未处理;
       // 降级:自行以 shell 拉起 `cli auto`,等自动化端口就绪后改走 connect
       if (!options.cliPath) throw launchError
-      const port = Number(process.env.TESTPILOT_MINIPROGRAM_AUTO_PORT) || 9420
+      const port = resolveAutoPort()
       await startCliAuto(options.cliPath, options.projectPath, port)
       return await connectWithRetry(`ws://127.0.0.1:${port}`, AUTO_PORT_FALLBACK_WAIT_MS)
     }
   },
+  connect: (wsEndpoint, timeoutMs) => connectWithRetry(wsEndpoint, timeoutMs),
+}
+
+/** 自动化端口;可用环境变量 TESTPILOT_MINIPROGRAM_AUTO_PORT 覆盖 */
+function resolveAutoPort(): number {
+  return Number(process.env.TESTPILOT_MINIPROGRAM_AUTO_PORT) || 9420
+}
+
+/** 探测自动化端口是否已有会话在监听(单次短超时探测) */
+function isAutomationPortLive(port: number, timeoutMs = 1_000): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = net.createConnection({ host: '127.0.0.1', port })
+    const done = (live: boolean) => {
+      socket.destroy()
+      resolve(live)
+    }
+    socket.once('connect', () => done(true))
+    socket.once('error', () => done(false))
+    socket.setTimeout(timeoutMs, () => done(false))
+  })
 }
 
 function delay(ms: number): Promise<void> {
@@ -222,17 +244,31 @@ export class MiniAppAdapter implements TestAdapter {
   constructor(
     private readonly config: MiniappAdapterConfig,
     private readonly launcher: AutomatorLauncher = automatorLauncher,
+    /** 端口预检注入点(测试用);默认真实探测自动化端口 */
+    private readonly probeAutomationPort: (port: number) => Promise<boolean> = isAutomationPortLive,
   ) {}
 
   /** 拉起开发者工具并建立自动化连接;需幂等 */
   async launch(): Promise<void> {
     if (this.program) return
-    const launchOptions: { projectPath: string; cliPath?: string } = {
-      projectPath: this.config.projectPath,
+    const port = resolveAutoPort()
+    // 端口已有会话(手动 cli auto / 上次运行遗留)直接复用:
+    // automator.launch 会再拉一次 cli auto,与现有会话竞争导致重启竞态与命令超时
+    if (this.launcher.connect && (await this.probeAutomationPort(port))) {
+      this.program = await this.launcher.connect(`ws://127.0.0.1:${port}`, AUTO_PORT_FALLBACK_WAIT_MS)
+    } else {
+      const launchOptions: { projectPath: string; cliPath?: string } = {
+        projectPath: this.config.projectPath,
+      }
+      if (this.config.cliPath) launchOptions.cliPath = this.config.cliPath
+      this.program = await this.launcher.launch(launchOptions)
     }
-    if (this.config.cliPath) launchOptions.cliPath = this.config.cliPath
-    this.program = await this.launcher.launch(launchOptions)
     this.attachDiagnostics(this.program)
+    // 冷启动后模拟器仍在编译:尽力等待页面 data 可读(路线图 P0-1);
+    // 一直未就绪则跳过等待,由后续步骤给出各自的明确错误(observe PAGE_NOT_READY / 元素轮询超时)
+    if (this.config.waitForPageReady !== false) {
+      await this.waitForPageReady().catch(() => undefined)
+    }
   }
 
   async navigate(url: string): Promise<void> {
@@ -285,13 +321,14 @@ export class MiniAppAdapter implements TestAdapter {
   }
 
   async wait(locator: CaseLocator | undefined, timeoutMs: number | undefined): Promise<void> {
+    // 纯延时不打扰自动化服务端:冷启动编译窗口里 page.waitFor 的服务端往返
+    // 会被 "timeout waiting for automator response" 拒绝(实测),本地等待即可
+    if (!locator) {
+      await delay(timeoutMs ?? 1_000)
+      return
+    }
     await this.runWithReconnect(async () => {
-      const page = await this.currentPage()
-      if (locator) {
-        await this.waitForElement(locator, timeoutMs ?? ELEMENT_WAIT_MS)
-        return
-      }
-      await page.waitFor(timeoutMs ?? 1_000)
+      await this.waitForElement(locator, timeoutMs ?? ELEMENT_WAIT_MS)
     })
   }
 

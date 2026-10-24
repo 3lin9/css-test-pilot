@@ -328,7 +328,11 @@ describe('MiniAppAdapter 交互扩展与运行时诊断', () => {
   }
 
   function adapterOf(program: AutomatorProgram): MiniAppAdapter {
-    return new MiniAppAdapter({ projectPath, closeIde: false }, { launch: vi.fn(async () => program) })
+    // waitForPageReady 关闭:这些测试验证的是各步骤自身的错误契约,页面数据本来就不就绪
+    return new MiniAppAdapter(
+      { projectPath, closeIde: false, waitForPageReady: false },
+      { launch: vi.fn(async () => program) },
+    )
   }
 
   test('callWxApi 透传 callWxMethod(参数展开)', async () => {
@@ -595,5 +599,86 @@ describe('MiniAppAdapter 交互扩展与运行时诊断', () => {
     )
     expect(screenshotError).toBeInstanceOf(TestPilotError)
     expect((screenshotError as TestPilotError).code).toBe('SCREENSHOT_FAILED')
+  })
+})
+
+describe('MiniAppAdapter 会话复用(自动化端口预检)', () => {
+  test('端口已活且 launcher 有 connect → 复用会话,不调 automator.launch', async () => {
+    const { program } = createFakeProgram()
+    const launchMock = vi.fn(async () => program)
+    const connectMock = vi.fn(async () => program)
+    const probe = vi.fn(async () => true)
+    const adapter = new MiniAppAdapter(
+      { projectPath, cliPath: 'C:/devtools/cli.bat', closeIde: false },
+      { launch: launchMock, connect: connectMock },
+      probe,
+    )
+
+    await adapter.launch()
+
+    expect(probe).toHaveBeenCalledWith(9420)
+    expect(connectMock).toHaveBeenCalledWith('ws://127.0.0.1:9420', expect.any(Number))
+    expect(launchMock).not.toHaveBeenCalled()
+    // 复用会话同样要等页面就绪( currentPage / data 可读)
+    expect(adapter.launch()).resolves.toBeUndefined() // 幂等
+  })
+
+  test('端口空闲 → 走 automator.launch,不 connect', async () => {
+    const { program } = createFakeProgram()
+    const launchMock = vi.fn(async () => program)
+    const connectMock = vi.fn(async () => program)
+    const probe = vi.fn(async () => false)
+    const adapter = new MiniAppAdapter(
+      { projectPath, cliPath: 'C:/devtools/cli.bat', closeIde: false },
+      { launch: launchMock, connect: connectMock },
+      probe,
+    )
+
+    await adapter.launch()
+
+    expect(launchMock).toHaveBeenCalledWith({ projectPath, cliPath: 'C:/devtools/cli.bat' })
+    expect(connectMock).not.toHaveBeenCalled()
+  })
+
+  test('端口已活但 launcher 无 connect(旧桩)→ 仍走 launch(向后兼容)', async () => {
+    const { program } = createFakeProgram()
+    const launchMock = vi.fn(async () => program)
+    const probe = vi.fn(async () => true)
+    const adapter = new MiniAppAdapter(
+      { projectPath, closeIde: false },
+      { launch: launchMock },
+      probe,
+    )
+
+    await adapter.launch()
+
+    expect(launchMock).toHaveBeenCalled()
+  })
+
+  test('冷启动就绪等待:launch 后 currentPage / data 未就绪会被轮询', async () => {
+    const { program, fakePage } = createFakeProgram()
+    // 前两次未就绪,第三次 data 可读
+    let dataCalls = 0
+    const page = {
+      ...fakePage,
+      data: vi.fn(async () => {
+        dataCalls++
+        if (dataCalls < 3) throw new Error('compiling')
+        return { orderId: '67890' }
+      }),
+    }
+    const program2: AutomatorProgram = {
+      ...program,
+      currentPage: vi.fn(async () => page),
+    }
+    const adapter = new MiniAppAdapter(
+      { projectPath, closeIde: false },
+      { launch: vi.fn(async () => program2), connect: vi.fn(async () => program2) },
+      vi.fn(async () => false),
+    )
+
+    await adapter.launch()
+
+    expect((program2.currentPage as ReturnType<typeof vi.fn>).mock.calls.length).toBeGreaterThanOrEqual(3)
   })
 })

@@ -8,6 +8,8 @@ export interface MiniappAdapterConfig {
   cliPath?: string
   /** 运行结束后直接关闭开发者工具(默认仅断开自动化连接,保留 IDE) */
   closeIde: boolean
+  /** launch 后等待页面 data 可读(冷启动编译窗口;默认开启,一直未就绪则交由后续步骤报错) */
+  waitForPageReady?: boolean
 }
 
 export interface MiniappConfigInput {
