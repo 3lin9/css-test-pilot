@@ -153,7 +153,7 @@ function stripAnsi(text: string): string {
       <ul class="steps">
         <li v-for="step in item.steps" :key="`${step.phase ?? 'steps'}-${step.index}`">
           <span class="mark" :class="step.status">{{ step.status === 'passed' ? '✓' : step.status === 'failed' ? '✗' : step.status === 'warning' ? '⚠' : '↷' }}</span>
-          <span class="mono">{{ step.phase ?? 'steps' }} · {{ step.target }}/{{ step.action }}</span>
+          <span class="mono">{{ step.phase ?? 'steps' }} · {{ step.target }}{{ step.system ? `@${step.system}` : '' }}/{{ step.action }}</span>
           <span v-if="step.http" class="mono muted">{{ step.http.method }} {{ step.http.url }} → {{ step.http.status }}</span>
           <span class="muted">{{ step.durationMs }}ms</span>
           <span v-if="step.error" class="error-text">{{ stripAnsi(step.error) }}</span>

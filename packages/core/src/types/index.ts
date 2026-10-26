@@ -22,6 +22,8 @@ export interface StepResult {
   screenshot?: string
   /** extract 步骤捕获的变量 */
   extracted?: Record<string, string>
+  /** 步骤显式指定的业务系统(testpilot.yaml systems 名称;缺省为 target 默认系统) */
+  system?: string
   /** api target 的请求取证(敏感头已脱敏) */
   http?: HttpEvidence
   /** UI 动作触发的请求次数断言结果 */

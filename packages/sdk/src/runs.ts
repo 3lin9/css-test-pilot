@@ -19,6 +19,7 @@ import { playwrightAdapterFactory } from '@testpilot/adapter-playwright'
 import { wechatideAdapterFactory } from '@testpilot/adapter-wechatide'
 import { apiAdapterFactory } from '@testpilot/adapter-api'
 import type { AdapterFactory } from '@testpilot/adapter-core'
+import type { StepTarget } from '@testpilot/dsl'
 import type { ReadyCertificate, RehearsalEvidence } from '@testpilot/observation-core'
 import { collectCases, type CaseInfo } from './cases'
 import { prepareCaseExecutions } from './case-preparation'
@@ -73,9 +74,13 @@ export class RunError extends Error {
   }
 }
 
-/** V0.1 默认 adapter 组合:Playwright(Web)+ WeChatIDE(小程序)+ API(HTTP),按项目配置注册 */
-export function createDefaultAdapters(config: TestpilotConfig): AdapterFactory[] {
-  return [
+/**
+ * 默认 adapter 组合:Playwright(Web)+ WeChatIDE(小程序)+ API(HTTP),按项目配置注册;
+ * testpilot.yaml systems 声明的额外业务系统以 `type@名称` 为会话键注册
+ * (step.system 指定时命中;miniapp 的相对 projectPath 按项目根目录解析)。
+ */
+export function createDefaultAdapters(config: TestpilotConfig, root?: string): AdapterFactory[] {
+  const factories: AdapterFactory[] = [
     playwrightAdapterFactory({ baseUrl: config.web?.baseUrl }),
     wechatideAdapterFactory({
       projectPath: config.miniapp?.projectPath,
@@ -83,6 +88,26 @@ export function createDefaultAdapters(config: TestpilotConfig): AdapterFactory[]
     }),
     apiAdapterFactory({ baseUrl: config.api?.baseUrl, timeoutMs: config.api?.timeoutMs }),
   ]
+  for (const [name, system] of Object.entries(config.systems ?? {})) {
+    const key = `${system.type}@${name}`
+    if (system.type === 'web') {
+      factories.push({ ...playwrightAdapterFactory({ baseUrl: system.baseUrl }), target: key as StepTarget })
+    } else if (system.type === 'api') {
+      factories.push({
+        ...apiAdapterFactory({ baseUrl: system.baseUrl, timeoutMs: system.timeoutMs }),
+        target: key as StepTarget,
+      })
+    } else {
+      const projectPath = isAbsolute(system.projectPath ?? '')
+        ? system.projectPath
+        : join(resolveRoot(root), system.projectPath ?? '')
+      factories.push({
+        ...wechatideAdapterFactory({ projectPath, cliPath: system.cliPath }),
+        target: key as StepTarget,
+      })
+    }
+  }
+  return factories
 }
 
 /** 按 yyyymmdd-NNN 规则分配下一个 runId(与引擎落盘目录一致;Control Plane 先行落库时使用) */
@@ -126,7 +151,7 @@ export async function runCases(options: RunOptions = {}): Promise<RunResult> {
     )
   }
 
-  const factories = options.adapters ?? createDefaultAdapters(config)
+  const factories = options.adapters ?? createDefaultAdapters(config, root)
   const resolver = new AdapterResolver()
   for (const factory of factories) resolver.register(factory)
 

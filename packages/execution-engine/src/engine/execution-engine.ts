@@ -1,5 +1,5 @@
 import { TestPilotError, caseStatusFromErrorCode, type CaseResult } from '@testpilot/core'
-import type { TestCase, StepTarget } from '@testpilot/dsl'
+import type { TestCase } from '@testpilot/dsl'
 import type { TestAdapter } from '@testpilot/adapter-core'
 import type { RehearsalEvidence } from '@testpilot/observation-core'
 import type { ArtifactManager } from '../artifacts'
@@ -40,7 +40,7 @@ export class ExecutionEngine {
     }
     const steps: CaseResult['steps'] = []
     const warnings: string[] = []
-    const evidenceAdapters = new Map<StepTarget, TestAdapter>()
+    const evidenceAdapters = new Map<string, TestAdapter>()
     let caseError: string | undefined
     let caseErrorCode: string | undefined
     const executionId = safeArtifactName(`${data.id}-${rowId}`)
@@ -106,14 +106,16 @@ export class ExecutionEngine {
 
         let result: CaseResult['steps'][number]
         try {
-          const adapter = await (await resolver.session(step.target)).get()
-          if (adapter.startEvidence && !evidenceAdapters.has(step.target)) {
+          // system 显式指定业务系统(testpilot.yaml systems):会话键 target@system
+          const sessionKey = step.system ? `${step.target}@${step.system}` : step.target
+          const adapter = await (await resolver.session(sessionKey)).get()
+          if (adapter.startEvidence && !evidenceAdapters.has(sessionKey)) {
             try {
               await adapter.startEvidence(executionId)
-              evidenceAdapters.set(step.target, adapter)
+              evidenceAdapters.set(sessionKey, adapter)
             } catch (err) {
               await artifacts.logger.info(
-                `evidence start failed for ${step.target}: ${err instanceof Error ? err.message : String(err)}`,
+                `evidence start failed for ${sessionKey}: ${err instanceof Error ? err.message : String(err)}`,
               )
             }
           }

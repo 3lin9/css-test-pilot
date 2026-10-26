@@ -187,6 +187,14 @@ api:                                 # target: api 的 HTTP 执行端
 # miniapp:
 #   projectPath: path/to/miniprogram
 #   cliPath: "C:/.../cli.bat"      # 可省略:自动探测
+
+systems:                             # 额外业务系统(需求跨系统时声明;Case 用 system: <名称> 引用)
+  mall-admin:                        # 顶层 web:/miniapp:/api: 段仍是各 target 的默认系统
+    type: web
+    baseUrl: ${MALL_ADMIN_URL}       # 值放 .env.testing;doctor 逐系统探测可达性
+  mall-miniapp:
+    type: miniapp
+    projectPath: ../mall-miniapp
 ```
 
 ### API 用例(target: api)

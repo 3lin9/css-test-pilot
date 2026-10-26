@@ -7,6 +7,28 @@ import { DEFAULT_CASES_DIR } from './constants'
 /** 环境条目:环境名 -> { baseUrl };baseUrl 支持 ${ENV_VAR} 引用,值由运行环境注入 */
 const environmentEntrySchema = z.strictObject({ baseUrl: z.string().min(1).optional() }).optional()
 
+/**
+ * 业务系统声明(需求跨系统时的查找/配置目标)。
+ * `web:`/`miniapp:`/`api:` 顶层段是各 target 的默认系统;systems 声明"额外系统",
+ * Case 用 `system: <名称>` 显式指定。web/api 需要 baseUrl,miniapp 需要 projectPath。
+ */
+const systemEntrySchema = z
+  .strictObject({
+    type: z.enum(['web', 'miniapp', 'api']),
+    baseUrl: z.string().min(1).optional(),
+    projectPath: z.string().min(1).optional(),
+    cliPath: z.string().min(1).optional(),
+    timeoutMs: z.number().int().positive().optional(),
+  })
+  .superRefine((entry, ctx) => {
+    if ((entry.type === 'web' || entry.type === 'api') && !entry.baseUrl) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['baseUrl'], message: `${entry.type} 系统需要 baseUrl` })
+    }
+    if (entry.type === 'miniapp' && !entry.projectPath) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['projectPath'], message: 'miniapp 系统需要 projectPath' })
+    }
+  })
+
 const configSchema = z.strictObject({
   /** 配置文件版本(csspilot init 生成为 1) */
   version: z.number().optional(),
@@ -25,6 +47,8 @@ const configSchema = z.strictObject({
   variables: z.record(z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/), z.string()).optional(),
   /** 项目声明的执行端(playwright / wechatide);仅作声明,实际可用性以 doctor 检测为准 */
   adapters: z.array(z.string().min(1)).optional(),
+  /** 额外业务系统(名称为 kebab-case);Case 用 system: <名称> 引用,顶层 web/miniapp/api 段仍是默认系统 */
+  systems: z.record(z.string().regex(/^[a-z0-9][a-z0-9-]*$/), systemEntrySchema).optional(),
   workspace: z.strictObject({ default: z.string().min(1).optional() }).optional(),
   /** TestPilot Control Plane 地址(sync-metadata / init 关联项目时使用) */
   server: z.strictObject({ baseUrl: z.string().min(1).optional() }).optional(),
@@ -44,6 +68,14 @@ const configSchema = z.strictObject({
     .optional(),
 })
 
+export interface SystemConfig {
+  type: 'web' | 'miniapp' | 'api'
+  baseUrl?: string
+  projectPath?: string
+  cliPath?: string
+  timeoutMs?: number
+}
+
 export interface TestpilotConfig {
   version?: number
   casesDir: string
@@ -52,6 +84,7 @@ export interface TestpilotConfig {
   environment?: Record<string, string | { baseUrl?: string } | undefined>
   variables?: Record<string, string>
   adapters?: string[]
+  systems?: Record<string, SystemConfig>
   workspace?: { default?: string }
   server?: { baseUrl?: string }
   web?: { baseUrl?: string }
@@ -141,6 +174,22 @@ export async function loadTestpilotConfig(cwd: string = process.cwd()): Promise<
         )
       : undefined,
     adapters: parsed.adapters,
+    // 系统声明:连接值(${ENV_VAR} 引用)按运行环境注入;名称不插值
+    systems: parsed.systems
+      ? Object.fromEntries(
+          Object.entries(parsed.systems).map(([name, entry]) => [
+            name,
+            {
+              type: entry.type,
+              baseUrl: entry.baseUrl === undefined ? undefined : interpolateEnvRefs(entry.baseUrl),
+              projectPath:
+                entry.projectPath === undefined ? undefined : interpolateEnvRefs(entry.projectPath),
+              cliPath: entry.cliPath === undefined ? undefined : interpolateEnvRefs(entry.cliPath),
+              timeoutMs: entry.timeoutMs,
+            },
+          ]),
+        )
+      : undefined,
     workspace: parsed.workspace,
     server: parsed.server
       ? {

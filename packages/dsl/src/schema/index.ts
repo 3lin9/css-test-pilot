@@ -68,6 +68,8 @@ export const requestExpectationSchema = z.strictObject({
 export const stepSchema = z.strictObject({
   target: z.enum(STEP_TARGETS),
   action: z.enum(ACTIONS),
+  /** 引用 testpilot.yaml systems 中的系统名;缺省用 target 对应的默认系统 */
+  system: z.string().regex(/^[a-z0-9][a-z0-9-]*$/, 'system 需为 kebab-case').optional(),
   locator: locatorSchema.optional(),
   url: z.string().min(1).optional(),
   value: z.union([z.string(), z.number()]).optional(),

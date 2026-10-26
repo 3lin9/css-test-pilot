@@ -1,4 +1,3 @@
-import type { StepTarget } from '@testpilot/dsl'
 import type { AdapterFactory, TestAdapter } from './adapter'
 
 /**
@@ -8,7 +7,8 @@ export class AdapterSession {
   private adapter: TestAdapter | undefined
 
   constructor(
-    readonly target: StepTarget,
+    /** 会话键:target 或 target@system */
+    readonly target: string,
     private readonly factory: AdapterFactory,
   ) {}
 

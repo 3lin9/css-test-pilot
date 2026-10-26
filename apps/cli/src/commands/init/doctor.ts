@@ -193,6 +193,28 @@ export async function runDoctor(root: string): Promise<DoctorReport> {
   }
   if (envItems.length > 0) push('Environment', envItems)
 
+  // ---- Systems(systems 声明的额外业务系统:miniapp 路径必须存在,web/api baseUrl 尽力探测) ----
+  const systems = config?.systems ?? {}
+  if (Object.keys(systems).length > 0) {
+    const systemItems: DoctorItem[] = await Promise.all(
+      Object.entries(systems).map(async ([name, system]) => {
+        const label = `${name}(${system.type})`
+        if (system.type === 'miniapp') {
+          const abs = join(root, system.projectPath ?? '')
+          return existsSync(abs) ? ok(`${label} ${system.projectPath}`) : error(`${label} projectPath 不存在`, abs)
+        }
+        if (!system.baseUrl) return warn(`${label} 未配置 baseUrl`)
+        try {
+          await fetch(system.baseUrl, { signal: AbortSignal.timeout(3000) })
+          return ok(`${label} ${system.baseUrl}`)
+        } catch {
+          return warn(`${label} baseUrl 不可达`, `${system.baseUrl}(系统可能未启动,不阻塞)`)
+        }
+      }),
+    )
+    push('Systems', systemItems)
+  }
+
   // ---- Server(配置了才检查) ----
   const serverUrl = serverConfigured ? (process.env.TESTPILOT_SERVER_URL ?? config?.server?.baseUrl) : undefined
   if (serverUrl) {

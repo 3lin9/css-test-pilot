@@ -86,6 +86,8 @@ export interface StepResult {
   error?: string
   screenshot?: string
   extracted?: Record<string, string>
+  /** 显式指定的业务系统(testpilot.yaml systems 名称) */
+  system?: string
   /** api target 的请求取证(敏感头已脱敏) */
   http?: {
     method: string

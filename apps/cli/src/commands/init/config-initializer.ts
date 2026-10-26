@@ -61,6 +61,19 @@ ${adapters}
 # workspace:
 #   default: my-workspace
 
+# 额外业务系统(需求跨系统查找/配置时声明;Case 用 system: <名称> 引用)
+# 顶层 web:/miniapp:/api: 段仍是各 target 的默认系统;地址用 \${VAR} 引用,值放 .env.testing
+# systems:
+#   mall-admin:
+#     type: web
+#     baseUrl: \${MALL_ADMIN_URL}
+#   mall-miniapp:
+#     type: miniapp
+#     projectPath: ../mall-miniapp
+#   pay-api:
+#     type: api
+#     baseUrl: \${PAY_API_URL}
+
 # TestPilot Server(Control Plane)地址;init 关联项目与 sync-metadata 使用
 # 也可用环境变量 TESTPILOT_SERVER_URL 覆盖
 # server:

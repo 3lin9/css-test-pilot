@@ -65,6 +65,7 @@ export async function executeStep(
   const result: StepResult = {
     index,
     target: step.target,
+    ...(step.system ? { system: step.system } : {}),
     action: step.action,
     status: 'passed',
     durationMs: 0,

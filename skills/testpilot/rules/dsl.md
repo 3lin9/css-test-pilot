@@ -21,6 +21,7 @@ setup:                # 可选:主步骤前执行
     url: /test-support/cart/clear
 steps:                # 有序步骤列表
   - target: miniapp   # 执行端:miniapp | web | api
+    system: mall-admin # 可选:引用 testpilot.yaml systems 中的系统;缺省用 target 默认系统
     action: click     # 见下方 Action 表
     locator:          # 定位器(见 rules/locator.md)
       text: 提交订单
@@ -228,6 +229,35 @@ steps:
     action: assert
     expected: '"status":"PAID"'  # 响应体文本包含
 ```
+
+## 多系统(systems)
+
+需求涉及多个系统(如"去商城后台配置 → 去小程序前台验证")时,在 testpilot.yaml `systems:` 段声明,Case 用 `system: <名称>` 显式指定;缺省时 `target` 打到顶层 `web:`/`miniapp:`/`api:` 段的默认系统(存量 Case 不受影响):
+
+```yaml
+# testpilot.yaml
+systems:
+  mall-admin:
+    type: web
+    baseUrl: ${MALL_ADMIN_URL}   # 值放 .env.testing,禁止明文
+  mall-miniapp:
+    type: miniapp
+    projectPath: ../mall-miniapp
+```
+
+```yaml
+# Case:在后台配置,回前台验证
+steps:
+  - target: web
+    system: mall-admin
+    action: navigate
+    url: /goods/edit
+  - target: miniapp
+    system: mall-miniapp
+    action: launch
+```
+
+系统名需与需求评审"涉及系统"列一致;doctor 会逐系统探测(baseUrl 可达 / projectPath 存在)。
 
 ## 账号与凭据(accountRef)
 
