@@ -44,6 +44,10 @@ import {
   type DiscoveryOptions,
   type DiscoveryResult,
 } from './discovery'
+import {
+  ensureCaseConfiguration,
+  type EnsuredCaseConfiguration,
+} from './case-config'
 
 /** 输入路径相对项目根目录展开,绝对路径原样保留 */
 function resolveInput(root: string, input: string): string {
@@ -116,6 +120,14 @@ export class TestPilotClient {
     options: { overwrite?: boolean } = {},
   ): Promise<WriteCaseResult> {
     return writeCaseFile(file, source, { root: this.root, ...options })
+  }
+
+  /** Case 落盘前补齐其 system/accountRef/variable 对应的项目配置与 env 占位。 */
+  ensureCaseConfiguration(
+    caseSource: string,
+    prompt?: string,
+  ): Promise<EnsuredCaseConfiguration> {
+    return ensureCaseConfiguration({ root: this.root, caseSource, prompt })
   }
 
   // ---- runs ----

@@ -105,6 +105,16 @@ npx csspilot rehearse tests/e2e/cases/order.yaml
 
 小程序 `trigger` 会参与动作后状态验证。若界面无变化且没有 `expectRequests` 证明副作用，该步骤记为 warning，当前彩排不会签发 Ready Certificate。
 
+## Agent 生成 Case 前的配置预检
+
+Planner 会先在内存中形成 Case，再在 Case 落盘前读取其中的显式依赖并幂等补齐项目配置。名称全部来自当前 Case，不预设任何业务系统：
+
+- `system: app-admin` + `target: web`：在 `testpilot.yaml` 增加 `systems.app-admin.baseUrl: ${APP_ADMIN_BASE_URL}`，并在 `.env.testing` 增加 `APP_ADMIN_BASE_URL=`。
+- `${variable.projectId}`：增加 `variables.projectId: ${PROJECT_ID}` 与 `.env.testing` 的 `PROJECT_ID=`。
+- `accountRef: test-user`：只在 `.env.testing` 增加 `TESTPILOT_ACCOUNT_TEST_USER={"username":"","password":""}`；Case 和 `testpilot.yaml` 都不保存账号密码。
+
+提示中明确给出 `ENV_NAME=value` 时可作为新字段初值；已有 `.env.testing` 值永不覆盖。无法确定的值保持空占位，填写完成前 doctor/Rehearse 会阻止其被当作可执行配置。普通业务字段只有加入 `variables` 白名单后才能被 Case 读取，凭据不得加入该白名单。
+
 ## list —— 列出用例
 
 ```bash

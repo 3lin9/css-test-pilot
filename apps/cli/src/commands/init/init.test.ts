@@ -133,12 +133,12 @@ describe('cli:init:新项目', () => {
     expect(yaml).toContain('project:')
     expect(yaml).toContain('caseDirectory: tests/e2e/cases')
     expect(yaml).toContain('baseUrl: ${TEST_BASE_URL}')
-    expect(yaml).toContain('variables:')
-    expect(yaml).toContain('ppmProjectId: ${PPM_PROJECT_ID}')
+    expect(yaml).toContain('variables: {}')
+    expect(yaml).toContain('systems: {}')
     expect(yaml).not.toMatch(/password|secret\s*:/i)
 
     // 机器相关的地址/路径走环境变量,模板不写死(每人环境不同)
-    expect(yaml).toContain('baseUrl: ${WEB_BASE_URL}')
+    expect(yaml).toContain('api:\n  baseUrl: ${API_BASE_URL}')
     expect(yaml).toContain('projectPath: ${MINIAPP_PROJECT_PATH}')
     expect(yaml).not.toContain('http://127.0.0.1:8080')
 
@@ -148,6 +148,7 @@ describe('cli:init:新项目', () => {
     const envTesting = await readFile(join(root, '.env.testing'), 'utf8')
     expect(envTesting).toContain('TEST_BASE_URL=')
     expect(envTesting).toContain('STAGING_BASE_URL=')
+    expect(envTesting).toContain('API_BASE_URL=')
     expect(envTesting).toContain('MINIAPP_PROJECT_PATH')
     const gitignore = await readFile(join(root, '.gitignore'), 'utf8')
     expect(gitignore.split(/\r?\n/)).toContain('.env.testing')
@@ -228,6 +229,7 @@ describe('cli:init:安全(§18/§20)', () => {
     // 隔离环境变量问题:模板引用的变量先注入,专注验证 Adapter 降级为 warning
     process.env.TEST_BASE_URL = 'http://localhost:8080'
     process.env.STAGING_BASE_URL = 'http://localhost:8081'
+    process.env.API_BASE_URL = 'http://localhost:8080/api'
     const summary = await runInit(root, { serverUrl: null })
     expect(summary.adapters.some((item) => !item.available)).toBe(true)
     expect(summary.doctor.warnings).toBeGreaterThan(0)

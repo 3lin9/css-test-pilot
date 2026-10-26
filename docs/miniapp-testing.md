@@ -32,9 +32,12 @@
 
 | 能力 | DSL | 官方对应 | 典型用途 |
 | --- | --- | --- | --- |
-| mock 并捕获 | `mockWxApi`(`result` + `capture`;step 结束自动恢复) | `miniProgram.mockWxMethod` / `restoreWxMethod` | 拦截 `wx.request` 消除后端造数依赖;捕获 `wx.showModal` 文案断言 |
+| mock 并捕获 | `mockWxApi`(`result` + `capture`;用例结束自动恢复) | `miniProgram.mockWxMethod` / `restoreWxMethod` | 拦截 `wx.request` 消除后端造数依赖;捕获 `wx.showModal` 文案断言。回调式 API 会收到 success/fail/complete |
 | 主动调用 | `callWxApi`(`variable` 可捕获返回值) | `miniProgram.callWxMethod` | `setStorageSync` 写登录态、`clearStorageSync` 制造"未授权设备"前置 |
 | 请求次数断言 | `expectRequests`(临时 mock `wx.request` 计数,自动恢复) | 同上 | 交互触发的网络请求精确次数 |
+| 原生授权弹窗 | `nativeAuthorize`(`decision: allow/cancel`,默认等待 3 秒) | `miniProgram.native().authorizeAllow/authorizeCancel` | 点击开发者工具中的通用授权弹窗 |
+
+`nativeAuthorize` 只操作开发者工具原生授权层,不产生可供服务端交换真实手机号的一次性 code。业务分支仍用 `trigger` + `detail`。真实手机号闭环需要真实 appid、已登录测试账号和服务端换号接口。
 
 ### 运行时取证(失败时自动落盘)
 
@@ -49,7 +52,7 @@ Case 失败时,adapter 会把以下诊断写入 `runs/<runId>/logs/diagnostics-<
 
 小程序自动化的前提是本机微信开发者工具处于**已登录**状态且**服务端口开启**(设置 → 安全设置 → 服务端口)。CI 环境要特别关注登录态:
 
-1. **`npx csspilot doctor` 会检查**:CLI 是否可发现、`cli islogin` 登录态、`project.config.json` 的 appid 是否缺失或为 `touristappid`(游客模式会受限)。登录态问题以 warning 呈现,不阻塞其他检查。
+1. **登录态、服务端口和游客 appid 会阻断小程序 run**:`npx csspilot doctor` 与小程序 adapter 启动前都会检查 CLI、`cli islogin` 和 `project.config.json` 的 appid。未登录、无法确认服务端口、缺少真实 appid 或 `touristappid` 直接报错,不再等到自动化端口超时。
 2. **登录态过期是 CI 全线失败的常见根因**:工具登录态长期有效但会因改密等事件失效,失效后所有 Case 连接失败。建议:
    - CI runner 首次配置时人工扫码 `cli login`,此后保持工具定期运行;
    - 官方 automator 提供 `getTicket` / `setTicket` / `refreshTicket` 票据接口,可用于跨机器迁移登录票据(需要从已登录机器导出);TestPilot 暂不封装票据管理,保持人工/脚本维护;
@@ -60,12 +63,12 @@ Case 失败时,adapter 会把以下诊断写入 `runs/<runId>/logs/diagnostics-<
 
 | 范围 | 说明 |
 | --- | --- |
-| 真机自动化 | 官方 automator 的 `remote`(真机调试)能力为**远期选项**,当前仅支持模拟器;原生弹窗、扫码、支付等真机专属场景保持人工 |
+| 真机自动化 | 官方 automator 的 `remote`(真机调试)能力为**远期选项**,当前仅支持模拟器。扫码、支付、多手机号选择等仍保持人工 |
 | 发布 / 预览类 | 推送手机预览、生成预览二维码、上传体验版属于发布流程,不属于测试基础设施 |
 | `evaluate` 任意代码 | 破坏 Case 的声明式可审计性,不开放;storage / 前置状态场景用 `callWxApi` 表达 |
 | 体验评分(`stopAudits`) | 属于质量评估而非业务测试 |
 | 插件 API mock(`mockPluginWxMethod` 系列) | 用到插件的项目出现需求后再立项 |
-| `functionDeclaration` 动态 mock | 任意 JS 破坏可审计性;静态 `result` 覆盖现有场景 |
+| 用户自定义 mock 函数 | 任意 JS 破坏可审计性。`mockWxApi` 只接收静态 `result`,并由运行时按 success/fail/complete 或同步返回值投递 |
 
 ## 四、已知约束
 

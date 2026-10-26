@@ -1,8 +1,8 @@
 import automator from 'miniprogram-automator'
-import { TestPilotError } from '@testpilot/core'
+import { inspectMiniappRuntime, TestPilotError } from '@testpilot/core'
 import { spawn } from 'node:child_process'
 import net from 'node:net'
-import type { CaseLocator, StepTarget } from '@testpilot/dsl'
+import type { CaseLocator, NativeAuthorizeDecision, StepTarget } from '@testpilot/dsl'
 import type {
   CapturedRequest,
   ConsoleLogEntry,
@@ -32,9 +32,9 @@ interface AutomatorElement {
   input(value: string): Promise<void>
   trigger(type: string, detail?: Record<string, unknown>): Promise<void>
   callMethod(method: string, ...args: unknown[]): Promise<unknown>
-  touchstart(options?: { touches?: unknown[]; changeTouches?: unknown[] }): Promise<void>
-  touchmove(options?: { touches?: unknown[]; changeTouches?: unknown[] }): Promise<void>
-  touchend(options?: { touches?: unknown[]; changeTouches?: unknown[] }): Promise<void>
+  touchstart(options?: { touches?: unknown[]; changedTouches?: unknown[] }): Promise<void>
+  touchmove(options?: { touches?: unknown[]; changedTouches?: unknown[] }): Promise<void>
+  touchend(options?: { touches?: unknown[]; changedTouches?: unknown[] }): Promise<void>
   attribute(name: string): Promise<unknown>
   property(name: string): Promise<unknown>
   setData(data: Record<string, unknown>): Promise<void>
@@ -64,6 +64,11 @@ interface AutomatorPage {
   callMethod(method: string, ...args: unknown[]): Promise<unknown>
 }
 
+interface AutomatorNative {
+  authorizeAllow(): Promise<unknown>
+  authorizeCancel(): Promise<unknown>
+}
+
 export interface AutomatorProgram {
   reLaunch(url: string): Promise<unknown>
   currentPage(): Promise<AutomatorPage | undefined>
@@ -73,13 +78,10 @@ export interface AutomatorProgram {
   exposeFunction(name: string, callback: (value: unknown) => void): Promise<void>
   mockWxMethod(
     method: string,
-    implementation: (
-      this: { origin(options: unknown): unknown },
-      options: Record<string, unknown>,
-      exposedName: string,
-    ) => unknown,
-    exposedName?: string,
+    implementation: (this: { origin(input: unknown): unknown }, ...args: never[]) => unknown,
+    ...args: unknown[]
   ): Promise<void>
+  native?(): AutomatorNative
   restoreWxMethod(method: string): Promise<void>
   /** 以下为可选能力:旧版本 SDK / 测试桩可能未提供 */
   callWxMethod?(method: string, ...args: unknown[]): Promise<unknown>
@@ -183,13 +185,36 @@ async function connectWithRetry(wsEndpoint: string, timeoutMs: number): Promise<
   throw lastError instanceof Error ? lastError : new Error(String(lastError))
 }
 
-/** 以 shell 拉起 `cli auto`(兼容 .bat),自动化端口就绪或 cli 正常退出即返回 */
+/**
+ * 以 shell 拉起开发者工具自动化。
+ * 当前官方文档是 `cli --auto <project> --auto-port <port>`；
+ * automator 0.12.1 仍使用旧形式 `cli auto --project <project>`。
+ * 新参数被 CLI 拒绝时再试旧参数。端口超时不切换,避免重复拉起工具。
+ */
 function startCliAuto(cliPath: string, projectPath: string, port: number): Promise<void> {
+  const official = ['--auto', projectPath, '--auto-port', String(port)]
+  const legacy = ['auto', '--project', projectPath, '--auto-port', String(port)]
+  return spawnCliAuto(cliPath, official, port).catch(async (err) => {
+    if (!isCliArgumentFailure(err)) throw err
+    try {
+      await spawnCliAuto(cliPath, legacy, port)
+    } catch (legacyErr) {
+      const first = err instanceof Error ? err.message : String(err)
+      const second = legacyErr instanceof Error ? legacyErr.message : String(legacyErr)
+      throw new TestPilotError('ENVIRONMENT_UNAVAILABLE', `开发者工具自动化启动失败。当前参数:${first}；兼容参数:${second}`)
+    }
+  })
+}
+
+function isCliArgumentFailure(err: unknown): boolean {
+  return err instanceof TestPilotError && err.message.includes('退出码')
+}
+
+function spawnCliAuto(cliPath: string, args: readonly string[], port: number): Promise<void> {
   return new Promise((resolvePromise, rejectPromise) => {
     // shell:true 下 Node 不做参数转义,路径含空格需自行加引号
     const quote = (value: string) => (/\s/.test(value) ? `"${value}"` : value)
-    const args = ['auto', '--project', projectPath, '--auto-port', String(port)].map(quote)
-    const child = spawn(`"${cliPath}"`, args, { shell: process.platform === 'win32' })
+    const child = spawn(`"${cliPath}"`, args.map(quote), { shell: process.platform === 'win32' })
     let output = ''
     child.stdout?.on('data', (chunk: Buffer) => {
       output += chunk.toString('utf8')
@@ -202,7 +227,7 @@ function startCliAuto(cliPath: string, projectPath: string, port: number): Promi
       if (code === 0) {
         resolvePromise()
       } else {
-        rejectPromise(new TestPilotError('ENVIRONMENT_UNAVAILABLE', `cli auto 退出码 ${code}:${output.slice(-400)}`))
+        rejectPromise(new TestPilotError('ENVIRONMENT_UNAVAILABLE', `cli 退出码 ${code}:${output.slice(-400)}`))
       }
     })
 
@@ -251,6 +276,18 @@ export class MiniAppAdapter implements TestAdapter {
   /** 拉起开发者工具并建立自动化连接;需幂等 */
   async launch(): Promise<void> {
     if (this.program) return
+    if (this.launcher === automatorLauncher) {
+      const report = await inspectMiniappRuntime({
+        projectPath: this.config.projectPath,
+        cliPath: this.config.cliPath,
+      })
+      if (report.issues.length > 0) {
+        throw new TestPilotError(
+          'ENVIRONMENT_UNAVAILABLE',
+          report.issues.map((issue) => `${issue.summary}:${issue.hint}`).join('; '),
+        )
+      }
+    }
     const port = resolveAutoPort()
     // 端口已有会话(手动 cli auto / 上次运行遗留)直接复用:
     // automator.launch 会再拉一次 cli auto,与现有会话竞争导致重启竞态与命令超时
@@ -405,15 +442,10 @@ export class MiniAppAdapter implements TestAdapter {
     }
     await program.mockWxMethod(
       options.api,
-      function (this: { origin(o: unknown): unknown }, invokeOptions: Record<string, unknown>, cbName: string) {
-        const callbacks = globalThis as unknown as Record<
-          string,
-          ((value: unknown) => void) | undefined
-        >
-        callbacks[cbName]?.({ options: invokeOptions })
-        return options.result ?? this.origin(invokeOptions)
-      },
-      callbackName,
+      applyWxMockResult,
+      options.result ?? null,
+      callbackName ?? '',
+      options.api,
     )
   }
 
@@ -515,7 +547,10 @@ export class MiniAppAdapter implements TestAdapter {
   ): Promise<void> {
     await this.runWithReconnect(async () => {
       const element = await this.element(locator)
-      const options = { touches: [...touches], changeTouches: [...changedTouches] }
+      const options = {
+        touches: touches.map(normalizeTouchPoint),
+        changedTouches: changedTouches.map(normalizeTouchPoint),
+      }
       if (phase === 'touchstart') await element.touchstart(options)
       else if (phase === 'touchmove') await element.touchmove(options)
       else if (phase === 'touchend') await element.touchend(options)
@@ -538,6 +573,52 @@ export class MiniAppAdapter implements TestAdapter {
         )
       }
       await program.pageScrollTo(scrollTop)
+    })
+  }
+
+  /**
+   * 点击开发者工具原生授权弹窗。
+   * 弹窗不属于 WXML,点击按钮后可能延迟出现,因此在 timeout 内重试。
+   */
+  async nativeAuthorize(decision: NativeAuthorizeDecision, timeoutMs = 3_000): Promise<void> {
+    await this.runWithReconnect(async () => {
+      const program = await this.getProgram()
+      if (typeof program.native !== 'function') {
+        throw new TestPilotError(
+          'UNSUPPORTED_ACTION',
+          '当前 miniprogram-automator 不支持 native(),请升级微信开发者工具后重试',
+        )
+      }
+      const native = program.native()
+      const operation = decision === 'allow' ? () => native.authorizeAllow() : () => native.authorizeCancel()
+      const startedAt = Date.now()
+      let lastMessage = '授权弹窗未出现'
+      while (Date.now() - startedAt <= timeoutMs) {
+        let timer: ReturnType<typeof setTimeout> | undefined
+        const pending = operation()
+        pending.catch(() => undefined)
+        try {
+          const attemptMs = Math.min(1_500, Math.max(timeoutMs, 1))
+          await Promise.race([
+            pending,
+            new Promise<never>((_, reject) => {
+              timer = setTimeout(() => reject(new Error('授权弹窗尚未出现')), attemptMs)
+            }),
+          ])
+          return
+        } catch (err) {
+          if (err instanceof TestPilotError) throw err
+          lastMessage = err instanceof Error ? err.message : String(err)
+          if (Date.now() - startedAt >= timeoutMs) break
+          await delay(200)
+        } finally {
+          if (timer) clearTimeout(timer)
+        }
+      }
+      throw new TestPilotError(
+        'NATIVE_DIALOG_TIMEOUT',
+        `等待原生授权弹窗超时(${timeoutMs}ms):${lastMessage}`,
+      )
     })
   }
 
@@ -1010,6 +1091,64 @@ function sanitizeObservedUrl(url: string): string {
 
 function escapeCssIdentifier(value: string): string {
   return value.replace(/([^A-Za-z0-9_-])/g, '\\$1')
+}
+
+function normalizeTouchPoint(point: Record<string, unknown>): Record<string, unknown> {
+  const x = point.pageX ?? point.clientX ?? point.x
+  const y = point.pageY ?? point.clientY ?? point.y
+  return {
+    ...point,
+    ...(point.identifier === undefined ? { identifier: 0 } : {}),
+    ...(x !== undefined ? { pageX: x, clientX: point.clientX ?? x } : {}),
+    ...(y !== undefined ? { pageY: y, clientY: point.clientY ?? y } : {}),
+  }
+}
+
+/**
+ * 在小程序 AppService 中执行。函数会被 automator 序列化,不能引用外部变量;
+ * mock 结果、捕获函数名和 API 名由 mockWxMethod 的附加参数传入。
+ */
+function applyWxMockResult(
+  firstArg: unknown,
+  mockResult: unknown,
+  captureName: string,
+  methodName: string,
+): unknown {
+  if (captureName) {
+    const notify = (globalThis as Record<string, unknown>)[captureName]
+    if (typeof notify === 'function') notify({ options: firstArg })
+  }
+  const options =
+    firstArg !== null && typeof firstArg === 'object'
+      ? (firstArg as Record<string, unknown>)
+      : undefined
+  const hasCallback =
+    !!options &&
+    (typeof options.success === 'function' ||
+      typeof options.fail === 'function' ||
+      typeof options.complete === 'function')
+  const errMsg =
+    mockResult !== null && typeof mockResult === 'object'
+      ? (mockResult as { errMsg?: unknown }).errMsg
+      : undefined
+  const failed = typeof errMsg === 'string' && errMsg.includes(':fail')
+  const finish = () => {
+    if (!options) return
+    if (failed) {
+      if (typeof options.fail === 'function') options.fail(mockResult)
+    } else if (typeof options.success === 'function') {
+      options.success(mockResult)
+    }
+    if (typeof options.complete === 'function') options.complete(mockResult)
+  }
+  if (hasCallback) {
+    setTimeout(finish, 0)
+    return undefined
+  }
+  if (options && !String(methodName).endsWith('Sync')) {
+    return failed ? Promise.reject(mockResult) : Promise.resolve(mockResult)
+  }
+  return mockResult
 }
 
 async function inspectInBatches<T, R>(

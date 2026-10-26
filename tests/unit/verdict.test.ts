@@ -8,7 +8,7 @@ describe('verdictFromErrorCode', () => {
     }
   })
   it('infra 桶(含现有码)', () => {
-    for (const code of ['ENVIRONMENT_UNAVAILABLE', 'ADAPTER_NOT_FOUND', 'UNSUPPORTED_ACTION', 'FIXTURE_MISSING', 'ACCOUNT_UNAVAILABLE', 'CONFIG_MISSING']) {
+    for (const code of ['ENVIRONMENT_UNAVAILABLE', 'ADAPTER_NOT_FOUND', 'UNSUPPORTED_ACTION', 'FIXTURE_MISSING', 'ACCOUNT_UNAVAILABLE', 'CONFIG_MISSING', 'NATIVE_DIALOG_TIMEOUT']) {
       expect(verdictFromErrorCode(code)).toBe('infra')
     }
   })

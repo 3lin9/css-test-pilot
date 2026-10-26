@@ -778,6 +778,12 @@ describe('executeStep 交互扩展(assert count/attribute、callWxApi)', () => {
       this.wxCalls.push({ api, args: [...args] })
       return { code: 0 }
     }
+
+    readonly nativeCalls: Array<{ decision: 'allow' | 'cancel'; timeoutMs?: number }> = []
+
+    async nativeAuthorize(decision: 'allow' | 'cancel', timeoutMs?: number): Promise<void> {
+      this.nativeCalls.push({ decision, ...(timeoutMs !== undefined ? { timeoutMs } : {}) })
+    }
   }
 
   /** 产物目录先于 fake timers 准备好(fs 操作不被假时钟包裹) */
@@ -894,6 +900,17 @@ describe('executeStep 交互扩展(assert count/attribute、callWxApi)', () => {
     )
     expect(adapter.wxCalls).toEqual([{ api: 'getStorageInfo', args: ['token', 123] }])
     expect(result.extracted).toEqual({ info: '{"code":0}' })
+    expect(result.status).toBe('passed')
+  })
+
+  test('nativeAuthorize 把 decision 和 timeout 交给 adapter', async () => {
+    const adapter = new DeepMockAdapter()
+    const result = await runDeepStep(
+      { target: 'miniapp', action: 'nativeAuthorize', decision: 'cancel', timeout: 3000 },
+      adapter,
+      await makeArtifacts(),
+    )
+    expect(adapter.nativeCalls).toEqual([{ decision: 'cancel', timeoutMs: 3000 }])
     expect(result.status).toBe('passed')
   })
 

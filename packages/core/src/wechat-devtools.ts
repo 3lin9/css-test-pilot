@@ -154,6 +154,93 @@ function execCliToString(cliPath: string, args: string[]): Promise<string> {
   })
 }
 
+export type MiniappRuntimeIssueCode =
+  | 'CLI_NOT_FOUND'
+  | 'NOT_LOGGED_IN'
+  | 'SERVICE_PORT_UNCONFIRMED'
+  | 'PROJECT_CONFIG_MISSING'
+  | 'APPID_MISSING'
+  | 'TOURIST_APPID'
+
+export interface MiniappRuntimeIssue {
+  code: MiniappRuntimeIssueCode
+  summary: string
+  hint: string
+}
+
+export interface MiniappRuntimeReport {
+  cliPath?: string
+  appid?: string
+  loggedIn?: boolean
+  issues: MiniappRuntimeIssue[]
+}
+
+/**
+ * 小程序自动化能否启动的阻断检查。
+ * 未登录、服务端口未开启、游客 appid 都会让授权弹窗和 CLI 调用失败。
+ */
+export async function inspectMiniappRuntime(
+  input: { projectPath: string; cliPath?: string },
+  deps: {
+    findCli?: () => Promise<string | undefined>
+    isLoggedIn?: (cliPath: string) => Promise<boolean | undefined>
+  } = {},
+): Promise<MiniappRuntimeReport> {
+  const issues: MiniappRuntimeIssue[] = []
+  const cliPath = input.cliPath ?? (await (deps.findCli ?? findWechatDevToolsCli)())
+  let loggedIn: boolean | undefined
+  if (!cliPath) {
+    issues.push({
+      code: 'CLI_NOT_FOUND',
+      summary: '微信开发者工具 CLI 未找到',
+      hint: '安装微信开发者工具,或设置 WECHAT_DEVTOOLS_CLI 指向 cli',
+    })
+  } else {
+    loggedIn = await (deps.isLoggedIn ?? isWechatDevToolsLoggedIn)(cliPath)
+    if (loggedIn === false) {
+      issues.push({
+        code: 'NOT_LOGGED_IN',
+        summary: '开发者工具未登录',
+        hint: '打开工具扫码登录后再运行小程序用例',
+      })
+    } else if (loggedIn !== true) {
+      issues.push({
+        code: 'SERVICE_PORT_UNCONFIRMED',
+        summary: '无法确认开发者工具登录态',
+        hint: '请确认工具已登录,且设置->安全设置->服务端口已开启',
+      })
+    }
+  }
+
+  const appidInfo = readMiniappProjectAppid(input.projectPath)
+  if (!appidInfo) {
+    issues.push({
+      code: 'PROJECT_CONFIG_MISSING',
+      summary: 'project.config.json 缺失',
+      hint: `${input.projectPath} 下未找到,自动化无法定位项目`,
+    })
+  } else if (!appidInfo.appid) {
+    issues.push({
+      code: 'APPID_MISSING',
+      summary: 'project.config.json 缺少 appid',
+      hint: '手机号等授权能力不可用,请填写真实 appid',
+    })
+  } else if (appidInfo.appid === 'touristappid') {
+    issues.push({
+      code: 'TOURIST_APPID',
+      summary: 'appid 为 touristappid(游客模式)',
+      hint: '游客模式无法完成手机号等授权,请在 project.config.json 填写真实 appid',
+    })
+  }
+
+  return {
+    ...(cliPath ? { cliPath } : {}),
+    ...(appidInfo?.appid ? { appid: appidInfo.appid } : {}),
+    ...(loggedIn !== undefined ? { loggedIn } : {}),
+    issues,
+  }
+}
+
 /**
  * 读取小程序 project.config.json 的 appid(用于 doctor 校验)。
  * 文件缺失或 JSON 损坏时返回 undefined;appid 缺失时 appid 字段为 undefined。

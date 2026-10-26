@@ -40,9 +40,9 @@
 Add tests proving:
 
 ```ts
-process.env.PPM_PROJECT_ID = 'ppm-100'
+process.env.PROJECT_ID = 'project-100'
 const config = await loadTestpilotConfig(root)
-expect(config.variables).toEqual({ ppmProjectId: 'ppm-100' })
+expect(config.variables).toEqual({ projectId: 'project-100' })
 ```
 
 and proving unresolved references remain `${MISSING_VARIABLE}` for preflight detection.
@@ -73,7 +73,7 @@ Add a commented whitelist example:
 
 ```yaml
 # variables:
-#   ppmProjectId: ${PPM_PROJECT_ID}
+#   projectId: ${PROJECT_ID}
 ```
 
 Do not expose `process.env` directly.
@@ -110,7 +110,7 @@ datasets:
   idField: id
 requires:
   - fixture.product.styleNo
-  - variable.ppmProjectId
+  - variable.projectId
 setup:
   - target: api
     action: request
@@ -241,7 +241,7 @@ Flatten nested values into names such as:
 ```text
 fixture.product.styleNo
 dataset.discountType
-variable.ppmProjectId
+variable.projectId
 account.token
 ```
 
@@ -497,7 +497,7 @@ Record expected behavior for:
 2. a QA library with covered/partial/missing/conflict mappings;
 3. a project with no account/promotion concepts.
 
-The third evaluation must omit invented account/coupon/PPM fields.
+The third evaluation must omit invented account, coupon, or project-specific system fields.
 
 - [ ] **Step 2: Update requirement review workflow**
 

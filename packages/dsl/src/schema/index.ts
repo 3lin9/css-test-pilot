@@ -34,7 +34,12 @@ export const ACTIONS = [
   'swipeTo',
   'slideTo',
   'moveTo',
+  'nativeAuthorize',
 ] as const
+
+/** 开发者工具原生授权弹窗的决定。只覆盖官方 Native.authorizeAllow / authorizeCancel。 */
+export const NATIVE_AUTHORIZE_DECISIONS = ['allow', 'cancel'] as const
+export type NativeAuthorizeDecision = (typeof NATIVE_AUTHORIZE_DECISIONS)[number]
 
 /** touch action 的触摸阶段(对应 automator element.touchstart/touchmove/touchend) */
 export const TOUCH_PHASES = ['touchstart', 'touchmove', 'touchend'] as const
@@ -112,6 +117,8 @@ export const stepSchema = z.strictObject({
   capture: z.string().min(1).optional(),
   /** trigger:触发的事件类型(如 getphonenumber;空 detail 即"用户拒绝/取消"类分支) */
   eventType: z.string().min(1).optional(),
+  /** nativeAuthorize:点击开发者工具原生授权弹窗。allow=确认,cancel=取消 */
+  decision: z.enum(NATIVE_AUTHORIZE_DECISIONS).optional(),
   /** trigger:作为事件 e.detail 注入(值支持 ${var} 模板) */
   detail: z.record(z.string(), z.unknown()).optional(),
   /** setData:写入页面 data 的补丁(值支持 ${var} 模板);提供 locator 时为组件级 setData */

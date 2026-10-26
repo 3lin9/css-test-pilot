@@ -253,12 +253,12 @@ datasets:
 requires:
   - fixture.product.styleNo
   - dataset.discountType
-  - variable.ppmProjectId
+  - variable.projectId
 setup:
   - target: api
     action: request
     method: POST
-    url: /setup/\${variable.ppmProjectId}
+    url: /setup/\${variable.projectId}
   - target: api
     action: extract
     value: data.token
@@ -537,5 +537,54 @@ steps:
     value: 0
 `)
     expect(result.ok).toBe(true)
+  })
+
+  test('trigger 必须有 locator,nativeAuthorize 只接受 allow/cancel', () => {
+    const missing = validateCaseSource(`
+id: miniapp-auth-bad
+name: 授权步骤缺字段
+steps:
+  - target: miniapp
+    action: trigger
+    eventType: getphonenumber
+  - target: miniapp
+    action: nativeAuthorize
+  - target: web
+    action: nativeAuthorize
+    decision: allow
+  - target: miniapp
+    action: touch
+    locator:
+      css: ".canvas"
+    phase: touchstart
+    touches:
+      - identifier: 0
+`)
+    expect(missing.ok).toBe(false)
+    const paths = missing.issues.map((issue) => issue.path)
+    expect(paths).toEqual(
+      expect.arrayContaining([
+        'steps[0].locator',
+        'steps[1].decision',
+        'steps[2].target',
+        'steps[3].touches[0]',
+      ]),
+    )
+
+    const ok = validateCaseSource(`
+id: miniapp-auth
+name: 原生授权
+steps:
+  - target: miniapp
+    action: click
+    locator:
+      css: ".phone-login"
+  - target: miniapp
+    action: nativeAuthorize
+    decision: allow
+    timeout: 3000
+`)
+    expect(ok.ok).toBe(true)
+    expect(ok.data?.steps[1]?.decision).toBe('allow')
   })
 })

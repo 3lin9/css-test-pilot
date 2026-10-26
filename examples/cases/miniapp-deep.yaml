@@ -60,6 +60,12 @@ steps:
     eventType: tap
     detail: {}
 
+  # nativeAuthorize 点击开发者工具原生授权弹窗;不产生真实手机号 code
+  - target: miniapp
+    action: nativeAuthorize
+    decision: cancel
+    timeout: 3000
+
   # 组件级 callMethod / setData(提供 locator 即对组件实例操作)
   - target: miniapp
     action: setData

@@ -366,7 +366,10 @@ describe('MiniAppAdapter 交互扩展与运行时诊断', () => {
 
     const touches = [{ identifier: 0, x: 10, y: 20 }]
     await adapter.touch({ css: '.canvas' }, 'touchstart', touches, touches)
-    expect(fakeElement.touchstart).toHaveBeenCalledWith({ touches, changeTouches: touches })
+    expect(fakeElement.touchstart).toHaveBeenCalledWith({
+      touches: [{ identifier: 0, x: 10, y: 20, pageX: 10, clientX: 10, pageY: 20, clientY: 20 }],
+      changedTouches: [{ identifier: 0, x: 10, y: 20, pageX: 10, clientX: 10, pageY: 20, clientY: 20 }],
+    })
 
     await adapter.swipeTo({ css: '.swiper' }, 2)
     expect(fakeElement.swipeTo).toHaveBeenCalledWith(2)
@@ -481,6 +484,69 @@ describe('MiniAppAdapter 交互扩展与运行时诊断', () => {
     expect(diagnostics.exceptions).toEqual(['appservice crashed'])
     expect(diagnostics.pageStack).toEqual([{ path: '/pages/index/index' }])
     expect(diagnostics.systemInfo).toEqual({ SDKVersion: '3.7.0' })
+  })
+
+  test('mockWxApi 把结果传给回调,并用 :fail 走 fail', async () => {
+    const { program } = fakeProgramWith({})
+    const adapter = adapterOf(program)
+    await adapter.launch()
+    const result = { errMsg: 'request:ok', data: { ok: true } }
+    await adapter.mockWxApi({ api: 'request', result })
+    const mocked = vi.mocked(program.mockWxMethod).mock.calls[0]
+    expect(mocked?.[2]).toEqual(result)
+    expect(String(mocked?.[1])).toContain('success')
+    expect(String(mocked?.[1])).not.toContain('options.result')
+
+    const success = vi.fn()
+    const complete = vi.fn()
+    const handler = mocked?.[1] as (
+      firstArg: unknown,
+      mockResult: unknown,
+      captureName: string,
+      methodName: string,
+    ) => unknown
+    handler({ url: '/api', success, complete }, result, '', 'request')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(success).toHaveBeenCalledWith(result)
+    expect(complete).toHaveBeenCalledWith(result)
+
+    const failed = { errMsg: 'login:fail auth deny' }
+    const fail = vi.fn()
+    const failComplete = vi.fn()
+    handler({ fail, complete: failComplete }, failed, '', 'login')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(fail).toHaveBeenCalledWith(failed)
+    expect(failComplete).toHaveBeenCalledWith(failed)
+
+    expect(handler('token', { value: 'abc' }, '', 'getStorageSync')).toEqual({ value: 'abc' })
+    await expect(handler({ url: '/api' }, result, '', 'request')).resolves.toEqual(result)
+  })
+
+  test('nativeAuthorize 在弹窗晚出现时重试,超时给出 NATIVE_DIALOG_TIMEOUT', async () => {
+    const authorizeAllow = vi
+      .fn<() => Promise<void>>()
+      .mockRejectedValueOnce(new Error('no dialog'))
+      .mockResolvedValueOnce(undefined)
+    const { program } = fakeProgramWith({
+      program: { native: () => ({ authorizeAllow, authorizeCancel: vi.fn() }) },
+    })
+    const adapter = adapterOf(program)
+    await adapter.launch()
+    await adapter.nativeAuthorize('allow', 1_000)
+    expect(authorizeAllow).toHaveBeenCalledTimes(2)
+
+    const hanging = vi.fn(() => new Promise<void>(() => undefined))
+    const timeoutProgram = fakeProgramWith({
+      program: { native: () => ({ authorizeAllow: hanging, authorizeCancel: vi.fn() }) },
+    }).program
+    const timeoutAdapter = adapterOf(timeoutProgram)
+    await timeoutAdapter.launch()
+    const err = await timeoutAdapter.nativeAuthorize('allow', 300).then(
+      () => null,
+      (error: unknown) => error,
+    )
+    expect(err).toBeInstanceOf(TestPilotError)
+    expect((err as TestPilotError).code).toBe('NATIVE_DIALOG_TIMEOUT')
   })
 
   test('readWxApiCaptures 返回引擎契约形状(带 capture 的 mock)', async () => {

@@ -49,9 +49,8 @@ environment:
   staging:
     baseUrl: \${STAGING_BASE_URL}
 
-# Case 可见的项目变量白名单(值来自 .env.testing / CI Secret;Case 用 \${variable.<name>} 引用)
-# variables:
-#   ppmProjectId: \${PPM_PROJECT_ID}
+# Case 可见的项目变量白名单；Planner 会在 Case 落盘前按 \${variable.<name>} 自动补齐
+variables: {}
 
 # 项目声明的执行端(实际可用性以 csspilot doctor 检测为准)
 adapters:
@@ -61,27 +60,19 @@ ${adapters}
 # workspace:
 #   default: my-workspace
 
-# 额外业务系统(需求跨系统查找/配置时声明;Case 用 system: <名称> 引用)
-# 顶层 web:/miniapp:/api: 段仍是各 target 的默认系统;地址用 \${VAR} 引用,值放 .env.testing
-# systems:
-#   mall-admin:
-#     type: web
-#     baseUrl: \${MALL_ADMIN_URL}
-#   mall-miniapp:
-#     type: miniapp
-#     projectPath: ../mall-miniapp
-#   pay-api:
-#     type: api
-#     baseUrl: \${PAY_API_URL}
+# 额外业务系统；Planner 会按 Case 的 system + target 自动补齐引用
+systems: {}
 
 # TestPilot Server(Control Plane)地址;init 关联项目与 sync-metadata 使用
 # 也可用环境变量 TESTPILOT_SERVER_URL 覆盖
 # server:
 #   baseUrl: http://127.0.0.1:3000
 
-# Web 端:navigate 相对 url 的基准地址(每人的地址不同,值放 .env.testing)
-# web:
-#   baseUrl: \${WEB_BASE_URL}
+# 默认 Web/API 执行端；实际值放 .env.testing
+web:
+  baseUrl: \${TEST_BASE_URL}
+api:
+  baseUrl: \${API_BASE_URL}
 
 # 小程序端:填入小程序项目目录后即可执行 target: miniapp 的步骤(路径每人不同,走 .env.testing)
 # miniapp:
@@ -104,8 +95,8 @@ export function renderDotEnvTesting(): string {
 TEST_BASE_URL=http://127.0.0.1:8080
 STAGING_BASE_URL=https://staging.example.com
 
-# Web 端相对 url 的基准(取消 testpilot.yaml 中 web 段注释后生效)
-# WEB_BASE_URL=http://127.0.0.1:8080
+# API 端相对 url 的基准
+API_BASE_URL=http://127.0.0.1:8080/api
 
 # 小程序端(取消 testpilot.yaml 中 miniapp 段注释后生效)
 # MINIAPP_PROJECT_PATH=path/to/miniprogram
@@ -113,6 +104,9 @@ STAGING_BASE_URL=https://staging.example.com
 
 # TestPilot Server(Control Plane,可选)
 # TESTPILOT_SERVER_URL=http://127.0.0.1:3000
+
+# 账号由 Planner 根据 Case 的 accountRef 自动追加，例如:
+# TESTPILOT_ACCOUNT_TEST_USER={"username":"","password":""}
 `
 }
 

@@ -1,7 +1,16 @@
-export { ACTIONS, STEP_TARGETS, SYSTEM_READONLY_ACTIONS, caseSchema, locatorSchema, stepSchema } from './schema'
+export {
+  ACTIONS,
+  NATIVE_AUTHORIZE_DECISIONS,
+  STEP_TARGETS,
+  SYSTEM_READONLY_ACTIONS,
+  caseSchema,
+  locatorSchema,
+  stepSchema,
+} from './schema'
 export type {
   ActionName,
   CaseLocator,
+  NativeAuthorizeDecision,
   StepTarget,
   TestCase,
   TestStep,

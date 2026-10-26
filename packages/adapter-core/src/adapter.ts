@@ -1,4 +1,4 @@
-import type { CaseLocator, StepTarget } from '@testpilot/dsl'
+import type { CaseLocator, NativeAuthorizeDecision, StepTarget } from '@testpilot/dsl'
 import type {
   LocatorCandidate,
   ProbeResult,
@@ -101,6 +101,11 @@ export interface TestAdapter {
   slideTo?(locator: CaseLocator, value: number): Promise<void>
   /** [可选能力] movable-view 移动到指定坐标 */
   moveTo?(locator: CaseLocator, x: number, y: number): Promise<void>
+  /**
+   * [可选能力] 点击开发者工具原生授权弹窗。
+   * 弹窗可能晚于点击出现,实现应在 timeoutMs 内重试。
+   */
+  nativeAuthorize?(decision: NativeAuthorizeDecision, timeoutMs?: number): Promise<void>
   /** [可选能力] 统计匹配元素数量(存在性/计数断言;单次读取,重试语义由引擎负责) */
   countElements?(locator: CaseLocator): Promise<number>
   /** [可选能力] 读取元素 attribute;不存在时返回 undefined/null */

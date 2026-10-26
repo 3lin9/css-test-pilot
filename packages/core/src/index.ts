@@ -14,6 +14,8 @@ export { loadProjectEnvFile, loadTestpilotConfig, ENV_TESTING_FILE } from './con
 export type { TestpilotConfig } from './config-loader'
 export {
   findWechatDevToolsCli,
+  inspectMiniappRuntime,
   isWechatDevToolsLoggedIn,
   readMiniappProjectAppid,
 } from './wechat-devtools'
+export type { MiniappRuntimeIssue, MiniappRuntimeReport } from './wechat-devtools'

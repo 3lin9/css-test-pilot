@@ -65,6 +65,8 @@ AI → .agents/skills/testpilot(规范) → TestPilot CLI → DSL → Execution 
 
 > `rehearse` 会真实执行并反复观察页面；小程序大页面或多步骤 Case 可能耗时数分钟，只应在可重置环境运行。`.testpilot/artifacts/`、`cache/`、`ready/` 是本地或单次 CI 临时数据，默认不提交 Git。
 
+Planner 在 Case 落盘前会自动补齐显式引用的 `system`、`accountRef` 和 `${variable.*}`：结构与环境变量引用写入 `testpilot.yaml`，实际地址及账号密码占位只写入已忽略的 `.env.testing`，已有值不会被覆盖。
+
 ## DSL(V0.1)
 
 九个基础 Action:`launch` `navigate` `click` `input` `select` `wait` `assert` `extract` `screenshot`,外加 `request`(`target: api`,HTTP 造数与数据层断言)。

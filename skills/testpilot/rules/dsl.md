@@ -14,7 +14,7 @@ datasets:             # 可选:同一 steps 按对象数组逐行执行
 requires:             # 可选:逐行执行前的静态依赖契约
   - fixture.product.styleNo
   - dataset.expectedTotal
-  - variable.ppmProjectId
+  - variable.projectId
 setup:                # 可选:主步骤前执行
   - target: api
     action: request
@@ -97,10 +97,11 @@ teardown:             # 可选:setup 开始后始终执行
 | --- | --- | --- |
 | `callMethod` | 调用 Page 方法(locator 缺省)或组件实例方法(提供 locator) | `methodName`, `args`, `locator`(可选) |
 | `setData` | 写入页面 data(locator 缺省)或组件 data(提供 locator)补丁,驱动 onShow/onPullDownRefresh 等真实链路 | `patch`, `locator`(可选) |
-| `trigger` | 对组件注入事件(如 `getphonenumber` + 空 detail = 用户拒绝授权分支) | `locator`, `eventType`, `detail` |
-| `mockWxApi` | 拦截 wx.* API 返回 mock 值;`capture` 记录真实调用参数到变量(`${<capture>.options}` / 列表),step 结束自动恢复 | `wxApi`, `result`, `capture` |
+| `trigger` | 对组件注入事件(如 `getphonenumber` + 空 detail = 用户拒绝授权分支)。这不点击原生弹窗,也不产生真实手机号 code | `locator`, `eventType`, `detail` |
+| `nativeAuthorize` | 点击开发者工具原生授权弹窗。`allow` 确认,`cancel` 取消;弹窗晚出现时在 `timeout`(默认 3000ms)内重试 | `decision`, `timeout`(可选) |
+| `mockWxApi` | 拦截 wx.* API。回调式 API 会调用 success/fail/complete; `errMsg` 含 `:fail` 走失败。`capture` 记录真实调用参数。mock 保持到用例结束 | `wxApi`, `result`, `capture` |
 | `callWxApi` | 主动调用 wx.* API 造前置状态(如 `setStorageSync` 写登录态、`clearStorageSync` 制造未授权设备);返回值可用 `variable` 捕获 | `wxApi`, `args`, `variable` |
-| `touch` | 派发触摸事件(自定义手势组件) | `locator`, `phase`(touchstart/touchmove/touchend), `touches` |
+| `touch` | 派发触摸事件(自定义手势组件)。`x`/`y` 会在执行时写成官方要求的 `pageX`/`pageY` | `locator`, `phase`(touchstart/touchmove/touchend), `touches` |
 | `scroll` | 滚动 scroll-view 元素(提供 locator)或页面(缺省) | `scrollTop`, `locator`(可选) |
 | `swipeTo` | swiper 切到指定页 | `locator`, `index` |
 | `slideTo` | slider 滑到指定值 | `locator`, `value`(数字) |
@@ -124,12 +125,20 @@ steps:
     action: assert
     dataPath: status
     expected: ready
-  # 绕过原生授权弹窗,注入"用户拒绝"事件
+  # 绕过原生授权弹窗,注入"用户拒绝"事件。不能证明真实微信授权链路
   - target: miniapp
     action: trigger
     locator: { css: ".login-btn" }
     eventType: getphonenumber
     detail: { code: "" }
+  # 真实点击开发者工具里的授权弹窗。手机号选择和后端换号仍需真实 appid 与测试账号
+  - target: miniapp
+    action: click
+    locator: { css: ".phone-login" }
+  - target: miniapp
+    action: nativeAuthorize
+    decision: allow
+    timeout: 3000
   - target: miniapp
     action: assert
     locator: { css: ".toast" }

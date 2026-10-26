@@ -30,6 +30,11 @@ export {
 } from './case-preparation'
 export { loadCaseDataFile } from './case-data'
 export {
+  ensureCaseConfiguration,
+  type EnsureCaseConfigurationInput,
+  type EnsuredCaseConfiguration,
+} from './case-config'
+export {
   discoverCases,
   discoverIntent,
   type CaseDiscoveryResult,

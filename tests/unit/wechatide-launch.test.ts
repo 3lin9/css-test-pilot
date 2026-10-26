@@ -44,6 +44,7 @@ test('拉起开发者工具 cli 失败 → ENVIRONMENT_UNAVAILABLE', async () =>
   const pending = automatorLauncher.launch({ projectPath: 'p', cliPath: 'cli.bat' })
   // cli auto 降级在 automator.launch 拒绝后的微任务里才 spawn,等监听器挂上再 emit
   await vi.waitFor(() => expect(mocks.spawn).toHaveBeenCalled())
+  expect(mocks.spawn.mock.calls[0]?.[1]).toEqual(['--auto', 'p', '--auto-port', '9420'])
   child.emit('error', new Error('spawn ENOENT'))
   const err = await pending.then(
     () => null,
@@ -88,4 +89,30 @@ test('自动化端口等待超时 → ENVIRONMENT_UNAVAILABLE', async () => {
   } finally {
     vi.useRealTimers()
   }
+})
+
+test('新版 --auto 被 CLI 拒绝时回退到 auto --project', async () => {
+  const children: Array<EventEmitter & { stdout: EventEmitter; stderr: EventEmitter }> = []
+  mocks.spawn.mockReset()
+  mocks.createConnection.mockReset()
+  mocks.spawn.mockImplementation(() => {
+    const child = fakeChild()
+    children.push(child)
+    return child
+  })
+  mocks.createConnection.mockImplementation(() => fakeSocket())
+  const pending = automatorLauncher.launch({ projectPath: 'p', cliPath: 'cli.bat' })
+  pending.catch(() => {})
+  await vi.waitFor(() => expect(children.length).toBe(1))
+  children[0]?.emit('exit', 1)
+  await vi.waitFor(() => expect(children.length).toBe(2))
+  expect(mocks.spawn.mock.calls[1]?.[1]).toEqual(['auto', '--project', 'p', '--auto-port', '9420'])
+  children[1]?.emit('error', new Error('spawn ENOENT'))
+  const err = await pending.then(
+    () => null,
+    (error: unknown) => error,
+  )
+  expect(err).toBeInstanceOf(TestPilotError)
+  expect((err as TestPilotError).code).toBe('ENVIRONMENT_UNAVAILABLE')
+  expect((err as Error).message).toContain('兼容参数')
 })

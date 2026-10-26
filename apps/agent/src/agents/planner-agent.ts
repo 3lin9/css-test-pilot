@@ -68,6 +68,14 @@ export class PlannerAgent {
       file: input.file,
     })
 
+    ctx.emit({
+      type: 'step',
+      ts: iso(),
+      message: 'Configuration Preflight(system/account/variable)',
+      data: { agent: 'planner' },
+    })
+    await this.client.ensureCaseConfiguration(planned.source, input.prompt)
+
     const written = await createCaseTool(
       this.client,
       ctx,

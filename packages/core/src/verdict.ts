@@ -16,6 +16,7 @@ const INFRA_CODES: ReadonlySet<string> = new Set([
   'PAGE_NOT_STABLE',
   'PAGE_NOT_READY',
   'SCREENSHOT_FAILED',
+  'NATIVE_DIALOG_TIMEOUT',
 ])
 
 /** unverified 桶:规则本轮没测到 → inconclusive(典型:前置 extract 失败,后续 assert 空值比较) */

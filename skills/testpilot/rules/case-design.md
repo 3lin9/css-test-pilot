@@ -35,7 +35,7 @@
 
 - 不要把业务账号、密码硬编码进 Case。
 - 测试参数统一放业务项目 `tests/e2e/data/` 的 YAML/JSON 文件,Case 通过 `${fixture.*}` / `${dataset.*}` 引用。
-- `requires` 只声明当前 Case 有证据支持的静态依赖。AI 必须从 PRD/Spec、代码、配置、已有 Case 或 QA 用例识别,不得因为业务名称自动发明账号、优惠券、PPM 等字段。
+- `requires` 只声明当前 Case 有证据支持的静态依赖。AI 必须从 PRD/Spec、代码、配置、已有 Case 或 QA 用例识别,不得自动发明账号、优惠券或特定业务系统字段。
 - `.env.testing` 提供当前环境的实际值(只放测试变量,不读前端项目自身的 `.env`);只有 `testpilot.yaml variables` 白名单映射的值可通过 `${variable.*}` 暴露给 Case。
 - 缺失依赖会使该数据行 `skipped(dependency-not-ready)`,这只表示静态值未就绪,不保证远端业务对象有效。
 - setup/teardown 优先使用 API 造数和清理;teardown 必须可重复执行。

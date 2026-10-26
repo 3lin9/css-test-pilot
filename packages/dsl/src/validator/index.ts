@@ -24,6 +24,7 @@ const ADAPTER_SUPPORT: Record<ActionName, readonly StepTarget[]> = {
   swipeTo: ['miniapp'],
   slideTo: ['miniapp'],
   moveTo: ['miniapp'],
+  nativeAuthorize: ['miniapp'],
 }
 
 const LOCATOR_REQUIRED = new Set<ActionName>([
@@ -37,6 +38,7 @@ const LOCATOR_REQUIRED = new Set<ActionName>([
   'swipeTo',
   'slideTo',
   'moveTo',
+  'trigger',
 ])
 const VALUE_REQUIRED = new Set<ActionName>(['input', 'select', 'slideTo'])
 const REQUEST_EXPECTATION_ACTIONS = new Set<ActionName>(['navigate', 'click', 'input', 'select'])
@@ -69,14 +71,15 @@ const FIELD_ALLOWED: Record<
   | 'scrollTop'
   | 'index'
   | 'x'
-  | 'y',
+  | 'y'
+  | 'decision',
   readonly ActionName[]
 > = {
   url: ['navigate', 'request'],
   value: ['input', 'select', 'extract', 'slideTo'],
   expected: ['assert', 'request'],
   variable: ['extract', 'callWxApi'],
-  timeout: ['wait'],
+  timeout: ['wait', 'nativeAuthorize'],
   method: ['request'],
   headers: ['request'],
   body: ['request'],
@@ -99,6 +102,7 @@ const FIELD_ALLOWED: Record<
   index: ['swipeTo'],
   x: ['moveTo'],
   y: ['moveTo'],
+  decision: ['nativeAuthorize'],
 }
 
 const VARIABLE_REF = /\$\{([A-Za-z_][A-Za-z0-9_.]*)\}/g
@@ -198,13 +202,27 @@ function checkStep(step: TestStep, at: string, declared: Set<string>, issues: Ds
     issues.push({ path: `${at}.wxApi`, code: 'semantic', message: 'callWxApi 必须提供 wxApi(要主动调用的 wx.* API 名,如 setStorageSync)' })
   }
 
-  // touch:触摸阶段与触摸点必填
+  // touch:触摸阶段与触摸点必填;坐标在执行时规范成 pageX/pageY
   if (step.action === 'touch') {
     if (!step.phase) {
       issues.push({ path: `${at}.phase`, code: 'semantic', message: 'touch 必须提供 phase(touchstart / touchmove / touchend)' })
     }
     if (!step.touches || step.touches.length === 0) {
       issues.push({ path: `${at}.touches`, code: 'semantic', message: 'touch 必须提供 touches(触摸点数组,如 [{identifier: 0, x: 0, y: 0}])' })
+    }
+    for (const [field, points] of [
+      ['touches', step.touches],
+      ['changedTouches', step.changedTouches],
+    ] as const) {
+      points?.forEach((point, index) => {
+        if (!touchPointHasPosition(point)) {
+          issues.push({
+            path: `${at}.${field}[${index}]`,
+            code: 'semantic',
+            message: '触摸点需要 x/y 或 pageX/pageY',
+          })
+        }
+      })
     }
   }
 
@@ -262,9 +280,17 @@ function checkStep(step: TestStep, at: string, declared: Set<string>, issues: Ds
     }
   }
 
-  // trigger:事件类型必填
+  // trigger:事件类型必填;locator 由 LOCATOR_REQUIRED 检查
   if (step.action === 'trigger' && !step.eventType) {
     issues.push({ path: `${at}.eventType`, code: 'semantic', message: 'trigger 必须提供 eventType(触发的事件类型)' })
+  }
+
+  if (step.action === 'nativeAuthorize' && !step.decision) {
+    issues.push({
+      path: `${at}.decision`,
+      code: 'semantic',
+      message: 'nativeAuthorize 必须提供 decision(allow 确认授权 / cancel 取消授权)',
+    })
   }
 
   // setData:补丁必填
@@ -353,6 +379,12 @@ function checkStep(step: TestStep, at: string, declared: Set<string>, issues: Ds
   }
 
   checkVariableRefs(step, at, declared, issues)
+}
+
+function touchPointHasPosition(point: Record<string, unknown>): boolean {
+  const hasX = point.x !== undefined || point.pageX !== undefined || point.clientX !== undefined
+  const hasY = point.y !== undefined || point.pageY !== undefined || point.clientY !== undefined
+  return hasX && hasY
 }
 
 function checkLocator(step: TestStep, at: string, issues: DslIssue[]): void {

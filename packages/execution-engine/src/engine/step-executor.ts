@@ -48,6 +48,7 @@ const STATE_TRANSITION_ACTIONS = new Set<TestStep['action']>([
   'click',
   'longpress',
   'trigger',
+  'nativeAuthorize',
 ])
 
 /**
@@ -376,6 +377,16 @@ export async function executeStep(
         await adapter.moveTo(locator!, step.x ?? 0, step.y ?? 0)
         break
       }
+      case 'nativeAuthorize': {
+        if (typeof adapter.nativeAuthorize !== 'function') {
+          throw new TestPilotError('UNSUPPORTED_ACTION', `当前 ${step.target} adapter 不支持 nativeAuthorize`)
+        }
+        if (step.decision !== 'allow' && step.decision !== 'cancel') {
+          throw new TestPilotError('MISSING_NATIVE_DECISION', 'nativeAuthorize 必须提供 decision(allow / cancel)')
+        }
+        await adapter.nativeAuthorize(step.decision, step.timeout)
+        break
+      }
       default: {
         const exhaustive: never = step.action
         throw new TestPilotError('UNSUPPORTED_ACTION', `不支持的 action:${String(exhaustive)}`)
@@ -401,7 +412,7 @@ export async function executeStep(
       if (verified) verified.transition = transition
       if (!transition.changed && !step.expectRequests) {
         const message = `${step.action} 执行后界面状态未变化，且没有请求断言证明副作用`
-        if (step.action === 'trigger') {
+        if (step.action === 'trigger' || step.action === 'nativeAuthorize') {
           result.status = 'warning'
           result.error = message
         } else {

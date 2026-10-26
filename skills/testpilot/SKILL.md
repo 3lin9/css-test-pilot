@@ -42,7 +42,7 @@ Use TestPilot when the user wants to:
 - Validate before running.
 - A generated YAML draft is not ready. A Case is ready only after runtime probe and rehearsal.
 - Never let AI silently rewrite a Case during a formal run; stale certificates require a new rehearsal.
-- Generate only evidence-backed `requires`; never assume every project has accounts, coupons, promotions, or PPM.
+- Generate only evidence-backed `requires`; never assume every project has accounts, coupons, promotions, or a particular business system.
 - Use data-driven Case groups only when the steps are the same and each row remains one decidable rule/data point.
 
 ## CLI

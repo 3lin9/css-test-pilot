@@ -16,13 +16,13 @@ afterAll(async () => {
   delete process.env.MISSING_VAR_X
   delete process.env.DOTENV_TEST_BASE
   delete process.env.DOTENV_PRIORITY
-  delete process.env.PPM_PROJECT_ID
+  delete process.env.PROJECT_ID
 })
 
 beforeEach(() => {
   delete process.env.TEST_BASE_URL
   delete process.env.MISSING_VAR_X
-  delete process.env.PPM_PROJECT_ID
+  delete process.env.PROJECT_ID
 })
 
 async function writeAndLoad(yaml: string) {
@@ -53,12 +53,12 @@ describe('loadTestpilotConfig 环境变量注入', () => {
   })
 
   test('variables 白名单注入 Case 可见的项目变量', async () => {
-    process.env.PPM_PROJECT_ID = 'ppm-100'
+    process.env.PROJECT_ID = 'project-100'
     const config = await writeAndLoad(
-      'variables:\n  ppmProjectId: ${PPM_PROJECT_ID}\n  literalValue: fixed\n',
+      'variables:\n  projectId: ${PROJECT_ID}\n  literalValue: fixed\n',
     )
     expect(config.variables).toEqual({
-      ppmProjectId: 'ppm-100',
+      projectId: 'project-100',
       literalValue: 'fixed',
     })
   })

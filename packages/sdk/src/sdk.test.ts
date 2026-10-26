@@ -229,7 +229,7 @@ describe('sdk:data-driven preparation', () => {
             'fixture.product.styleNo',
             'fixture.coupon.code',
             'dataset.expected',
-            'variable.ppmProjectId',
+            'variable.projectId',
             'account.token',
           ],
           accountRef: 'buyer',
@@ -239,7 +239,7 @@ describe('sdk:data-driven preparation', () => {
       {
         root,
         dataDir: join(root, 'tests/e2e/data'),
-        variables: { ppmProjectId: 'ppm-100' },
+        variables: { projectId: 'project-100' },
         accounts: { buyer: '{"token":"secret-token"}' },
       },
     )
@@ -255,7 +255,7 @@ describe('sdk:data-driven preparation', () => {
       'fixture.product.styleNo': 'SKU-100',
       'fixture.coupon.code': 'C20',
       'dataset.discountType': 'percentage',
-      'variable.ppmProjectId': 'ppm-100',
+      'variable.projectId': 'project-100',
       'account.token': 'secret-token',
     })
     expect(executions[1]?.rowId).toBe('normal')

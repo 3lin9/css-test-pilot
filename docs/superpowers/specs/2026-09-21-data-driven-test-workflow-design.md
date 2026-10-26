@@ -57,10 +57,10 @@ Result / Report
 6. 共享业务步骤、仅数据与预期不同的 TP，可映射到一个 data-driven Case 组。
 7. 根据当前需求、项目代码、配置、现有 Case 与 QA 用例识别执行依赖，生成当前测试点所需的最小 `requires` 草稿。
 
-`requires` 没有跨项目固定字段。账号层级、优惠券、促销项次、PPM 项目 ID 只是可能出现的业务示例，不得默认写入每个项目：
+`requires` 没有跨项目固定字段。账号层级、优惠券、促销项次、外部系统项目 ID 只是可能出现的业务示例，不得默认写入每个项目：
 
 - 需求和项目证据明确依赖某项数据时，AI 才声明对应字段。
-- 项目不涉及账号、优惠、PPM 等概念时，不生成这些字段。
+- 项目不涉及账号、优惠或特定业务系统时，不生成这些字段。
 - 无外部数据依赖的 Case 可以省略 `requires`。
 - AI 找不到字段来源或命名证据时，将问题写入澄清/缺口清单，不猜测字段。
 - 人工负责确认 AI 生成的依赖契约；真实值由人工、Secret 或项目造数流程提供。
@@ -199,11 +199,11 @@ Case 不得通过 `${env.*}` 任意读取进程环境变量。环境相关的稳
 
 ```yaml
 variables:
-  ppmProjectId: ${PPM_PROJECT_ID}
+  projectId: ${PROJECT_ID}
   testUserLevel: ${TEST_USER_LEVEL}
 ```
 
-Case 再通过 `${variable.ppmProjectId}` 引用。这样 `.env` 只负责提供当前环境的实际值，`requires` 负责声明哪些值是当前 Case 的运行前依赖。
+Case 再通过 `${variable.projectId}` 引用。这样 `.env` 只负责提供当前环境的实际值，`requires` 负责声明哪些值是当前 Case 的运行前依赖。
 
 ### 5.4 数据文件安全边界
 
