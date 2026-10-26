@@ -747,4 +747,28 @@ describe('MiniAppAdapter 会话复用(自动化端口预检)', () => {
 
     expect((program2.currentPage as ReturnType<typeof vi.fn>).mock.calls.length).toBeGreaterThanOrEqual(3)
   })
+
+  test('页面一直未就绪时 launch 失败,不把后续脚本放进编译期', async () => {
+    vi.useFakeTimers()
+    try {
+      const { program, fakePage } = createFakeProgram()
+      const page = { ...fakePage, data: vi.fn(async () => { throw new Error('compiling') }) }
+      const program2: AutomatorProgram = { ...program, currentPage: vi.fn(async () => page) }
+      const adapter = new MiniAppAdapter(
+        { projectPath, closeIde: false },
+        { launch: vi.fn(async () => program2) },
+        vi.fn(async () => false),
+      )
+      const pending = adapter.launch().then(
+        () => null,
+        (error: unknown) => error,
+      )
+      await vi.advanceTimersByTimeAsync(31_000)
+      const err = await pending
+      expect(err).toBeInstanceOf(TestPilotError)
+      expect((err as TestPilotError).code).toBe('PAGE_READY_TIMEOUT')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })

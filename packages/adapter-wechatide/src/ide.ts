@@ -275,7 +275,10 @@ export class MiniAppAdapter implements TestAdapter {
 
   /** 拉起开发者工具并建立自动化连接;需幂等 */
   async launch(): Promise<void> {
-    if (this.program) return
+    if (this.program) {
+      await this.ensurePageReady()
+      return
+    }
     if (this.launcher === automatorLauncher) {
       const report = await inspectMiniappRuntime({
         projectPath: this.config.projectPath,
@@ -301,11 +304,17 @@ export class MiniAppAdapter implements TestAdapter {
       this.program = await this.launcher.launch(launchOptions)
     }
     this.attachDiagnostics(this.program)
-    // 冷启动后模拟器仍在编译:尽力等待页面 data 可读(路线图 P0-1);
-    // 一直未就绪则跳过等待,由后续步骤给出各自的明确错误(observe PAGE_NOT_READY / 元素轮询超时)
-    if (this.config.waitForPageReady !== false) {
-      await this.waitForPageReady().catch(() => undefined)
-    }
+    await this.ensurePageReady()
+  }
+
+  /**
+   * 连接成功后继续等到当前页 data 可读。
+   * connect 复用和 Windows cli.bat 降级都没有官方 launch 的 5 秒缓冲,
+   * 这里用页面可读代替固定等待;超时则中止,避免 callWxApi / nativeAuthorize 在编译期执行。
+   */
+  private async ensurePageReady(): Promise<void> {
+    if (this.config.waitForPageReady === false) return
+    await this.waitForPageReady()
   }
 
   async navigate(url: string): Promise<void> {

@@ -8,7 +8,7 @@
 
 | 能力 | DSL / 行为 | 官方对应 |
 | --- | --- | --- |
-| 启动开发者工具并连接 | `launch`(自动发现 cli;`cli auto` 失败时降级自行拉起) | `automator.launch` / `automator.connect` |
+| 启动开发者工具并连接 | `launch`(自动发现 cli;`.bat` 失败时降级自行拉起)。连接后等到当前页 data 可读才返回;超时记为 `PAGE_READY_TIMEOUT`,本阶段后续步骤不再执行 | `automator.launch` / `automator.connect` |
 | 页面路由 | `navigate url`(reLaunch + 就绪等待) | `miniProgram.reLaunch` |
 | 断线重连 | 模拟器重编译断开 ws 后自动重连重试 | —(TestPilot 增强) |
 
