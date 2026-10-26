@@ -197,6 +197,8 @@ systems:                             # 额外业务系统(需求跨系统时声�
     projectPath: ../mall-miniapp
 ```
 
+**跨系统只读**:`system:` 步骤仅允许查询(navigate/wait/assert/extract/screenshot 与 GET/HEAD request);input/click/callMethod/setData/非 GET request 被 validate 与运行时双重拒绝——其它系统只用于核对与被测系统的一致性,写操作只能发生在被测系统。
+
 ### API 用例(target: api)
 
 DSL 支持 `target: api` 的 HTTP 步骤(`request` / `assert` / `extract`),用于接口造数、UI+API 混合编排与数据层断言:

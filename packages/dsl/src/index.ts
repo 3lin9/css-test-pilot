@@ -1,4 +1,4 @@
-export { ACTIONS, STEP_TARGETS, caseSchema, locatorSchema, stepSchema } from './schema'
+export { ACTIONS, STEP_TARGETS, SYSTEM_READONLY_ACTIONS, caseSchema, locatorSchema, stepSchema } from './schema'
 export type {
   ActionName,
   CaseLocator,

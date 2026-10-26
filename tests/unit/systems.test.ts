@@ -196,3 +196,103 @@ describe('engine system 会话键路由', () => {
     expect(summary.cases[0]?.steps[0]?.error).toContain('web@nope')
   })
 })
+
+describe('跨系统只读(system 步骤强制查询语义)', () => {
+  test('validate:input/callMethod 等 system 步骤被拒绝', () => {
+    const input = validateCaseSource(`
+id: ro-input
+name: 跨系统写被拒
+steps:
+  - target: web
+    system: mall-admin
+    action: input
+    locator: { css: '#price' }
+    value: '99'
+`)
+    expect(input.ok).toBe(false)
+    expect(input.issues.some((issue) => issue.message.includes('跨系统只读'))).toBe(true)
+
+    const callMethod = validateCaseSource(`
+id: ro-call
+name: 跨系统方法调用被拒
+steps:
+  - target: miniapp
+    system: mall-miniapp
+    action: callMethod
+    methodName: refresh
+`)
+    expect(callMethod.issues.some((issue) => issue.message.includes('跨系统只读'))).toBe(true)
+  })
+
+  test('validate:查询类 system 步骤放行(navigate/assert/GET request)', () => {
+    const result = validateCaseSource(`
+id: ro-query
+name: 跨系统查询
+steps:
+  - target: web
+    system: mall-admin
+    action: navigate
+    url: /goods/1
+  - target: web
+    system: mall-admin
+    action: extract
+    locator: { css: '.price' }
+    variable: mallPrice
+  - target: api
+    system: pay-api
+    action: request
+    url: /orders/1
+  - target: api
+    system: pay-api
+    action: request
+    url: /orders/1
+    method: HEAD
+  - target: api
+    system: pay-api
+    action: assert
+    expected: '"status":"PAID"'
+`)
+    expect(result.issues).toEqual([])
+  })
+
+  test('validate:system 步骤的非 GET request 被拒', () => {
+    const post = validateCaseSource(`
+id: ro-post
+name: 跨系统 POST 被拒
+steps:
+  - target: api
+    system: pay-api
+    action: request
+    url: /orders
+    method: POST
+    body: { sku: s1 }
+`)
+    expect(post.ok).toBe(false)
+    expect(post.issues.some((issue) => issue.message.includes('仅允许 GET/HEAD'))).toBe(true)
+  })
+
+  test('运行时守卫:绕过 validate 的程序化用例也被拒且不命中 adapter', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'testpilot-ro-guard-'))
+    const { adapter, navigated } = createRecordingAdapter()
+    const resolver = new AdapterResolver()
+    resolver.register({ target: 'web', create: async () => adapter })
+    resolver.register({ target: 'web@mall-admin', create: async () => adapter })
+
+    const runner = new TestRunner({ resolver, runsRoot: join(root, 'runs') })
+    const summary = await runner.run([
+      {
+        file: 'guard.case.yaml',
+        data: {
+          id: 'runtime-guard',
+          name: '运行时守卫',
+          steps: [{ target: 'web', system: 'mall-admin', action: 'input', locator: { css: '#p' }, value: '1' }],
+        },
+      },
+    ])
+
+    // 用例写错(CROSS_SYSTEM_READONLY 不在 infra/unverified 桶)→ 归 failed
+    expect(summary.status).toBe('failed')
+    expect(summary.cases[0]?.steps[0]?.error).toContain('跨系统只读')
+    expect(navigated).toEqual([])
+  })
+})

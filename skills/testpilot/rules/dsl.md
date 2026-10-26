@@ -259,6 +259,27 @@ steps:
 
 系统名需与需求评审"涉及系统"列一致;doctor 会逐系统探测(baseUrl 可达 / projectPath 存在)。
 
+**跨系统只读(强制)**:`system:` 指向的是被测系统之外的系统,只允许查询——`navigate / wait / assert / extract / screenshot` 与 `request` 的 **GET/HEAD**;`input / click / callMethod / setData / mockWxApi` 及非 GET 的 request 一律被 validate 和运行时拒绝。其它系统的数据只用来核对与被测系统的一致性,写操作只能发生在被测(默认)系统的用例里:
+
+```yaml
+steps:
+  # ✓ 合法:跨系统查询核对
+  - target: api
+    system: pay-api
+    action: request
+    url: /orders/${orderId}
+  - target: api
+    system: pay-api
+    action: assert
+    expected: '"status":"PAID"'
+  # ✗ 非法:validate 直接拒绝
+  # - target: web
+  #   system: mall-admin
+  #   action: input
+  #   locator: { css: '#price' }
+  #   value: '99'
+```
+
 ## 账号与凭据(accountRef)
 
 - Case 顶层 `accountRef: test-user` 引用凭据,值由运行方注入(Server 环境凭据 / CLI 环境变量),Case 里永远不写明文

@@ -1,5 +1,6 @@
 import { describeLocator, redactHeaders, type CapturedRequest, type TestAdapter } from '@testpilot/adapter-core'
 import { DEFAULT_STEP_TIMEOUT_MS, TestPilotError, type StepResult } from '@testpilot/core'
+import { SYSTEM_READONLY_ACTIONS } from '@testpilot/dsl'
 import type { CaseLocator, TestStep } from '@testpilot/dsl'
 import type {
   LocatorCandidate,
@@ -73,6 +74,23 @@ export async function executeStep(
   let captureStarted = false
 
   try {
+    // 跨系统只读运行时守卫(validator 已拦截;此处兜住绕过校验的程序化路径)
+    if (step.system && !SYSTEM_READONLY_ACTIONS.has(step.action)) {
+      throw new TestPilotError(
+        'CROSS_SYSTEM_READONLY',
+        `跨系统只读:system "${step.system}" 仅允许查询(navigate/wait/assert/extract/screenshot 与 GET/HEAD request),"${step.action}" 会操作其它系统,请在被测系统的用例中执行`,
+      )
+    }
+    if (
+      step.system &&
+      step.action === 'request' &&
+      !['GET', 'HEAD'].includes((step.method ?? 'GET').toUpperCase())
+    ) {
+      throw new TestPilotError(
+        'CROSS_SYSTEM_READONLY',
+        `跨系统只读:request 仅允许 GET/HEAD 查询其它系统,当前 ${(step.method ?? 'GET').toUpperCase()}`,
+      )
+    }
     // locator 支持 ${var} 模板解析(动态元素定位,如 .order-row-${orderId})
     let locator = resolveLocator(step.locator, context)
     if (

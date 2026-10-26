@@ -1,5 +1,5 @@
 import { parseCase, type DslIssue } from '../parser'
-import { type ActionName, type StepTarget, type TestCase, type TestStep } from '../schema'
+import { SYSTEM_READONLY_ACTIONS, type ActionName, type StepTarget, type TestCase, type TestStep } from '../schema'
 
 /** 各端 adapter 支持的 action 矩阵(小程序端 select/picker 交互暂不支持;api 端只支持 request/assert/extract;callMethod/mockWxApi/trigger/setData 及小程序交互扩展仅 miniapp) */
 const ADAPTER_SUPPORT: Record<ActionName, readonly StepTarget[]> = {
@@ -326,6 +326,28 @@ function checkStep(step: TestStep, at: string, declared: Set<string>, issues: Ds
         path: `${at}.expectRequests`,
         code: 'semantic',
         message: 'expectRequests 仅用于 web/miniapp 的 navigate/click/input/select',
+      })
+    }
+  }
+
+  // 跨系统只读:system 指向的是被测(默认)系统之外的系统,只允许查询
+  // (检查与被测系统的一致性);输入/新建/编辑等写操作只能在被测系统执行
+  if (step.system) {
+    const method = (step.action === 'request' ? (step.method ?? 'GET') : 'GET').toUpperCase()
+    const readonlyRequest = step.action === 'request' && (method === 'GET' || method === 'HEAD')
+    if (step.action === 'request') {
+      if (!readonlyRequest) {
+        issues.push({
+          path: `${at}.method`,
+          code: 'semantic',
+          message: `跨系统只读:request 仅允许 GET/HEAD 查询其它系统,当前 ${method}`,
+        })
+      }
+    } else if (!SYSTEM_READONLY_ACTIONS.has(step.action)) {
+      issues.push({
+        path: `${at}.system`,
+        code: 'semantic',
+        message: `跨系统只读:system "${step.system}" 仅允许 navigate/wait/assert/extract/screenshot 与 GET/HEAD request,"${step.action}" 会操作其它系统,请在被测系统的用例中执行`,
       })
     }
   }

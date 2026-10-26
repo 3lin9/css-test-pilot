@@ -41,6 +41,19 @@ export const TOUCH_PHASES = ['touchstart', 'touchmove', 'touchend'] as const
 export type TouchPhase = (typeof TOUCH_PHASES)[number]
 export type ActionName = (typeof ACTIONS)[number]
 
+/**
+ * 跨系统只读白名单:step.system 指向的是被测(默认)系统之外的系统,
+ * 只允许查询类 action(检查与被测系统的一致性),输入/新建/编辑等写操作禁止。
+ * request 仅限 GET/HEAD(在 validator 单独校验 method)。
+ */
+export const SYSTEM_READONLY_ACTIONS: ReadonlySet<ActionName> = new Set([
+  'navigate',
+  'wait',
+  'assert',
+  'extract',
+  'screenshot',
+])
+
 export const locatorSchema = z
   .strictObject({
     text: z.string().min(1).optional(),
