@@ -167,10 +167,6 @@ export async function initTestPilotConfig(
   // 3. Runtime 目录
   const runtimeDir = join(root, '.testpilot', 'artifacts')
   await mkdir(runtimeDir, { recursive: true })
-  const keep = join(runtimeDir, '.gitkeep')
-  if (!(await exists(keep))) {
-    await writeFile(keep, '', 'utf8')
-  }
 
   // 4. project.json:已有链接只补缺失字段,不重置 projectId(设计文档 §17)
   const existing = await readProjectLink(root)

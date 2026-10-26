@@ -1,27 +1,27 @@
-import { existsSync, readdirSync } from 'node:fs'
-import { mkdir, writeFile } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
+import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { ProjectInfo } from './project-detector'
 
 export interface TestStructureResult {
   cases: 'created' | 'reused'
-  fixtures: 'created' | 'reused'
   data: 'created' | 'reused'
   reviews: 'created' | 'reused'
 }
 
-/** 初始化 tests/e2e/{cases,fixtures,data,reviews};已有目录直接复用,不迁移不删除(设计文档 §6) */
+/**
+ * 初始化 tests/e2e/{cases,data,reviews};已有目录直接复用,不迁移不删除(设计文档 §6)。
+ * 不再创建 fixtures/ 目录:fixture 与 dataset 统一放 data/ 下,以 fixture.* / dataset.* 命名空间区分。
+ */
 export async function initTestStructure(root: string, _info: ProjectInfo): Promise<TestStructureResult> {
   const dirs = {
     cases: join(root, 'tests', 'e2e', 'cases'),
-    fixtures: join(root, 'tests', 'e2e', 'fixtures'),
     data: join(root, 'tests', 'e2e', 'data'),
     reviews: join(root, 'tests', 'e2e', 'reviews'),
   } as const
 
   const existed: Record<keyof typeof dirs, boolean> = {
     cases: existsSync(dirs.cases),
-    fixtures: existsSync(dirs.fixtures),
     data: existsSync(dirs.data),
     reviews: existsSync(dirs.reviews),
   }
@@ -29,16 +29,9 @@ export async function initTestStructure(root: string, _info: ProjectInfo): Promi
   for (const dir of Object.values(dirs)) {
     await mkdir(dir, { recursive: true })
   }
-  // 新建的空目录放 .gitkeep,避免 git 不跟踪;已有内容的目录不碰
-  for (const [name, dir] of Object.entries(dirs) as Array<[keyof typeof dirs, string]>) {
-    if (!existed[name] && readdirSync(dir).length === 0) {
-      await writeFile(join(dir, '.gitkeep'), '', 'utf8').catch(() => undefined)
-    }
-  }
 
   return {
     cases: existed.cases ? 'reused' : 'created',
-    fixtures: existed.fixtures ? 'reused' : 'created',
     data: existed.data ? 'reused' : 'created',
     reviews: existed.reviews ? 'reused' : 'created',
   }

@@ -42,7 +42,7 @@ npx csspilot init [--server <url>]
 1. **项目识别**:名称 / 类型(web / wechat-miniapp / hybrid / unknown)/ 语言 / 包管理器 / Git / 已有测试目录
 2. **Adapter 检测**:Playwright 依赖、微信开发者工具;不可用仅提示 warning,不阻塞
 3. **配置初始化**:生成 `testpilot.yaml`(含 environment 环境段,baseUrl 用 `${VAR}` 引用)+ `.testpilot/{project.json,artifacts/}`;project.json 含 `version / projectId / testDir / caseDir / defaultAdapter`;Server 可达时注册项目,不可达时生成本地 ID
-4. **测试目录**:`tests/e2e/{cases,fixtures,data}`(已有直接复用;检测到其他 E2E 目录只提示不迁移)
+4. **测试目录**:`tests/e2e/{cases,data,reviews}`(已有直接复用;检测到其他 E2E 目录只提示不迁移)
 5. **Agent Skill**:安装到 `.agents/skills/testpilot/`,并生成项目级上下文 `references/{project,test-conventions,adapters}.md`
 6. **环境配置**:生成 `.env.testing`(`TEST_BASE_URL` / `STAGING_BASE_URL` / `WEB_BASE_URL` / `MINIAPP_PROJECT_PATH` 等),确保 `.gitignore` 忽略 `.env.testing`;**直接在该文件填真实值**,CLI 运行时自动加载(刻意不读前端项目自身的 `.env`,互不影响);也可设为环境变量,配置中的 `${VAR}` 引用加载时自动注入
 7. **CI 准备**:只检测已有 CI 并提示,可用 `csspilot ci init` 生成模板

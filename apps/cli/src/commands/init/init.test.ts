@@ -105,7 +105,7 @@ describe('cli:init:新项目', () => {
     expect(existsSync(join(root, '.testpilot', 'project.json'))).toBe(true)
     expect(existsSync(join(root, '.testpilot', 'artifacts'))).toBe(true)
     // 测试目录
-    for (const dir of ['cases', 'fixtures', 'data', 'reviews']) {
+    for (const dir of ['cases', 'data', 'reviews']) {
       expect(existsSync(join(root, 'tests', 'e2e', dir))).toBe(true)
     }
     // Skill + references

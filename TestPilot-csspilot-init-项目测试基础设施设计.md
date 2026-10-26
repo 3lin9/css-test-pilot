@@ -200,16 +200,16 @@ unknown → 仍允许完成初始化
 tests/
 └── e2e/
     ├── cases/
-    ├── fixtures/
-    └── data/
+    ├── data/
+    └── reviews/
 ```
 
 含义：
 
 ```text
-cases/    → 业务 Test Case
-fixtures/ → 通用 Fixture
-data/     → 测试数据
+cases/  → 业务 Test Case
+data/   → 测试数据(YAML/JSON,fixture 与 dataset 以 fixture.* / dataset.* 命名空间区分)
+reviews/ → 需求评审产物
 ```
 
 如果已有：
@@ -619,8 +619,8 @@ my-project/
 ├── tests/
 │   └── e2e/
 │       ├── cases/
-│       ├── fixtures/
-│       └── data/
+│       ├── data/
+│       └── reviews/
 │
 ├── testpilot.yaml
 │
