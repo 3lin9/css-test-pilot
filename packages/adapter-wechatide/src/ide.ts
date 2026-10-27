@@ -903,11 +903,7 @@ export class MiniAppAdapter implements TestAdapter {
     return this.runWithReconnect(async () => {
       const program = await this.getProgram()
       const page = await this.currentPage()
-      const elements = (
-        page.getElementsByXpath
-          ? await page.getElementsByXpath('//*')
-          : await page.$$('*')
-      ).slice(0, OBSERVATION_LIMIT)
+      const elements = (await observePageElements(page)).slice(0, OBSERVATION_LIMIT)
       const interactiveElements = await inspectInBatches(
         elements,
         (element, index) => this.inspectElement(element, index, intent),
@@ -1096,6 +1092,22 @@ function miniappRoute(page: AutomatorPage): string {
 function sanitizeObservedUrl(url: string): string {
   const query = url.indexOf('?')
   return query >= 0 ? `${url.slice(0, query)}?<redacted>` : url
+}
+
+/**
+ * Skyline 下开发者工具对 Page.getElementsByXpath 的响应可能没有 elements，
+ * automator 内部 elements.map 会抛错。观察只需要节点列表，失败时改用 $$。
+ */
+async function observePageElements(page: AutomatorPage): Promise<AutomatorElement[]> {
+  if (typeof page.getElementsByXpath === 'function') {
+    try {
+      const found = await page.getElementsByXpath('//*')
+      if (Array.isArray(found)) return found
+    } catch {
+      // 降级到 $$，不把 IDE 协议缺口暴露成 discover/rehearse 崩溃。
+    }
+  }
+  return page.$$('*')
 }
 
 function escapeCssIdentifier(value: string): string {

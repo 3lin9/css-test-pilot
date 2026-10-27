@@ -598,10 +598,46 @@ describe('MiniAppAdapter 交互扩展与运行时诊断', () => {
     expect(observation.runtimeMarkup).toContain('<button id="submit">')
     expect(observation.screenshot?.toString()).toBe('fake-png')
     expect(fakePage.getElementsByXpath).toHaveBeenCalledWith('//*')
+    expect(fakePage.$$).not.toHaveBeenCalled()
     expect(observation.interactiveElements[0]?.candidates[0]).toMatchObject({
       locator: { css: '#submit' },
       strategy: 'css',
     })
+  })
+
+  test('Skyline 下 xpath 观察失败时降级为 $$', async () => {
+    const element = {
+      tagName: 'button',
+      text: vi.fn(async () => '排序'),
+      attribute: vi.fn(async () => undefined),
+      tap: vi.fn(async () => undefined),
+    }
+    const thrown = fakeProgramWith({
+      page: {
+        path: '/pages/list/index',
+        $: vi.fn(async () => null),
+        $$: vi.fn(async () => [element]),
+        getElementsByXpath: vi.fn(async () => {
+          throw new TypeError("Cannot read properties of undefined (reading 'map')")
+        }),
+      },
+    })
+    const fromThrow = await adapterOf(thrown.program).observe()
+    expect(thrown.fakePage.$$).toHaveBeenCalledWith('*')
+    expect(fromThrow.interactiveElements).toHaveLength(1)
+    expect(fromThrow.interactiveElements[0]?.text).toBe('排序')
+
+    const missing = fakeProgramWith({
+      page: {
+        path: '/pages/list/index',
+        $: vi.fn(async () => null),
+        $$: vi.fn(async () => [element]),
+        getElementsByXpath: vi.fn(async () => undefined),
+      },
+    })
+    const fromMissing = await adapterOf(missing.program).observe()
+    expect(missing.fakePage.$$).toHaveBeenCalledWith('*')
+    expect(fromMissing.interactiveElements).toHaveLength(1)
   })
 
   test('probe 对小程序候选做唯一性、可见性和指纹验证', async () => {
