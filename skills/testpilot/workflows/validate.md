@@ -1,27 +1,20 @@
-# Workflow:校验 Case
+# Workflow:校验脚本
 
-任何 Case 在 run 之前必须先 validate。
+`csspilot validate` 对原生脚本做 lint(evidence 头注释 / reviews 清单出处 / env 引用),是 AI 生成后自查与 CI 卡点的统一入口:
 
 ```bash
-npx csspilot validate              # 全量
-npx csspilot validate <file>       # 指定文件
-npx csspilot validate --runtime    # 静态校验 + 真实界面只读 observe/probe
+npx csspilot validate                                     # tests/e2e 全量
+npx csspilot validate tests/e2e/web/<id>.spec.ts          # 指定脚本/目录
 ```
 
-检查内容:
+三道卡:
 
-- YAML 格式
-- DSL 结构
-- action 是否存在
-- target 是否存在
-- locator 是否合法
-- 必填字段
-- 变量引用
-- fixture/dataset 路径必须位于 `tests/e2e/data/`,格式与 rowId 合法且 fixture 无冲突
-- `requires` 路径语法与可用作用域
-- setup/steps/teardown 的变量定义顺序
-- `expectRequests` 仅用于支持的 UI 动作
-- 当前 adapter 是否支持该 action
+1. 文件头注释 `// 测试点: TP-001` 必填,`// 视角: charter:*` 在 5 个枚举内
+2. 测试点 ID 必须在 `tests/e2e/reviews/` 清单中存在(清单外 ID 直接报错——清单是唯一用例来源)
+3. 脚本引用的 `process.env.*` 在 `.env.testing` / `testpilot.yaml` `${VAR}` / 白名单中已声明
 
-静态校验只证明 DSL 合法,不证明 locator 在当前环境真实存在。新 Case 或页面变更后必须使用
-`--runtime`;有错误时修复 Case 后重新校验,再通过 `rehearse` 签发 Ready Certificate。
+lint 之外,运行前确认:
+
+- 定位器、选择器和接口路径来自项目代码或真实页面
+- 脚本没有写入账号密码
+- Web 项目已安装 `@playwright/test`;小程序脚本能 import `miniprogram-automator`

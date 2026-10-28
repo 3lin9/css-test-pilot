@@ -1,6 +1,6 @@
 import { exec } from 'node:child_process'
 import { Command } from 'commander'
-import { TestPilotClient } from '@testpilot/sdk'
+import { generateReport, generateSummaryReport } from '@testpilot/sdk'
 
 export function makeReportCommand(): Command {
   return new Command('report')
@@ -10,10 +10,9 @@ export function makeReportCommand(): Command {
     .option('--summary', '生成跨 run 汇总报告(summary.html + summary.json)', false)
     .option('--last <n>', '汇总统计窗口:最近 N 次运行', '30')
     .action(async (options: { run?: string; open?: boolean; summary?: boolean; last?: string }) => {
-      const client = new TestPilotClient()
       try {
         if (options.summary) {
-          const result = await client.generateSummaryReport({
+          const result = await generateSummaryReport({
             last: Number(options.last) > 0 ? Number(options.last) : undefined,
           })
           console.log(
@@ -24,7 +23,7 @@ export function makeReportCommand(): Command {
           return
         }
 
-        const report = await client.generateReport(options.run)
+        const report = await generateReport(options.run)
         console.log(`✓ report.json  ${report.json}`)
         console.log(`✓ report.html  ${report.html}`)
         if (options.open) await openInBrowser(report.html)

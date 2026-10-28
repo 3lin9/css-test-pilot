@@ -170,7 +170,9 @@ function renderProjectMd(
 - Language: ${info.language}
 - Package manager: ${info.packageManager}
 - Test directory: tests/e2e
-- Case directory: tests/e2e/cases
+- Web scripts: tests/e2e/web
+- Mini Program scripts: tests/e2e/miniapp
+- API scripts: tests/e2e/api
 - Available adapters: ${available.length > 0 ? available.join(', ') : '(none detected)'}
 - Default environment: ${defaultEnvironment}
 - Default workspace: ${defaultWorkspace}
@@ -182,20 +184,16 @@ function renderTestConventionsMd(): string {
 
 本项目 E2E 测试约定,Agent 生成/修改 Case 时必须遵守:
 
-1. E2E Case 位于 tests/e2e/cases
-2. Case 使用 TestPilot DSL
-3. 不允许直接调用 Playwright
-4. 不允许直接调用 WeChatIDE
-5. 不允许在 Case 中写明文密码(用 accountRef 引用)
-6. 优先复用已有 Case
-7. 新增 Case 必须通过 csspilot validate
-8. Case ID 必须唯一
-9. fixture/dataset 使用 YAML 或 JSON,统一位于 tests/e2e/data
-10. 需求规则矩阵与 QA 覆盖映射写入 tests/e2e/reviews/<需求>-coverage.md
-11. 只在步骤模板相同时使用 data-driven Case,每行保持一个可判定规则/数据点
-12. requires 只声明项目证据支持的依赖,不得套用账号、优惠券或特定业务系统等默认字段
-13. Case 不得读取任意环境变量;先在 testpilot.yaml variables 白名单映射后使用 \${variable.*}
-14. setup/teardown 优先 API;teardown 失败作为 warning,不改变主流程结果
+1. 测试点清单确认后,按端写原生脚本,不要写 YAML 用例
+2. Web 使用 tests/e2e/web/*.spec.ts 和 @playwright/test
+3. 小程序使用 tests/e2e/miniapp/*.test.ts 和 miniprogram-automator
+4. API 使用 tests/e2e/api/*.test.ts、node:test 和 fetch
+5. 不允许在脚本中写明文密码
+6. 定位器、选择器和接口路径必须来自项目代码或真实页面
+7. 新增脚本用 npx csspilot run <file> 执行
+8. 可复用输入放 tests/e2e/data
+9. 需求规则矩阵与 QA 覆盖映射写入 tests/e2e/reviews/<需求>-coverage.md
+10. 跨端场景拆成多份脚本,每份只调用该端框架
 `
 }
 

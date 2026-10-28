@@ -14,18 +14,12 @@ importers:
       '@playwright/test':
         specifier: ^1.63.0
         version: 1.63.0
-      '@testpilot/adapter-wechatide':
-        specifier: workspace:^
-        version: link:packages/adapter-wechatide
       '@testpilot/core':
         specifier: workspace:^
         version: link:packages/core
-      '@testpilot/dsl':
+      '@testpilot/native':
         specifier: workspace:^
-        version: link:packages/dsl
-      '@testpilot/execution-engine':
-        specifier: workspace:^
-        version: link:packages/execution-engine
+        version: link:packages/native
       '@testpilot/reporter':
         specifier: workspace:^
         version: link:packages/reporter
@@ -157,66 +151,6 @@ importers:
         specifier: ^2.1.0
         version: 2.2.12(typescript@5.9.3)
 
-  packages/adapter-api:
-    dependencies:
-      '@testpilot/adapter-core':
-        specifier: workspace:^
-        version: link:../adapter-core
-      '@testpilot/core':
-        specifier: workspace:^
-        version: link:../core
-
-  packages/adapter-core:
-    dependencies:
-      '@testpilot/core':
-        specifier: workspace:^
-        version: link:../core
-      '@testpilot/dsl':
-        specifier: workspace:^
-        version: link:../dsl
-      '@testpilot/observation-core':
-        specifier: workspace:^
-        version: link:../observation-core
-      zod:
-        specifier: ^4.0.0
-        version: 4.6.1
-
-  packages/adapter-playwright:
-    dependencies:
-      '@testpilot/adapter-core':
-        specifier: workspace:^
-        version: link:../adapter-core
-      '@testpilot/core':
-        specifier: workspace:^
-        version: link:../core
-      '@testpilot/dsl':
-        specifier: workspace:^
-        version: link:../dsl
-      '@testpilot/observation-core':
-        specifier: workspace:^
-        version: link:../observation-core
-      playwright:
-        specifier: ^1.63.0
-        version: 1.63.0
-
-  packages/adapter-wechatide:
-    dependencies:
-      '@testpilot/adapter-core':
-        specifier: workspace:^
-        version: link:../adapter-core
-      '@testpilot/core':
-        specifier: workspace:^
-        version: link:../core
-      '@testpilot/dsl':
-        specifier: workspace:^
-        version: link:../dsl
-      '@testpilot/observation-core':
-        specifier: workspace:^
-        version: link:../observation-core
-      miniprogram-automator:
-        specifier: ^0.12.0
-        version: 0.12.1
-
   packages/core:
     dependencies:
       yaml:
@@ -226,56 +160,14 @@ importers:
         specifier: ^4.0.0
         version: 4.6.1
 
-  packages/discovery-engine:
-    dependencies:
-      '@testpilot/adapter-core':
-        specifier: workspace:^
-        version: link:../adapter-core
-      '@testpilot/core':
-        specifier: workspace:^
-        version: link:../core
-      '@testpilot/observation-core':
-        specifier: workspace:^
-        version: link:../observation-core
-
-  packages/dsl:
-    dependencies:
-      yaml:
-        specifier: ^2.5.0
-        version: 2.9.0
-      zod:
-        specifier: ^4.0.0
-        version: 4.6.1
-
-  packages/evidence:
+  packages/native:
     dependencies:
       '@testpilot/core':
         specifier: workspace:^
         version: link:../core
-
-  packages/execution-engine:
-    dependencies:
-      '@testpilot/adapter-core':
-        specifier: workspace:^
-        version: link:../adapter-core
-      '@testpilot/core':
-        specifier: workspace:^
-        version: link:../core
-      '@testpilot/dsl':
-        specifier: workspace:^
-        version: link:../dsl
-      '@testpilot/evidence':
-        specifier: workspace:^
-        version: link:../evidence
-      '@testpilot/observation-core':
-        specifier: workspace:^
-        version: link:../observation-core
-
-  packages/observation-core:
-    dependencies:
-      '@testpilot/dsl':
-        specifier: workspace:^
-        version: link:../dsl
+      miniprogram-automator:
+        specifier: '>=0.9.0'
+        version: 0.12.1
 
   packages/reporter:
     dependencies:
@@ -285,33 +177,9 @@ importers:
 
   packages/sdk:
     dependencies:
-      '@testpilot/adapter-api':
-        specifier: workspace:^
-        version: link:../adapter-api
-      '@testpilot/adapter-core':
-        specifier: workspace:^
-        version: link:../adapter-core
-      '@testpilot/adapter-playwright':
-        specifier: workspace:^
-        version: link:../adapter-playwright
-      '@testpilot/adapter-wechatide':
-        specifier: workspace:^
-        version: link:../adapter-wechatide
       '@testpilot/core':
         specifier: workspace:^
         version: link:../core
-      '@testpilot/discovery-engine':
-        specifier: workspace:^
-        version: link:../discovery-engine
-      '@testpilot/dsl':
-        specifier: workspace:^
-        version: link:../dsl
-      '@testpilot/execution-engine':
-        specifier: workspace:^
-        version: link:../execution-engine
-      '@testpilot/observation-core':
-        specifier: workspace:^
-        version: link:../observation-core
       '@testpilot/reporter':
         specifier: workspace:^
         version: link:../reporter

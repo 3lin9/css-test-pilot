@@ -2,7 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { api } from '../../api/client'
-import type { ArtifactFile, Run, RunEvent, RunSummary } from '../../api/types'
+import type { ArtifactFile, Run, RunSummary } from '../../api/types'
 import StatusBadge from '../../components/StatusBadge.vue'
 import { formatDuration, formatSize, formatTime, shortCommit } from '../../lib/format'
 import { useProjectsStore } from '../../stores/projects'
@@ -11,9 +11,7 @@ const route = useRoute()
 const store = useProjectsStore()
 const run = ref<Run>()
 const summary = ref<RunSummary>()
-const events = ref<RunEvent[]>()
 const artifacts = ref<ArtifactFile[]>()
-const showEvents = ref(false)
 const activeScreenshot = ref<string>()
 const error = ref('')
 
@@ -26,7 +24,6 @@ async function load(): Promise<void> {
     run.value = await api.run(runId.value)
     // summary / artifacts 仅本地项目可读;远端索引项目不阻塞页面
     summary.value = await api.runSummary(runId.value).catch(() => undefined)
-    events.value = await api.runEvents(runId.value).catch(() => undefined)
     artifacts.value = await api.runArtifacts(runId.value).catch(() => undefined)
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err)
@@ -186,14 +183,6 @@ function stripAnsi(text: string): string {
         </tr>
       </tbody>
     </table>
-  </div>
-
-  <div v-if="events && events.length" class="panel">
-    <h3>
-      事件流(NDJSON)
-      <button style="margin-left: 8px" @click="showEvents = !showEvents">{{ showEvents ? '收起' : '展开' }}</button>
-    </h3>
-    <pre v-if="showEvents">{{ events.map((item) => `${item.seq} ${item.event.type} ${item.ts}`).join('\n') }}</pre>
   </div>
 
   <div v-if="!run && !error" class="empty">加载中...</div>

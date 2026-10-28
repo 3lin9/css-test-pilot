@@ -1,0 +1,20 @@
+{
+  "name": "@testpilot/native",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "description": "原生脚本 helper:三态标记(blocked/inconclusive)与小程序连接。只做会话建立/授权决策/mock 恢复/三态标记四类胶水,不做步骤翻译",
+  "dependencies": {
+    "@testpilot/core": "workspace:^"
+  },
+  "peerDependencies": {
+    "miniprogram-automator": ">=0.9.0"
+  },
+  "peerDependenciesMeta": {
+    "miniprogram-automator": {
+      "optional": true
+    }
+  }
+}

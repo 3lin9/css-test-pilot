@@ -1,11 +1,4 @@
 export {
-  TestPilotClient,
-  createTestPilotClient,
-  type AdapterFactory,
-  type RunEvent,
-  type RunEventSubscriber,
-} from './client'
-export {
   inspectProject,
   loadProjectConfig,
   readProjectLink,
@@ -16,54 +9,23 @@ export {
   type ProjectOptions,
 } from './project'
 export {
-  collectCaseFiles,
-  collectCases,
-  readCaseFile,
-  writeCaseFile,
-  type CaseInfo,
-  type WriteCaseResult,
-} from './cases'
+  collectNativeCases,
+  isYamlCasePath,
+  planNativeCommands,
+  runNativeCases,
+  targetForNativeFile,
+  NATIVE_CASE_DIRS,
+  type NativeCommand,
+  type NativeRunResult,
+  type NativeSpawn,
+  type NativeTarget,
+} from './native-cases'
 export {
-  prepareCaseExecutions,
-  type PreparedCaseExecution,
-  type PrepareCaseOptions,
-} from './case-preparation'
-export { loadCaseDataFile } from './case-data'
-export {
-  ensureCaseConfiguration,
-  type EnsureCaseConfigurationInput,
-  type EnsuredCaseConfiguration,
-} from './case-config'
-export {
-  discoverCases,
-  discoverIntent,
-  type CaseDiscoveryResult,
-  type DiscoverIntentOptions,
-  type DiscoveryOptions,
-  type DiscoveryProbe,
-  type DiscoveryResult,
-  type DiscoverySnapshot,
-} from './discovery'
-export {
-  buildReadyCertificate,
-  readReadyCertificate,
-  validateReadyCertificate,
-  writeReadyCertificate,
-  type BuildReadyCertificateInput,
-  type ReadyFingerprintInput,
-} from './ready'
-export {
-  RunError,
   allocateRunId,
-  createDefaultAdapters,
   getRun,
-  getRunEvents,
   latestRunId,
   listRuns,
-  runCases,
   type RunMeta,
-  type RunOptions,
-  type RunResult,
 } from './runs'
 export {
   generateReport,

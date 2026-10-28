@@ -2,17 +2,17 @@
 
 > AI Native 跨端业务测试基础设施 —— 让 AI 能理解、生成、校验并执行业务测试。
 
-CLI 是入口,Skill 是 AI 能力入口,DSL 是测试语言,Execution Engine 是核心,Adapter 是执行器,Evidence / Reporter 是证据与结果。
+CLI 是入口,Skill 告诉 AI 如何从测试清单写出各端脚本。测试用例使用当前端的框架:Web 用 Playwright,小程序用 miniprogram-automator,API 用 node:test。TestPilot 负责发现这些脚本并交给对应框架执行。
 
-TestPilot 是**工具,不是业务测试项目**:它定义怎么描述、校验、执行测试;业务项目定义测什么、怎么算通过,并把 Case 保存在自己的 `tests/e2e/cases/`。
+TestPilot 是**工具,不是业务测试项目**:业务项目定义测什么、怎么算通过。脚本放在 `tests/e2e/web`、`tests/e2e/miniapp` 和 `tests/e2e/api`。
 
 完整架构见 [docs/architecture.md](docs/architecture.md),CLI 命令详见 [docs/cli.md](docs/cli.md),微信小程序测试能力与边界(CI 登录态、真机远期声明)见 [docs/miniapp-testing.md](docs/miniapp-testing.md)。
 
 ## 核心链路
 
 ```text
-AI → .agents/skills/testpilot(规范) → TestPilot CLI → DSL → Execution Engine
-    → Adapter(Playwright / WeChatIDE / API) → Evidence → Report
+AI → 测试点清单 → 各端原生脚本(Playwright / miniprogram-automator / node:test)
+    → csspilot run 交给对应框架
 ```
 
 ## 仓库结构
@@ -20,58 +20,35 @@ AI → .agents/skills/testpilot(规范) → TestPilot CLI → DSL → Execution 
 ```
 /
 ├── apps/
-│   ├── cli/                 # CLI(npm 包名 csspilot):init/validate/list/run/report/doctor
+│   ├── cli/                 # CLI(npm 包名 csspilot):init/validate/run/report/doctor/sync-metadata
 │   ├── server/              # Control Plane API(Fastify + SQLite + Drizzle)
-│   ├── web/                 # 测试控制台(Vue 3:项目 / Case Index / Run / Agent Job)
-│   └── agent/               # TestPilot AI:Planner + Analysis(经 Skill → SDK → Engine)
+│   └── web/                 # 测试控制台(Vue 3:项目 / Case Index / Run)
 ├── packages/                # 内部共享包,统一 scope @testpilot
 │   ├── core/                # 通用类型、错误、常量、配置模型(testpilot.yaml)
-│   ├── dsl/                 # 用例 DSL:schema(zod)/ parser(yaml)/ validator
-│   ├── execution-engine/    # 执行引擎:engine/context/scheduler/lifecycle/events(NDJSON)/artifacts
-│   ├── adapter-api/         # HTTP 接口驱动(request/assert/extract:造数、数据层断言)
-│   ├── adapter-core/        # 适配器抽象(adapter/session/locator)
-│   ├── adapter-playwright/  # Web 驱动实现(Playwright)
-│   ├── adapter-wechatide/   # 小程序驱动实现(WeChat DevTools)
-│   ├── observation-core/    # UI 观察、元素指纹、probe、稳定性与 Ready Certificate 合同
-│   ├── discovery-engine/    # 候选排序、定位缓存、失效重观察
-│   ├── evidence/            # 取证产物:screenshot/video/trace/log(文件系统)
-│   ├── reporter/            # 报告:report/summary/diff(JSON + HTML)
-│   └── sdk/                 # 统一编程接口:CLI/Server/Agent 都经由 SDK 访问 Core
+│   ├── reporter/            # 报告(report/summary,JSON + HTML)+ 原生结果 ingest 归一
+│   └── sdk/                 # 统一编程接口:CLI/Server 都经由 SDK(project/collect/run/report)
 ├── skills/
 │   └── testpilot/           # AI Skill:manifest.yaml + SKILL.md + rules/ + workflows/
-├── examples/
-│   └── cases/               # DSL 示例(黄金路径:order-create.yaml)
-├── tests/                   # 本仓库自身测试:unit / integration / e2e / fixtures
+├── examples/                # 演示项目(mock-backend、miniapp-demo)
+├── tests/                   # 本仓库自身测试:unit / integration / e2e
 └── docs/                    # 架构文档
 ```
 
-## CLI(V0.1)
+## CLI
 
 | 命令                               | 作用                                                                                                                                       |
 | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
 | `npx csspilot init`                | 把 TestPilot 接入当前业务项目(装 Skill 到 `.agents/skills/testpilot/`、初始化 `.testpilot/`、创建/复用 `tests/e2e`、生成 `testpilot.yaml`) |
-| `npx csspilot validate [files]`    | 校验 Case(DSL schema / action / locator / 变量引用 / adapter 支持)                                                                         |
-| `npx csspilot validate --runtime`  | 静态校验后启动真实环境执行只读 observe/probe                                                                                              |
-| `npx csspilot discover [files]`    | 只读采集 Web aria / 小程序运行时 WXML + screenshot，并验证当前可达 locator                                                                |
-| `npx csspilot rehearse [files]`    | 完整彩排、动作前 Actionability、动作后稳定/状态变化验证，通过后签发 Ready Certificate                                                     |
-| `npx csspilot list [--tag]`        | 列出用例                                                                                                                                   |
-| `npx csspilot run --require-ready` | 使用与当前代码、Case、环境、数据匹配的证书做确定性正式执行                                                                                  |
+| `npx csspilot validate [files]`    | 原生脚本 lint(头注释 evidence / reviews 清单出处 / env 引用)                                                                              |
+| `npx csspilot run [paths]`         | 把脚本交给各端框架执行(ingest 归一落 result.json;blocked 退出码 2)                                                                        |
 | `npx csspilot report [--run id]`   | 生成 JSON + HTML 报告(`.testpilot/artifacts/runs/<id>/`)                                                                                   |
-| `npx csspilot doctor`              | 环境体检(Node / Playwright / WeChat DevTools / 项目配置)                                                                                   |
-| `npx csspilot sync-metadata`       | 把当前 Commit 的 Case 列表快照同步到 Server(CI 专用,Git Push 后)                                                                          |
 | `npx csspilot report --summary`    | 跨 run 汇总报告(`summary.html` + `summary.json`,默认统计最近 30 次)                                                                       |
+| `npx csspilot doctor`              | 环境体检(Node / Playwright / WeChat DevTools / 项目配置)                                                                                   |
+| `npx csspilot sync-metadata`       | 把当前 Commit 的用例头注释元数据快照同步到 Server(CI 专用,Git Push 后)                                                                    |
 | `npx csspilot update`              | CLI 升级后同步接入物(Skill / `.env.testing`;不触碰 `.env` 与用例)                                                                          |
 | `npx csspilot ci init`             | 生成 CI 工作流模板(`.github/workflows/testpilot.yml`)                                                                                      |
 
-> `rehearse` 会真实执行并反复观察页面；小程序大页面或多步骤 Case 可能耗时数分钟，只应在可重置环境运行。`.testpilot/artifacts/`、`cache/`、`ready/` 是本地或单次 CI 临时数据，默认不提交 Git。
-
-Planner 在 Case 落盘前会自动补齐显式引用的 `system`、`accountRef` 和 `${variable.*}`：结构与环境变量引用写入 `testpilot.yaml`，实际地址及账号密码占位只写入已忽略的 `.env.testing`，已有值不会被覆盖。
-
-## DSL(V0.1)
-
-九个基础 Action:`launch` `navigate` `click` `input` `select` `wait` `assert` `extract` `screenshot`,外加 `request`(`target: api`,HTTP 造数与数据层断言)。
-
-Action 是通用测试原语,不是业务能力 —— login / order / payment 永远是业务项目里的 Case,不是 TestPilot 的 Action。示例见 [examples/cases/order-create.yaml](examples/cases/order-create.yaml)。
+> `.testpilot/artifacts/` 是本机运行产物(run 目录、报告、截图、trace),绑定当前机器,默认不提交 Git;报告的可发现性靠 `csspilot report --open` 与 CI artifact 上传,不靠挪动目录。
 
 ## 开发
 
@@ -111,11 +88,15 @@ Phase 13 测试需求评审 workflow + 工具链(✓ 评审工作流、`csspilot
 Phase 14 数据驱动测试(✓ 数据集展开执行 / setup·teardown / 依赖预检 / QA 覆盖映射)
 Phase 15 三态判定 + charter 视角矩阵(✓ 失败三桶 product / infra / unverified → run 退出码 0/1/2;`charter:*` 视角 tags 与三分判定)
 Phase 16 自主观察与一次成功执行(✓ Web aria observe/probe/actionability/稳定等待/彩排/证书;✓ 小程序运行时节点+WXML+截图融合观察、定位缓存失效重观察)
+
+原生脚本改造(见 `TestPilot-原生脚本改造设计.md`):
+Phase 17 各端原生脚本 + ingest 归一(✓ 用例即各端框架原生脚本;`csspilot run` 按目录交给 Playwright / node --test,ingest 归一进 run 目录;三态退出码)
+Phase 18 DSL 链路退役(✓ dsl/execution-engine/adapters/observation-core/evidence/discovery-engine 九包与 apps/agent 删除;discover/rehearse/list 命令退役;Server run 改为 spawn 原生链路)
 ```
 
-## SDK 与 Control Plane(增量)
+## SDK 与 Control Plane
 
-分层约定:CLI / Server / Agent 一律通过 `@testpilot/sdk` 访问 Core,禁止直连 execution-engine 或具体 adapter。
+分层约定:CLI / Server 一律通过 `@testpilot/sdk` 访问 project / collect / run / report 能力,不直接操作 run 目录结构。
 
 ```bash
 pnpm --filter @testpilot/server dev     # 启动 Control Plane API(默认 127.0.0.1:3000)
@@ -143,21 +124,17 @@ GET  /api/projects/:projectId/environments         POST /api/projects/:projectId
 GET  /api/workspaces               POST /api/workspaces
 GET  /api/workspaces/:id           POST /api/workspaces/:id/bindings
 POST /api/runs                   GET  /api/runs
-GET  /api/runs/:id               GET  /api/runs/:id/events
-POST /api/runs/:id/cancel        GET  /api/runs/:id/report
-GET  /api/runs/:id/summary       GET  /api/runs/:id/artifacts[/*]
-POST /api/projects/:id/agent/jobs   GET /api/projects/:id/agent/jobs
-GET  /api/agent/jobs/:id            GET /api/agent/jobs/:id/events
-POST /api/agent/jobs/:id/cancel
+GET  /api/runs/:id               POST /api/runs/:id/cancel
+GET  /api/runs/:id/report        GET  /api/runs/:id/summary
+GET  /api/runs/:id/artifacts[/*]
 ```
 
-- **Agent**(apps/agent):`TestPilot AI` = **Planner Agent**(规划/写 Case/validate/可选 run) + **Analysis Agent**(归因失败与建议)。经 Skill → `@testpilot/sdk` → Execution Engine;在项目 `rootPath` 落盘 YAML,**不**写入 Server Case Index。团队可见仍走 `git push` → `csspilot sync-metadata`。Web 项目详情页可提交 Job 并查看事件流。
-- **Web 控制台**(apps/web,Vue 3 + Vite):仪表盘、项目列表/概览(Git 同步状态)、Case Index(active/deleted 过滤,可查看 DSL 源文件)、运行列表、Run 详情(Step 级结果、失败原因、截图内联预览、日志 / Trace / video 下载)、报告按需生成。生产形态由 Server 静态托管 `apps/web/dist`,单进程部署。
+- **Web 控制台**(apps/web,Vue 3 + Vite):仪表盘、项目列表/概览(Git 同步状态)、Case Index(原生脚本头注释元数据,active/deleted 过滤)、运行列表、Run 详情(用例级结果、失败原因、截图内联预览、日志 / Trace / video 下载)、报告按需生成。生产形态由 Server 静态托管 `apps/web/dist`,单进程部署。
 
 - **分支即测试环境**:同一 Case 可同时存在于多个分支(main→TEST、release→STAGING...);快照同步按分支作用域执行,互不影响;环境可绑定分支,Case Index 按环境(分支)筛选。
-- **Workspace**:一次运行所需的多系统环境组合;绑定的是 Project Environment(不是 Project 本身)。Case 用 `workspace: <名称>` 声明,不硬编码各系统 URL/账号。
+- **Workspace**:一次运行所需的多系统环境组合;绑定的是 Project Environment(不是 Project 本身)。Server 触发运行时指定 Workspace,不硬编码各系统 URL/账号。
 - **Run 可追溯**:每次 Run 记录 branch / commit / workspace 运行时快照——Workspace 后续可改,历史 Run 仍能还原当时的环境组合。
-- **数据边界**:SQLite 只存元数据(projects / cases index / runs / run_events / reports);截图、视频、trace 留在业务项目 `.testpilot/artifacts/`;`testpilot.yaml` 仍是测试配置的 Source of Truth。
+- **数据边界**:SQLite 只存元数据(projects / cases index / runs / reports);截图、视频、trace 留在业务项目 `.testpilot/artifacts/`;`testpilot.yaml` 仍是测试配置的 Source of Truth。
 
 ## V0.1 明确不做
 
@@ -191,5 +168,5 @@ cd apps/cli && pnpm publish --no-git-checks --access public --registry https://r
 
 - **workspace 成员**:`apps/*` 与 `packages/*`;CLI 即 npm 包 `csspilot`(`bin` 已配置,`pnpm build` 打包,内部包以源码形式打入产物)。
 - **包间引用**:源码直引 —— 各包 `main`/`types` 指向 `src/index.ts`,配合 `tsconfig.base.json` 的 `paths` 别名,无需先构建。
-- **SDK 边界**:CLI / Server / Agent 一律经由 `@testpilot/sdk` 访问 Core;禁止 Server/Agent → execution-engine、Agent → Playwright/WeChatIDE 的直连。
+- **SDK 边界**:CLI / Server 一律经由 `@testpilot/sdk` 访问 project / collect / run / report 能力,不直接操作 run 目录结构。
 - **质量工具**:Vitest 与 ESLint 集中在根配置;CI(GitHub Actions / Jenkins)跑 lint + build + test。

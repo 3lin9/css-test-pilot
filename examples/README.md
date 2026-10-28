@@ -1,46 +1,33 @@
 # 示例
 
-## 跨端黄金路径(order-create.yaml + mock-backend)
+演示资源:mock 业务后端 + 可运行小程序项目 + 一条最小原生 API 用例。
 
-`cases/order-create.yaml` 是 Phase 7 的目标场景:**小程序真实下单 → extract 订单号 → Web 后台 assert 该订单**。它验证 csspilot 的核心价值:一套 DSL、两个 Adapter、变量跨端传递(含 locator 变量)。
-
-完整体验:
+## 快速体验(原生 API 用例)
 
 ```bash
 # 1. 启动 mock 业务后端(订单接口 + 订单后台页面)
 node examples/mock-backend/server.js
 
-# 2. 业务项目里接入 csspilot
-npx csspilot init
-
-# 3. testpilot.yaml 参考 examples/testpilot.yaml:
-#    web.baseUrl 指向后端、miniapp.projectPath 指向小程序项目(examples/miniapp-demo 可直接用)
-
-# 4. 把 cases/order-create.yaml 复制到业务项目 tests/e2e/cases/ 后执行
+# 2. 校验并执行(以 examples/ 为项目根)
+cd examples
 npx csspilot validate
-npx csspilot run
+npx csspilot run tests/e2e/api
 npx csspilot report
 ```
 
-## 演示小程序(miniapp-demo/)
+`tests/e2e/api/order-create.test.ts` 是各端原生脚本的最小样例:`node:test` + 全局 `fetch`,文件头注释回链测试点(`// 测试点: TP-001`),清单出处是 `tests/e2e/reviews/order-coverage.md`。Web 端用 `@playwright/test` 写 `tests/e2e/web/*.spec.ts`,小程序端用 `miniprogram-automator` 写 `tests/e2e/miniapp/*.test.ts`,模式相同。
 
-可运行的最小小程序项目(游客 appid):点击"提交订单"会 `wx.request` 调用 mock 后端真实下单,订单号渲染在 `.order-id` 元素上(下单前该元素不存在,可直接用 wait/extract 验证异步时序)。`project.config.json` 已关闭 urlCheck 以便请求本地后端。
+## mock-backend(零依赖)
 
-## 数据驱动示例(promotion-discount.yaml)
+- `POST /api/orders` 创建订单 → `{ id }`
+- `GET /api/orders` 订单列表 → `{ orders: [{ id, status, time }] }`
+- `GET /orders` 订单后台页面(Web 端 Playwright 脚本的断言目标)
 
-`tests/e2e/cases/promotion-discount.yaml` 演示数据驱动:同一 Case 模板挂 `data/discount-cases.yaml` 数据集,每个数据行展开为一次执行;`data/promotion.yaml` 作为 fixture 提供造数依赖,`requires` 做静态依赖预检(缺依赖的行 blocked,不静默失败)。适合验证"类型 × 组合"规则矩阵(折扣类型 × 门槛边界)。
+## miniapp-demo(演示小程序)
 
-执行(以 examples/ 为业务项目根,需先启动 mock 后端):
-
-```bash
-cd examples
-npx csspilot run tests/e2e/cases/promotion-discount.yaml
-npx csspilot report --summary   # 汇总报告按「模板 × 数据行」分组统计
-```
+可运行的最小小程序项目(游客 appid):点击"提交订单"会 `wx.request` 调用 mock 后端真实下单,订单号渲染在 `.order-id` 元素上(下单前该元素不存在,可验证异步时序)。`project.config.json` 已关闭 urlCheck 以便请求本地后端。
 
 ## 运行前提
 
-- 本机安装微信开发者工具,登录并开启服务端口(设置 -> 安全设置 -> 服务端口)
-- cli 路径不需要配置:csspilot 按 环境变量 `WECHAT_DEVTOOLS_CLI` → 常见安装位置 → 各盘符 Tencent 目录 → 注册表 的顺序自动探测
-
-小程序端变量通过 `extract` 存入 ExecutionContext,后续 `target: web` 的步骤用 `${orderId}` 引用(url、value、expected、locator 均支持),实现跨端数据衔接。
+- API / Web 用例:`node examples/mock-backend/server.js`(默认 8080,`PORT` 可改)
+- 小程序用例:本机安装微信开发者工具,登录并开启服务端口(设置 -> 安全设置 -> 服务端口);cli 路径自动探测(环境变量 `WECHAT_DEVTOOLS_CLI` 优先)

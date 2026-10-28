@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { inspectMiniappRuntime, loadTestpilotConfig } from '@testpilot/core'
-import { collectCases, readProjectLink } from '@testpilot/sdk'
+import { collectNativeCases, readProjectLink, targetForNativeFile } from '@testpilot/sdk'
 import { detectAdapters, type AdapterInfo } from './adapter-detector'
 import { collectEnvVarRefs } from './environment-initializer'
 import { detectProject, type ProjectInfo } from './project-detector'
@@ -73,20 +73,28 @@ export async function runDoctor(root: string): Promise<DoctorReport> {
 
   // ---- Test ----
   const config = await loadTestpilotConfig(root).catch(() => undefined)
-  const casesDir = config?.casesDir ?? 'tests/e2e/cases'
-  const cases = await collectCases([join(root, casesDir)], { root }).catch(() => [])
-  const invalidCount = cases.filter((item) => !item.valid).length
+  const nativeScripts = await collectNativeCases([], { root }).catch(() => [])
+  const nativeCount = nativeScripts.length
   const testDir = join(root, 'tests', 'e2e')
   push('Test', [
     existsSync(testDir) ? ok('tests/e2e') : error('tests/e2e', '运行 npx csspilot init 创建'),
-    existsSync(join(root, casesDir))
-      ? ok(`cases directory(${casesDir})`)
-      : error(`cases directory(${casesDir})`, '运行 npx csspilot init 创建'),
-    cases.length === 0
-      ? warn('Case validation 跳过(未找到用例)', '在 tests/e2e/cases 创建 Case')
-      : invalidCount === 0
-        ? ok(`Case validation(${cases.length} 个用例全部有效)`)
-        : error(`Case validation(${invalidCount}/${cases.length} 个用例校验失败)`, '运行 npx csspilot validate 查看详情'),
+    nativeCount === 0
+      ? warn('原生脚本未找到', '按测试点写入 tests/e2e/web/*.spec.ts、tests/e2e/miniapp/*.test.ts 或 tests/e2e/api/*.test.ts')
+      : ok(`原生脚本(${nativeCount} 个)`),
+    ...(nativeScripts.some((file) => targetForNativeFile(file) === 'web')
+      ? [
+          existsSync(join(root, 'node_modules', '@playwright', 'test'))
+            ? ok('@playwright/test(web runner)')
+            : warn('@playwright/test 未安装', 'npm i -D @playwright/test && npx playwright install'),
+        ]
+      : []),
+    ...(nativeScripts.some((file) => targetForNativeFile(file) === 'miniapp')
+      ? [
+          existsSync(join(root, 'node_modules', 'miniprogram-automator'))
+            ? ok('miniprogram-automator(miniapp runner)')
+            : warn('miniprogram-automator 未安装', 'npm i -D miniprogram-automator'),
+        ]
+      : []),
   ])
 
   // ---- Agent ----
@@ -141,30 +149,14 @@ export async function runDoctor(root: string): Promise<DoctorReport> {
     push('Miniapp IDE', miniappItems)
   }
 
-  // ---- Environment(配置引用的环境变量 + Case 声明的账号凭据,§12 Required secrets) ----
+  // ---- Environment(配置引用的环境变量;凭据不进脚本,放 .env.testing / CI Secret) ----
+  const serverConfigured = (process.env.TESTPILOT_SERVER_URL ?? config?.server?.baseUrl) !== undefined
   const refs = await collectEnvVarRefs(root)
   const envItems: DoctorItem[] = refs.map((name) =>
     process.env[name] !== undefined
       ? ok(name)
       : error(`${name} missing`, '在 .env.testing(旧版本为 .env,请迁移)或 CI Secret 中设置'),
   )
-
-  // accountRef 凭据:本地用 TESTPILOT_ACCOUNT_<REF> 提供;Server 触发时按环境凭据解析,缺失只警告
-  const serverConfigured = (process.env.TESTPILOT_SERVER_URL ?? config?.server?.baseUrl) !== undefined
-  const accountRefs = [
-    ...new Set(cases.map((item) => item.case?.accountRef).filter((ref): ref is string => !!ref)),
-  ]
-  for (const ref of accountRefs) {
-    const envName = `TESTPILOT_ACCOUNT_${ref.toUpperCase().replace(/-/g, '_')}`
-    if (process.env[envName] !== undefined) envItems.push(ok(`${envName}(账号 ${ref})`))
-    else if (!serverConfigured)
-      envItems.push(
-        warn(
-          `账号 ${ref} 凭据缺失`,
-          `本地运行设置 ${envName};或配置 Server 后按环境凭据解析`,
-        ),
-      )
-  }
   if (envItems.length > 0) push('Environment', envItems)
 
   // ---- Systems(systems 声明的额外业务系统:miniapp 路径必须存在,web/api baseUrl 尽力探测) ----

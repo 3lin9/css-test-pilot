@@ -5,20 +5,12 @@
   "type": "module",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
-  "description": "TestPilot 统一编程接口:CLI / Server / Agent 通过 SDK 访问 TestPilot Core",
+  "description": "TestPilot 编程接口:原生用例收集/执行/ingest、run 目录与报告的统一入口",
   "scripts": {
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@testpilot/adapter-api": "workspace:^",
-    "@testpilot/adapter-core": "workspace:^",
-    "@testpilot/adapter-playwright": "workspace:^",
-    "@testpilot/adapter-wechatide": "workspace:^",
     "@testpilot/core": "workspace:^",
-    "@testpilot/discovery-engine": "workspace:^",
-    "@testpilot/dsl": "workspace:^",
-    "@testpilot/execution-engine": "workspace:^",
-    "@testpilot/observation-core": "workspace:^",
     "@testpilot/reporter": "workspace:^",
     "yaml": "^2.5.0"
   },

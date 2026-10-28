@@ -1,7 +1,7 @@
 # Workflow:测试需求评审(可测性评审 + 测试点分析)
 
 输入:需求文档 / PRD / 用户的一句话(如"帮我测试用户下单")。
-产出:**原子规则清单** + **规则矩阵** + **测试点清单** + **视角覆盖表** + **QA → TestPilot Coverage Map** + **平台执行信息表** + **环境与资料准备清单** + 澄清问题 + 评审结论。测试点清单是 `create-case` 的正式输入;环境与资料准备清单决定 Case 能否直接执行。
+产出:**原子规则清单** + **规则矩阵** + **测试点清单** + **视角覆盖表** + **QA → TestPilot Coverage Map** + **平台执行信息表** + **环境与资料准备清单** + 澄清问题 + 评审结论。测试点清单是 `create-case` 的正式输入;随后按平台写成原生脚本,不再生成 YAML。
 
 ## 步骤
 
@@ -45,7 +45,7 @@
 
    | 字段 | 说明 |
    | --- | --- |
-   | 编号 | `TP-001` 格式,Case 需回链 |
+   | 编号 | `TP-001` 格式,原生脚本文件头需回链 |
    | 模块 | 所属功能模块 |
    | 场景 | 一句话描述验证什么 |
    | 类型 | 正向 / 边界 / 异常 |
@@ -116,15 +116,15 @@
 
 | 平台 | 必须澄清 | 落地位置 |
 | --- | --- | --- |
-| web | 测试地址(baseUrl)+ 页面入口路由 + 登录角色 | `.env.testing` 的 `WEB_BASE_URL` / `TEST_BASE_URL`;`accountRef` |
-| miniapp | 小程序项目路径 + 起始页面路由 + 登录角色(连哪个环境后端) | `.env.testing` 的 `MINIAPP_PROJECT_PATH`;`accountRef` |
-| api | 服务 baseUrl + 鉴权方式(token / session)+ 账号角色 | `.env.testing` 的 `API_BASE_URL`;`accountRef` |
+| web | 测试地址(baseUrl)+ 页面入口路由 + 登录角色 | `.env.testing` 的 `WEB_BASE_URL` / `TEST_BASE_URL`;账号角色登记 |
+| miniapp | 小程序项目路径 + 起始页面路由 + 登录角色(连哪个环境后端) | `.env.testing` 的 `MINIAPP_PROJECT_PATH`;账号角色登记 |
+| api | 服务 baseUrl + 鉴权方式(token / session)+ 账号角色 | `.env.testing` 的 `API_BASE_URL`;账号角色登记 |
 
 规则:
 
-- **登录角色**:每个平台确认用什么角色(普通用户 / 管理员 / 游客),映射为 `accountRef`(如 `admin` / `test-user`);真实凭据放 `TESTPILOT_ACCOUNT_<REF大写>` 环境变量或 Server Secrets,**禁止写进 Case**
-- **测试地址**:一律指向测试环境,写入 `.env.testing`(如 `WEB_BASE_URL`);**禁止把内网 / 生产地址写进 Case 或 testpilot.yaml**
-- **使用 Workspace 的项目**:以上信息应登记为 Workspace 的绑定(项目 → 环境),Case 用 `workspace: <名称>` 声明,不逐条硬编码
+- **登录角色**:每个平台确认用什么角色(普通用户 / 管理员 / 游客),登记为账号引用名(如 `admin` / `test-user`);真实凭据放 `TESTPILOT_ACCOUNT_<REF大写>` 环境变量或 Server Secrets,**禁止写进脚本**
+- **测试地址**:一律指向测试环境,写入 `.env.testing`(如 `WEB_BASE_URL`);**禁止把内网 / 生产地址写进脚本或 testpilot.yaml**
+- **使用 Workspace 的项目**:以上信息应登记为 Workspace 的绑定(项目 → 环境),Server 触发运行时指定,不逐条硬编码
 
 ### 澄清问题示例(多平台需求)
 
@@ -142,8 +142,8 @@
 | 落点 | 放什么 | 判定特征 | 例子 |
 | --- | --- | --- | --- |
 | `.env.testing` 变量 | 环境位:测试地址、小程序项目路径、Server 地址 | 与"人 / 机器 / 环境"相关,与具体业务数据无关 | `WEB_BASE_URL`、`MINIAPP_PROJECT_PATH` |
-| `accountRef` | 账号角色(只登记角色名与用途;真实凭据走 `TESTPILOT_ACCOUNT_<REF>` 或 Server Secrets) | "以谁的身份执行" | `admin`(后台)、`test-user`(下单用户) |
-| fixture / dataset 字段 | 业务造数:测试点依赖的数据及**字段名**、类型、来源 | 与业务数据本身相关(商品、订单、规则入参) | `fixture.product.styleNo`(后端造数接口生成) |
+| 账号引用名 | 账号角色(只登记角色名与用途;真实凭据走 `TESTPILOT_ACCOUNT_<REF>` 或 Server Secrets) | "以谁的身份执行" | `admin`(后台)、`test-user`(下单用户) |
+| `tests/e2e/data/` 业务数据 | 业务造数:测试点依赖的数据及**字段名**、类型、来源 | 与业务数据本身相关(商品、订单、规则入参) | `product.styleNo`(后端造数接口生成,脚本自行读取) |
 
 模板(即使没有任何要准备的资料,**也必须输出本节**并写「无」,附一句依据;三类落点各成一表或合并为一表均可,列必须齐全):
 
@@ -154,7 +154,7 @@
 | --- | --- | --- | --- | --- | --- |
 | TP-001 | 测试环境地址 | .env.testing | WEB_BASE_URL | 用户提供 | 已就绪 |
 | TP-002 | vip 账号 | accountRef | vip-user | 用户提供凭据(TESTPILOT_ACCOUNT_VIP_USER) | 待补充 |
-| TP-003 | 参与促销的商品 | fixture | fixture.product.styleNo | 后端造数接口 POST /test-support/products | 待补充 |
+| TP-003 | 参与促销的商品 | tests/e2e/data/ | product.styleNo | 后端造数接口 POST /test-support/products | 待补充 |
 
 ## Missing data checklist
 - [ ] TP-002: 提供 vip-user 凭据
@@ -163,7 +163,7 @@
 
 规则:
 
-- **业务造数一律进 fixture/dataset**(字段名随后写入 Case 的 `requires`),**环境位才进 `.env.testing`**,**身份一律 `accountRef`**——三者不得混放,同一项资料只能有一个落点。混放(如把商品编码塞进 env、把地址写成 fixture)是评审输出不稳定的直接来源。
+- **业务造数一律进 `tests/e2e/data/`**(字段名登记在评审产物,脚本自行读取),**环境位才进 `.env.testing`**,**身份一律账号引用名**——三者不得混放,同一项资料只能有一个落点。混放(如把商品编码塞进 env、把地址写成业务数据)是评审输出不稳定的直接来源。
 - 来源不可知的资料(谁提供、怎么造不确定)必须同时进入澄清问题清单。
 - 「就绪状态」只有两种:已就绪 / 待补充;待补充项必须出现在 Missing data checklist。
 - 本节缺失或含未登记的必要资料时,不得给出评审结论(见铁律)。
@@ -172,7 +172,7 @@
 
 - 没有测试点清单,不要进入 `create-case`。
 - 没有「环境与资料准备清单」一节,不得给出评审结论;空表也要输出(写「无」+ 依据)。
-- 测试点依赖的资料(账号 / 造数字段 / 环境地址 / 前置状态)必须逐项登记落点:`.env.testing`(环境位)/ `accountRef`(身份)/ fixture-dataset(业务造数),禁止混放、禁止执行时再想。
+- 测试点依赖的资料(账号 / 造数字段 / 环境地址 / 前置状态)必须逐项登记落点:`.env.testing`(环境位)/ 账号引用名 `TESTPILOT_ACCOUNT_<REF>`(身份)/ `tests/e2e/data/`(业务造数),禁止混放、禁止执行时再想。
 - 涉及多平台但执行信息(地址 / 入口 / 登录角色)不全时,结论只能是"有条件可测",先澄清再建 Case。
 - 评审基于需求 + 项目代码/页面证据;两项都没有时先收集证据,不空谈。
 - 每个测试点必须可验证:都能回答"怎么判定通过"。

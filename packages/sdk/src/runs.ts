@@ -1,294 +1,7 @@
 import { readFile, readdir } from 'node:fs/promises'
-import { isAbsolute, join } from 'node:path'
-import {
-  RUNS_DIR,
-  RESULT_FILE,
-  TestPilotError,
-  type RunSummary,
-  type TestpilotConfig,
-} from '@testpilot/core'
-import type { TestCase } from '@testpilot/dsl'
-import {
-  AdapterResolver,
-  TestRunner,
-  allocateRunId as engineAllocateRunId,
-  type RunEvent,
-  type RunEventSubscriber,
-} from '@testpilot/execution-engine'
-import { playwrightAdapterFactory } from '@testpilot/adapter-playwright'
-import { wechatideAdapterFactory } from '@testpilot/adapter-wechatide'
-import { apiAdapterFactory } from '@testpilot/adapter-api'
-import type { AdapterFactory } from '@testpilot/adapter-core'
-import type { StepTarget } from '@testpilot/dsl'
-import type { ReadyCertificate, RehearsalEvidence } from '@testpilot/observation-core'
-import { collectCases, type CaseInfo } from './cases'
-import { prepareCaseExecutions } from './case-preparation'
-import { loadProjectConfig, resolveRoot, type ProjectOptions } from './project'
-import {
-  buildReadyCertificate,
-  readReadyCertificate,
-  validateReadyCertificate,
-  writeReadyCertificate,
-} from './ready'
-
-export interface RunOptions extends ProjectOptions {
-  /** 用例文件或目录,默认按 testpilot.yaml 的 casesDir */
-  paths?: readonly string[]
-  /** 按标签过滤用例 */
-  tag?: string
-  /** 外部指定的 runId(Control Plane 先行落库时使用);缺省时自动分配 */
-  runId?: string
-  /** 运行事件订阅(进度回调 / Server 持久化) */
-  onEvent?: RunEventSubscriber
-  /** 取消信号:abort 后当前用例执行完即停止,未开始的用例不再执行 */
-  signal?: AbortSignal
-  /** 覆盖默认 adapter 注入(playwright + wechatide + api);测试与自定义运行环境使用 */
-  adapters?: readonly AdapterFactory[]
-  /** accountRef -> 凭据原文;Case 声明 accountRef 时注入为 ${account.*} 变量(值可为 JSON) */
-  accounts?: Record<string, string>
-  /** 启用真实 UI probe、稳定等待和动作后状态变化验证。 */
-  rehearsal?: boolean
-  /** 正式运行前要求每个 Case 持有且匹配当前代码/环境/数据的 Ready Certificate。 */
-  requireReady?: boolean
-}
-
-export interface RunResult {
-  summary: RunSummary
-  /** 收集到但校验未通过、未执行的用例 */
-  invalid: CaseInfo[]
-  /** 被 --tag 过滤掉的用例数 */
-  tagFiltered: number
-  /** Case 声明了 accountRef 但 accounts 未提供对应条目的引用(仍会执行,${account.*} 保持字面量) */
-  missingAccounts: string[]
-  rehearsalEvidence?: Record<string, RehearsalEvidence>
-  readyCertificates?: ReadyCertificate[]
-}
-
-export class RunError extends Error {
-  readonly code: 'ENO_CASES' | 'EINVALID_CASES' | 'ENO_CONFIG' | 'ENOT_READY'
-
-  constructor(code: RunError['code'], message: string) {
-    super(message)
-    this.name = 'RunError'
-    this.code = code
-  }
-}
-
-/**
- * 默认 adapter 组合:Playwright(Web)+ WeChatIDE(小程序)+ API(HTTP),按项目配置注册;
- * testpilot.yaml systems 声明的额外业务系统以 `type@名称` 为会话键注册
- * (step.system 指定时命中;miniapp 的相对 projectPath 按项目根目录解析)。
- */
-export function createDefaultAdapters(config: TestpilotConfig, root?: string): AdapterFactory[] {
-  const factories: AdapterFactory[] = [
-    playwrightAdapterFactory({ baseUrl: config.web?.baseUrl }),
-    wechatideAdapterFactory({
-      projectPath: config.miniapp?.projectPath,
-      cliPath: config.miniapp?.cliPath,
-    }),
-    apiAdapterFactory({ baseUrl: config.api?.baseUrl, timeoutMs: config.api?.timeoutMs }),
-  ]
-  for (const [name, system] of Object.entries(config.systems ?? {})) {
-    const key = `${system.type}@${name}`
-    if (system.type === 'web') {
-      factories.push({ ...playwrightAdapterFactory({ baseUrl: system.baseUrl }), target: key as StepTarget })
-    } else if (system.type === 'api') {
-      factories.push({
-        ...apiAdapterFactory({ baseUrl: system.baseUrl, timeoutMs: system.timeoutMs }),
-        target: key as StepTarget,
-      })
-    } else {
-      const projectPath = isAbsolute(system.projectPath ?? '')
-        ? system.projectPath
-        : join(resolveRoot(root), system.projectPath ?? '')
-      factories.push({
-        ...wechatideAdapterFactory({ projectPath, cliPath: system.cliPath }),
-        target: key as StepTarget,
-      })
-    }
-  }
-  return factories
-}
-
-/** 按 yyyymmdd-NNN 规则分配下一个 runId(与引擎落盘目录一致;Control Plane 先行落库时使用) */
-export async function allocateRunId(options: ProjectOptions = {}): Promise<string> {
-  const base = runsRoot(options.root)
-  return engineAllocateRunId(base)
-}
-
-/**
- * 执行一次运行:加载配置 -> 收集校验用例 -> TestRunner 编排执行。
- * 这是 CLI / Server / Agent 统一的运行入口。
- */
-export async function runCases(options: RunOptions = {}): Promise<RunResult> {
-  const root = resolveRoot(options.root)
-  const config = await loadProjectConfig(root)
-
-  // 输入路径相对项目根目录展开;未提供时按配置的 casesDir
-  const inputs =
-    options.paths && options.paths.length > 0
-      ? options.paths.map((input) => (isAbsolute(input) ? input : join(root, input)))
-      : [join(root, config.casesDir)]
-
-  const cases = await collectCases(inputs, { root })
-  if (cases.length === 0) {
-    throw new RunError('ENO_CASES', `未找到用例文件(查找:${inputs.join(', ')})`)
-  }
-
-  const invalid = cases.filter((item) => !item.valid)
-  const runnable = cases.filter(
-    (item) =>
-      item.valid &&
-      item.case &&
-      (!options.tag || (item.case.tags ?? []).includes(options.tag)),
-  )
-  const tagFiltered = cases.length - invalid.length - runnable.length
-
-  if (runnable.length === 0) {
-    throw new RunError(
-      'EINVALID_CASES',
-      invalid.length > 0 ? '所有用例校验失败,无可执行用例' : '没有匹配的用例',
-    )
-  }
-
-  const factories = options.adapters ?? createDefaultAdapters(config, root)
-  const resolver = new AdapterResolver()
-  for (const factory of factories) resolver.register(factory)
-
-  // 声明了 accountRef 但运行方未提供凭据的引用:不阻塞执行,返回给调用方告警
-  const missingAccounts = [
-    ...new Set(
-      runnable
-        .map((item) => item.case?.accountRef)
-        .filter((ref): ref is string => !!ref && options.accounts?.[ref] === undefined),
-    ),
-  ]
-
-  const prepared = (
-    await Promise.all(
-      runnable.map((item) =>
-        prepareCaseExecutions(
-          { data: item.case!, file: item.file },
-          {
-            root,
-            dataDir: join(root, 'tests', 'e2e', 'data'),
-            variables: config.variables,
-            accounts: options.accounts,
-          },
-        ).catch((err) => {
-          // FIXTURE_MISSING 不中止整次 run:该 case 以 blocked 进入执行(合成失败步骤),
-          // 其余 case 照常;exit code 走 blocked=2 契约
-          if (err instanceof TestPilotError && err.code === 'FIXTURE_MISSING') {
-            return [
-              {
-                data: item.case!,
-                file: item.file,
-                templateId: item.case!.id,
-                rowId: 'default',
-                rowIndex: 0,
-                initialVariables: {},
-                missingDependencies: [],
-                blockedError: { code: err.code, message: err.message },
-              },
-            ]
-          }
-          throw err
-        }),
-      ),
-    )
-  ).flat()
-  const readyEvidence: Record<string, RehearsalEvidence> | undefined = options.requireReady
-    ? {}
-    : undefined
-  if (options.requireReady) {
-    const readinessErrors: string[] = []
-    for (const item of runnable) {
-      const data = item.case!
-      const certificate = await readReadyCertificate(root, data.id)
-      if (!certificate) {
-        readinessErrors.push(`${data.id}:missing-certificate`)
-        continue
-      }
-      const issues = await validateReadyCertificate(root, certificate, {
-        file: item.file,
-        data,
-        config,
-        datasetRows: prepared
-          .filter((row) => row.templateId === data.id)
-          .map((row) => row.initialVariables),
-      })
-      if (issues.length > 0) readinessErrors.push(`${data.id}:${issues.join(',')}`)
-      else {
-        readyEvidence![data.id] = {
-          verifiedLocators: certificate.verifiedLocators,
-          pageStateHashes: certificate.pageStateHashes,
-        }
-      }
-    }
-    if (readinessErrors.length > 0) {
-      throw new RunError(
-        'ENOT_READY',
-        `Ready Certificate 缺失或已失效:${readinessErrors.join('; ')}`,
-      )
-    }
-  }
-  const rehearsalEvidence: Record<string, RehearsalEvidence> | undefined = options.rehearsal
-    ? {}
-    : undefined
-  const runnerWithRehearsal = new TestRunner({
-    resolver,
-    runsRoot: join(root, RUNS_DIR),
-    runId: options.runId,
-    onEvent: options.onEvent,
-    signal: options.signal,
-    accounts: options.accounts,
-    rehearsalEvidence,
-    readyEvidence,
-  })
-  const summary = await runnerWithRehearsal.run(
-    prepared.map(
-      (item): {
-        data: TestCase
-        file: string
-        templateId: string
-        rowId: string
-        rowIndex: number
-        initialVariables: Record<string, string>
-        missingDependencies: string[]
-      } => item,
-    ),
-  )
-  const readyCertificates: ReadyCertificate[] = []
-  const rehearsalClean =
-    summary.status === 'passed' && summary.cases.every((item) => (item.warnings?.length ?? 0) === 0)
-  if (options.rehearsal && rehearsalClean && rehearsalEvidence) {
-    for (const item of runnable) {
-      const data = item.case!
-      const evidence = rehearsalEvidence[data.id]
-      if (!evidence) continue
-      const certificate = await buildReadyCertificate({
-        root,
-        file: item.file,
-        data,
-        config,
-        datasetRows: prepared
-          .filter((row) => row.templateId === data.id)
-          .map((row) => row.initialVariables),
-        evidence,
-      })
-      await writeReadyCertificate(root, certificate)
-      readyCertificates.push(certificate)
-    }
-  }
-  return {
-    summary,
-    invalid,
-    tagFiltered,
-    missingAccounts,
-    rehearsalEvidence,
-    readyCertificates,
-  }
-}
+import { join } from 'node:path'
+import { RUNS_DIR, RESULT_FILE, type RunSummary } from '@testpilot/core'
+import { resolveRoot, type ProjectOptions } from './project'
 
 export interface RunMeta {
   runId: string
@@ -307,7 +20,21 @@ function runsRoot(root?: string): string {
   return join(resolveRoot(root), RUNS_DIR)
 }
 
-/** 列出历史运行,按 runId 倒序(最近的在前) */
+/** 按 yyyymmdd-NNN 规则分配下一个 runId(与 run 目录落盘一致;原生 run 由 runNativeCases 调用) */
+export async function allocateRunId(options: ProjectOptions = {}): Promise<string> {
+  const base = runsRoot(options.root)
+  const entries = await readdir(base).catch(() => [] as string[])
+  const now = new Date()
+  const prefix = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`
+  let max = 0
+  for (const entry of entries) {
+    const match = new RegExp(`^${prefix}-(\\d{3})$`).exec(entry)
+    if (match) max = Math.max(max, Number(match[1]))
+  }
+  return `${prefix}-${String(max + 1).padStart(3, '0')}`
+}
+
+/** 列出历史运行,按 runId 倒序(最近的在前);原生与旧 YAML run 同形态可读 */
 export async function listRuns(options: ProjectOptions = {}): Promise<RunMeta[]> {
   const base = runsRoot(options.root)
   const entries = await readdir(base).catch(() => [] as string[])
@@ -326,23 +53,12 @@ export async function latestRunId(options: ProjectOptions = {}): Promise<string 
 
 /** 读取一次运行的汇总结果(result.json);文件缺失时抛错 */
 export async function getRun(runId: string, options: ProjectOptions = {}): Promise<RunSummary> {
-  const base = runsRoot(options.root)
-  const file = join(base, runId, RESULT_FILE)
+  const file = join(runsRoot(options.root), runId, RESULT_FILE)
   try {
     return JSON.parse(await readFile(file, 'utf8')) as RunSummary
   } catch {
-    throw new RunError('ENO_CASES', `读取运行结果失败:${file}(运行未完成或 runId 不存在)`)
+    throw new Error(`读取运行结果失败:${file}(运行未完成或 runId 不存在)`)
   }
-}
-
-/** 读取一次运行的完整事件流(events.ndjson) */
-export async function getRunEvents(runId: string, options: ProjectOptions = {}): Promise<RunEvent[]> {
-  const file = join(runsRoot(options.root), runId, 'events.ndjson')
-  const source = await readFile(file, 'utf8').catch(() => '')
-  return source
-    .split('\n')
-    .filter((line) => line.trim().length > 0)
-    .map((line) => JSON.parse(line) as RunEvent)
 }
 
 async function readRunMeta(base: string, runId: string): Promise<Omit<RunMeta, 'runId' | 'dir'>> {

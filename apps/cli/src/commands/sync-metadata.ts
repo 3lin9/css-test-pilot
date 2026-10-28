@@ -1,6 +1,7 @@
 import { relative } from 'node:path'
 import { Command } from 'commander'
-import { TestPilotClient } from '@testpilot/sdk'
+import { collectNativeCases, loadProjectConfig, readProjectLink } from '@testpilot/sdk'
+import { readNativeCaseHeader } from '@testpilot/reporter'
 import { readGitInfo } from '../lib/git'
 
 interface SyncResultBody {
@@ -23,10 +24,8 @@ export function makeSyncMetadataCommand(): Command {
     .description('同步 Case Metadata 快照到 TestPilot Server(CI / git push 后使用)')
     .option('--server <url>', 'TestPilot Server 地址(默认取 project.json 或 testpilot.yaml)')
     .action(async (options: { server?: string }) => {
-      const client = new TestPilotClient()
-
       // 1. 项目关联
-      const link = await client.getProjectLink()
+      const link = await readProjectLink()
       if (!link) {
         console.error('未找到 .testpilot/project.json(先运行 npx csspilot init 关联项目)')
         process.exitCode = 1
@@ -34,7 +33,7 @@ export function makeSyncMetadataCommand(): Command {
       }
 
       // 2. Server 地址
-      const config = await client.getConfig().catch(() => undefined)
+      const config = await loadProjectConfig().catch(() => undefined)
       const serverUrl =
         options.server ??
         process.env.TESTPILOT_SERVER_URL ??
@@ -54,17 +53,22 @@ export function makeSyncMetadataCommand(): Command {
         return
       }
 
-      // 4. 扫描 Case Metadata(无效文件跳过并提示)
-      const infos = await client.listCases()
-      const cases = infos
-        .filter((item) => item.valid && item.case)
-        .map((item) => ({
-          id: item.case!.id,
-          title: item.case!.name,
-          file: relative(process.cwd(), item.file).split('\\').join('/'),
-          tags: item.case!.tags ?? [],
-        }))
-      const skipped = infos.length - cases.length
+      // 4. 扫描原生脚本元数据(头注释 evidence 链:测试点 ID + 视角)
+      const nativeFiles = await collectNativeCases([], { root: process.cwd() }).catch(() => [])
+      const cases = (
+        await Promise.all(
+          nativeFiles.map(async (file) => {
+            const header = await readNativeCaseHeader(file)
+            if (!header.testPointId) return undefined
+            return {
+              id: header.testPointId,
+              title: header.testPointId,
+              file: relative(process.cwd(), file).split('\\').join('/'),
+              tags: header.perspective ? [header.perspective] : [],
+            }
+          }),
+        )
+      ).filter((item): item is NonNullable<typeof item> => item !== undefined)
 
       // 5. 快照同步(projectId 形如 proj_2,Server 使用数字 ID)
       const numericId = /(\d+)$/.exec(link.projectId ?? '')?.[1]
@@ -98,7 +102,7 @@ export function makeSyncMetadataCommand(): Command {
         console.log(
           `  新增 ${result.added} · 更新 ${result.updated} · 删除 ${result.deleted},当前 active 共 ${result.activeTotal} 个`,
         )
-        if (skipped > 0) console.log(`  (跳过 ${skipped} 个校验失败的用例文件)`)
+        console.log(`  (含 ${cases.length} 个原生脚本测试点)`)
       } catch (err) {
         console.error(`✗ 同步失败:${err instanceof Error ? err.message : err}`)
         process.exitCode = 1

@@ -1,7 +1,7 @@
 import { createReadStream } from 'node:fs'
 import { readdir, stat } from 'node:fs/promises'
 import { extname, join, resolve, sep } from 'node:path'
-import { TestPilotClient } from '@testpilot/sdk'
+import { getRun } from '@testpilot/sdk'
 import type { RunSummary } from '@testpilot/core'
 import type { Db } from '../db'
 import { getRunRow } from '../repositories/run-repo'
@@ -118,6 +118,5 @@ export async function getRunSummary(db: Db, runId: string): Promise<RunSummary> 
   if (!project?.rootPath) {
     throw new ArtifactError(`项目未配置本地根目录,无法读取运行结果`, 422)
   }
-  const client = new TestPilotClient({ root: project.rootPath })
-  return client.getRun(runId)
+  return getRun(runId, { root: project.rootPath })
 }

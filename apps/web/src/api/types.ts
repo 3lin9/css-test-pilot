@@ -69,13 +69,6 @@ export interface Run {
   message: string | null
 }
 
-export interface RunEvent {
-  seq: number
-  type: string
-  ts: string
-  event: Record<string, unknown> & { type: string }
-}
-
 export interface StepResult {
   index: number
   target: string
@@ -189,34 +182,4 @@ export interface Environment {
   branch: string | null
   baseUrl: string | null
   createdAt: string
-}
-
-export type AgentJobStatus = 'queued' | 'running' | 'passed' | 'failed' | 'cancelled'
-
-export interface AgentJob {
-  id: string
-  projectId: number
-  status: AgentJobStatus
-  prompt: string
-  runAfterCreate: boolean
-  overwrite: boolean
-  fileHint: string | null
-  caseFile: string | null
-  caseId: string | null
-  runId: string | null
-  message: string | null
-  nextSteps: string[]
-  startedAt: string
-  finishedAt: string | null
-}
-
-export interface AgentJobEvent {
-  seq: number
-  type: string
-  ts: string
-  event: Record<string, unknown> & {
-    type: string
-    message?: string
-    data?: Record<string, unknown>
-  }
 }

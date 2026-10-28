@@ -13,6 +13,12 @@ export type {
 } from './summary-report'
 export { classifyFromCode, classifyFailure, categoryLabel, FAILURE_CATEGORIES } from './classify'
 export type { FailureCategory } from './classify'
+export {
+  buildNativeRunSummary,
+  readNativeCaseHeader,
+  type NativeCaseHeader,
+  type NativeIngestInput,
+} from './native-ingest'
 export { collectHistory } from './history'
 export type { HistoryPoint } from './history'
 export { toSummaryView } from './summary'

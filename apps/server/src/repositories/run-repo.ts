@@ -1,6 +1,6 @@
-import { and, asc, desc, eq } from 'drizzle-orm'
+import { and, desc, eq } from 'drizzle-orm'
 import type { Db } from '../db'
-import { runEvents, runs } from '../db/schema'
+import { runs } from '../db/schema'
 
 export type RunStatus = 'running' | 'passed' | 'failed' | 'blocked' | 'inconclusive' | 'skipped' | 'cancelled'
 export type RunRow = typeof runs.$inferSelect
@@ -34,18 +34,4 @@ export async function updateRun(
   patch: Partial<RunInsert>,
 ): Promise<void> {
   await db.update(runs).set(patch).where(eq(runs.id, id))
-}
-
-export type RunEventRow = typeof runEvents.$inferSelect
-
-export async function insertRunEvent(
-  db: Db,
-  values: typeof runEvents.$inferInsert,
-): Promise<RunEventRow> {
-  const rows = await db.insert(runEvents).values(values).returning()
-  return rows[0]
-}
-
-export async function listRunEvents(db: Db, runId: string): Promise<RunEventRow[]> {
-  return db.select().from(runEvents).where(eq(runEvents.runId, runId)).orderBy(asc(runEvents.seq))
 }

@@ -38,6 +38,15 @@ export function verdictFromErrorCode(code: string | undefined): Verdict {
   return 'product'
 }
 
+/** 原生脚本三态标记的错误信息前缀;@testpilot/native 抛出,框架序列化只可靠保留 message */
+export const NATIVE_CODE_PREFIX = '[TESTPILOT:'
+
+/** 从错误文本提取三态标记的错误码;无前缀返回 undefined(调用方按宁红勿漏归 product) */
+export function nativeCodeFromMessage(message: string | undefined): string | undefined {
+  if (!message) return undefined
+  return /\[TESTPILOT:([A-Z0-9_]+)\]/.exec(message)?.[1]
+}
+
 /** 错误码 → case 状态(product→failed / infra→blocked / unverified→inconclusive) */
 export function caseStatusFromErrorCode(code: string | undefined): Extract<CaseStatus, 'failed' | 'blocked' | 'inconclusive'> {
   const verdict = verdictFromErrorCode(code)

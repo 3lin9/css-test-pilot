@@ -1,5 +1,7 @@
-import { basename, relative } from 'node:path'
-import { TestPilotClient } from '@testpilot/sdk'
+import { readFile } from 'node:fs/promises'
+import { basename, join, relative } from 'node:path'
+import { collectNativeCases } from '@testpilot/sdk'
+import { readNativeCaseHeader } from '@testpilot/reporter'
 import type { Db } from '../db'
 import { getProjectRow, type ProjectRow } from '../repositories/project-repo'
 import {
@@ -112,41 +114,41 @@ export async function getCaseViewByCaseId(
   )
 }
 
-/** 读取 Case DSL 原文(仅限有本地根目录的项目;Web 不修改 Case 源文件) */
+/** 读取用例脚本原文(仅限有本地根目录的项目;Web 不修改用例源文件) */
 export async function readCaseSource(db: Db, id: number): Promise<CaseView & { source: string }> {
   const view = await getCaseViewById(db, id)
   const project = await requireProject(db, view.projectId)
   if (!project.rootPath) {
-    throw Object.assign(new Error(`项目 ${project.name} 未配置本地根目录,无法读取 Case 源文件`), {
+    throw Object.assign(new Error(`项目 ${project.name} 未配置本地根目录,无法读取用例源文件`), {
       statusCode: 422,
     })
   }
-  const client = new TestPilotClient({ root: project.rootPath })
-  const detail = await client.readCase(view.filePath)
-  return { ...view, source: detail.source }
+  const source = await readFile(join(project.rootPath, view.filePath), 'utf8').catch(() => '')
+  return { ...view, source }
 }
 
-/** 本地扫描(仅供 init 后的首次索引等本地场景;CI 正式入口是 cases/sync) */
+/** 本地扫描(仅供 init 后的首次索引等本地场景;CI 正式入口是 cases/sync):原生脚本头注释 → 测试点元数据 */
 export async function scanLocalCases(db: Db, projectId: number): Promise<CaseView[]> {
   const project = await requireProject(db, projectId)
   if (!project.rootPath) {
     throw Object.assign(new Error(`项目 ${project.name} 未配置本地根目录`), { statusCode: 422 })
   }
-  const client = new TestPilotClient({ root: project.rootPath })
-  const infos = await client.listCases()
+  const files = await collectNativeCases([], { root: project.rootPath })
   const now = new Date().toISOString()
 
-  for (const info of infos) {
-    const filePath = relative(project.rootPath, info.file).replace(/\\/g, '/')
-    const existing = await findCaseByCaseId(db, projectId, info.case?.id ?? basename(filePath))
+  for (const file of files) {
+    const filePath = relative(project.rootPath, file).replace(/\\/g, '/')
+    const header = await readNativeCaseHeader(file)
+    const caseId = header.testPointId ?? basename(filePath).replace(/\.\w+$/, '')
+    const existing = await findCaseByCaseId(db, projectId, caseId)
     if (existing) continue
     await insertCase(db, {
       projectId,
-      caseId: info.case?.id ?? basename(filePath),
-      name: info.case?.name ?? null,
+      caseId,
+      name: caseId,
       filePath,
-      tagsJson: JSON.stringify(info.case?.tags ?? []),
-      valid: info.valid ? 1 : 0,
+      tagsJson: JSON.stringify(header.perspective ? [header.perspective] : []),
+      valid: 1,
       status: 'active',
       checkedAt: now,
     })

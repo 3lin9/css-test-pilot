@@ -24,7 +24,6 @@ async function exists(path: string): Promise<boolean> {
 }
 
 const TEST_DIR = 'tests/e2e'
-const CASE_DIR = 'tests/e2e/cases'
 
 /** 生成 testpilot.yaml 模板(环境配置只放 ${VAR} 引用不落明文;机器相关的路径/地址一律走环境变量) */
 export function renderTestpilotYaml(info: ProjectInfo): string {
@@ -39,9 +38,8 @@ project:
 
 test:
   directory: ${TEST_DIR}
-  caseDirectory: ${CASE_DIR}
 
-# 环境配置:Case 用 environment: <名称> 引用;baseUrl 由环境变量注入,禁止写明文
+# 环境配置:baseUrl 由环境变量注入,禁止写明文
 environment:
   default: test
   test:
@@ -49,18 +47,15 @@ environment:
   staging:
     baseUrl: \${STAGING_BASE_URL}
 
-# Case 可见的项目变量白名单；Planner 会在 Case 落盘前按 \${variable.<name>} 自动补齐
-variables: {}
-
 # 项目声明的执行端(实际可用性以 csspilot doctor 检测为准)
 adapters:
 ${adapters}
 
-# 默认 Workspace(多系统环境组合);Case 也可用 workspace 字段按需声明
+# 默认 Workspace(多系统环境组合;Server 触发运行时指定)
 # workspace:
 #   default: my-workspace
 
-# 额外业务系统；Planner 会按 Case 的 system + target 自动补齐引用
+# 额外业务系统(需求跨系统时登记,doctor 逐系统探测可达性)
 systems: {}
 
 # TestPilot Server(Control Plane)地址;init 关联项目与 sync-metadata 使用
@@ -68,13 +63,13 @@ systems: {}
 # server:
 #   baseUrl: http://127.0.0.1:3000
 
-# 默认 Web/API 执行端；实际值放 .env.testing
+# 被测系统地址(备忘;脚本从 process.env 读取,值放 .env.testing)
 web:
   baseUrl: \${TEST_BASE_URL}
 api:
   baseUrl: \${API_BASE_URL}
 
-# 小程序端:填入小程序项目目录后即可执行 target: miniapp 的步骤(路径每人不同,走 .env.testing)
+# 小程序端:MINIAPP_PROJECT_PATH 供 doctor 检测与脚本使用(路径每人不同,走 .env.testing)
 # miniapp:
 #   projectPath: \${MINIAPP_PROJECT_PATH}
 #   cliPath: \${MINIAPP_CLI_PATH}
@@ -105,7 +100,7 @@ API_BASE_URL=http://127.0.0.1:8080/api
 # TestPilot Server(Control Plane,可选)
 # TESTPILOT_SERVER_URL=http://127.0.0.1:3000
 
-# 账号由 Planner 根据 Case 的 accountRef 自动追加，例如:
+# 账号凭据(按角色登记,脚本用 process.env.TESTPILOT_ACCOUNT_<REF> 读取),例如:
 # TESTPILOT_ACCOUNT_TEST_USER={"username":"","password":""}
 `
 }
@@ -178,13 +173,11 @@ export async function initTestPilotConfig(
         ...(await createProjectOnServer(root, info, adapters, serverUrl)),
         version: 1,
         testDir: TEST_DIR,
-        caseDir: CASE_DIR,
         defaultAdapter,
       }
-  // 旧版 init 生成的链接补齐新字段
-  if (link.testDir === undefined || link.caseDir === undefined || link.defaultAdapter === undefined) {
+  // 旧版 init 生成的链接补齐新字段(caseDir 是已退役 YAML 链路的遗留字段,不再补写)
+  if (link.testDir === undefined || link.defaultAdapter === undefined) {
     link.testDir ??= TEST_DIR
-    link.caseDir ??= CASE_DIR
     link.defaultAdapter ??= defaultAdapter
   }
   if (link.serverUrl === undefined && serverUrl) link.serverUrl = serverUrl

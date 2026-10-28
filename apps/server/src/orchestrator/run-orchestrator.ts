@@ -1,8 +1,7 @@
-import type { AdapterFactory } from '@testpilot/adapter-core'
-import type { RunEvent } from '@testpilot/sdk'
+import { runNativeCases, type NativeSpawn } from '@testpilot/sdk'
 import type { Db } from '../db'
-import { insertRunEvent, updateRun } from '../repositories/run-repo'
-import { clientFor, type ProjectRow } from '../services/project-service'
+import { updateRun } from '../repositories/run-repo'
+import type { ProjectRow } from '../services/project-service'
 
 interface ActiveRun {
   controller: AbortController
@@ -11,17 +10,16 @@ interface ActiveRun {
 }
 
 export interface OrchestratorOptions {
-  /** 注入自定义 adapter(测试);缺省用 SDK 默认组合(playwright + wechatide) */
-  adapters?: readonly AdapterFactory[]
+  /** 注入自定义 spawn(测试);缺省真实 spawn 各端框架命令 */
+  spawnImpl?: NativeSpawn
 }
 
 /**
- * V0.1 Run 编排器:执行路径固定为 run-service -> @testpilot/sdk -> Execution Engine。
+ * Run 编排器:执行路径固定为 run-service -> @testpilot/sdk -> 各端原生 runner(ingest 归一)。
  * 同一项目同时只允许一个活动运行,不做复杂调度。
  */
 export class RunOrchestrator {
   private readonly active = new Map<string, ActiveRun>()
-  private readonly seq = new Map<string, number>()
 
   constructor(
     private readonly db: Db,
@@ -39,36 +37,41 @@ export class RunOrchestrator {
     return this.active.has(runId)
   }
 
-  /** 启动一次运行(后台执行);调用方负责先把 run 行写入 running 状态 */
+  /** 启动一次运行(后台执行);调用方负责先把 run 行写入 running 状态并分配 runId */
   start(
     runId: string,
     project: ProjectRow,
-    options: { paths?: string[]; tag?: string; accounts?: Record<string, string> },
+    options: { paths?: string[]; signal?: AbortSignal },
   ): void {
     const controller = new AbortController()
-    const client = clientFor(project)
-    this.seq.set(runId, 0)
+    // 外部取消信号(如进程退出)联动到本次运行
+    options.signal?.addEventListener('abort', () => controller.abort(), { once: true })
 
     const promise = (async () => {
       try {
-        const { summary, invalid, tagFiltered } = await client.runCases({
+        const result = await runNativeCases({
+          root: project.rootPath ?? undefined,
           runId,
           paths: options.paths,
-          tag: options.tag,
+          ingest: true,
           signal: controller.signal,
-          adapters: this.options.adapters,
-          accounts: options.accounts,
-          onEvent: (event: RunEvent) => this.persistEvent(runId, event),
+          spawnImpl: this.options.spawnImpl,
         })
+        if (controller.signal.aborted) {
+          // 取消优先于结果:被取消的运行即使部分完成也标记 cancelled
+          await updateRun(this.db, runId, {
+            status: 'cancelled',
+            finishedAt: new Date().toISOString(),
+            message: '运行中被取消',
+          })
+          return
+        }
         await updateRun(this.db, runId, {
-          status: summary.cancelled ? 'cancelled' : summary.status,
-          finishedAt: summary.finishedAt,
-          durationMs: summary.durationMs,
-          totalsJson: JSON.stringify(summary.totals),
-          message:
-            invalid.length > 0 || tagFiltered > 0
-              ? `${invalid.length} 个校验失败跳过,${tagFiltered} 个被 tag 过滤`
-              : null,
+          status: result.summary?.status ?? (result.exitCode === 0 ? 'passed' : 'failed'),
+          finishedAt: new Date().toISOString(),
+          durationMs: result.summary?.durationMs,
+          totalsJson: result.summary ? JSON.stringify(result.summary.totals) : null,
+          message: null,
         })
       } catch (err) {
         await updateRun(this.db, runId, {
@@ -99,17 +102,5 @@ export class RunOrchestrator {
 
   async waitAll(): Promise<void> {
     await Promise.all([...this.active.values()].map((run) => run.promise))
-  }
-
-  private async persistEvent(runId: string, event: RunEvent): Promise<void> {
-    const next = (this.seq.get(runId) ?? 0) + 1
-    this.seq.set(runId, next)
-    await insertRunEvent(this.db, {
-      runId,
-      seq: next,
-      type: event.type,
-      payloadJson: JSON.stringify(event),
-      ts: event.ts,
-    })
   }
 }

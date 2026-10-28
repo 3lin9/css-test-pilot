@@ -1,22 +1,27 @@
-# TestPilot 项目配置示例(跨端黄金路径)
-# 用法:复制到业务项目根目录并按需修改
+# TestPilot 项目配置示例(演示:mock-backend 黄金路径)
+# 用法:复制到业务项目根目录并按需修改;值放 .env.testing,配置只放 ${VAR} 引用
 
 version: 1
+
 project:
   name: testpilot-examples
+
 test:
   directory: tests/e2e
-  caseDirectory: tests/e2e/cases
+
+environment:
+  default: test
+  test:
+    baseUrl: ${TEST_BASE_URL}
+
+adapters:
+  - playwright
 
 web:
-  # navigate 相对 url 的基准地址(mock 后端)
-  baseUrl: http://127.0.0.1:8080
+  baseUrl: ${TEST_BASE_URL}
 
 api:
-  baseUrl: http://127.0.0.1:8080
+  baseUrl: ${API_BASE_URL}
 
-miniapp:
-  # 小程序项目目录(包含 project.config.json)
-  projectPath: path/to/miniprogram
-  # 微信开发者工具 cli(不填则在常见安装位置自动探测,或用环境变量 WECHAT_DEVTOOLS_CLI)
-  # cliPath: C:/Program Files (x86)/Tencent/微信web开发者工具/cli.bat
+# miniapp:
+#   projectPath: ${MINIAPP_PROJECT_PATH}

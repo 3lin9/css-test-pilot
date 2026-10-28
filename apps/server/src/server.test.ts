@@ -2,117 +2,55 @@ import { mkdir, mkdtemp, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterAll, beforeAll, describe, expect, test } from 'vitest'
-import type { AdapterFactory, TestAdapter } from '@testpilot/adapter-core'
+import type { NativeSpawn } from '@testpilot/sdk'
 import { buildServer, type TestPilotServer } from './server'
 
-const CASE_A = `id: case-a
-name: 用例 A
-workspace: mall-test
-tags:
-  - smoke
-steps:
-  - target: web
-    action: launch
-  - target: web
-    action: wait
-    timeout: 5000
-  - target: web
-    action: assert
-    locator:
-      css: ".title"
-    expected: "ok"
-`
+/** 零依赖 node:test 脚本:真实 spawn 即可通过(node --test --experimental-strip-types) */
+const SMOKE_SCRIPT = `import { test } from 'node:test'
+import assert from 'node:assert/strict'
 
-const CASE_BROKEN = `id: case-broken
-steps:
-  - target: miniapp
-    action: select
+test('api smoke: 占位断言', () => {
+  assert.equal(1 + 1, 2)
+})
 `
 
 async function makeProject(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), 'testpilot-server-'))
-  await mkdir(join(root, 'tests', 'e2e', 'cases'), { recursive: true })
-  await writeFile(join(root, 'testpilot.yaml'), 'casesDir: tests/e2e/cases\n', 'utf8')
-  await writeFile(join(root, 'tests', 'e2e', 'cases', 'case-a.yaml'), CASE_A, 'utf8')
-  await writeFile(join(root, 'tests', 'e2e', 'cases', 'broken.yaml'), CASE_BROKEN, 'utf8')
+  await mkdir(join(root, 'tests', 'e2e', 'api'), { recursive: true })
+  await writeFile(join(root, 'tests', 'e2e', 'api', 'smoke.test.ts'), SMOKE_SCRIPT, 'utf8')
   return root
 }
 
 /**
- * 可控 stub adapter:测试通过 block/unblock 决定 wait 步骤是否阻塞,
- * 用于确定性地验证「运行中取消」路径,同时不拖慢普通运行。
+ * 可控 gate spawn:挂起直到 release/abort,用于确定性地验证「运行中取消」路径,
+ * 同时不拖慢普通运行(普通运行用真实 node:test,毫秒级)。
  */
-function makeGateAdapter(): { factory: AdapterFactory; block: () => void; unblock: () => void } {
-  let blocking = false
-  let release: (() => void) | undefined
-
-  const adapter: TestAdapter = {
-    target: 'web',
-    async launch() {},
-    async navigate() {},
-    async click() {},
-    async input() {},
-    async select() {},
-    async wait() {
-      if (!blocking) return
-      await new Promise<void>((resolvePromise) => {
-        release = resolvePromise
-      })
-    },
-    async assert() {},
-    async extract() {
-      return '42'
-    },
-    async screenshot() {
-      return Buffer.from('png')
-    },
-    async close() {},
+function makeGateSpawn(): { spawnImpl: NativeSpawn; release: () => void } {
+  let releaseFn: (() => void) | undefined
+  const spawnImpl: NativeSpawn = async (_command, _cwd, _stdoutPath, signal) => {
+    await new Promise<void>((resolvePromise) => {
+      if (signal?.aborted) return resolvePromise()
+      signal?.addEventListener('abort', () => resolvePromise(), { once: true })
+      releaseFn = resolvePromise
+    })
+    return 1
   }
-
-  return {
-    factory: {
-      target: 'web',
-      async create() {
-        return adapter
-      },
-    },
-    block() {
-      blocking = true
-    },
-    unblock() {
-      blocking = false
-      release?.()
-      release = undefined
-    },
-  }
-}
-
-async function until(condition: () => Promise<boolean>, timeoutMs = 5000): Promise<void> {
-  const deadline = Date.now() + timeoutMs
-  while (Date.now() < deadline) {
-    if (await condition()) return
-    await new Promise((resolvePromise) => setTimeout(resolvePromise, 25))
-  }
-  throw new Error('等待条件超时')
+  return { spawnImpl, release: () => releaseFn?.() }
 }
 
 describe('server:control-plane', () => {
   let server: TestPilotServer
-  let gate: ReturnType<typeof makeGateAdapter>
   let root: string
 
   beforeAll(async () => {
     root = await makeProject()
-    gate = makeGateAdapter()
     server = await buildServer({
       root,
       dbPath: join(root, '.testpilot', 'server.db'),
-      adapters: [gate.factory],
     })
   })
 
   afterAll(async () => {
-    gate.unblock()
     await server.close()
   })
 
@@ -187,8 +125,8 @@ describe('server:control-plane', () => {
         branch: 'main',
         commit: 'a82fd91',
         cases: [
-          { id: 'case-a', title: '用例 A', file: 'tests/e2e/cases/case-a.yaml', tags: ['smoke'] },
-          { id: 'case-b', title: '用例 B', file: 'tests/e2e/cases/case-b.yaml' },
+          { id: 'TP-001', title: 'TP-001', file: 'tests/e2e/web/order.spec.ts', tags: ['charter:error-path'] },
+          { id: 'TP-002', title: 'TP-002', file: 'tests/e2e/api/member.test.ts' },
         ],
       },
     })
@@ -204,31 +142,31 @@ describe('server:control-plane', () => {
         branch: 'main',
         commit: 'b93ce02',
         cases: [
-          { id: 'case-a', title: '用例 A', file: 'tests/e2e/cases/case-a.yaml', tags: ['smoke'] },
-          { id: 'case-c', title: '用例 C', file: 'tests/e2e/cases/case-c.yaml' },
+          { id: 'TP-001', title: 'TP-001', file: 'tests/e2e/web/order.spec.ts', tags: ['charter:error-path'] },
+          { id: 'TP-003', title: 'TP-003', file: 'tests/e2e/miniapp/cart.test.ts' },
         ],
       },
     })
     expect(second.statusCode).toBe(200)
-    // case-a 内容未变不算修改(commit 变化记录在分支成员表);B 消失计入 deleted;C 新增
+    // TP-001 内容未变不算修改(commit 变化记录在分支成员表);TP-002 消失计入 deleted;TP-003 新增
     expect(second.json()).toMatchObject({ added: 1, updated: 0, deleted: 1, activeTotal: 2 })
 
-    // Case Index:A active / B deleted / C active
+    // Case Index:TP-002 deleted / TP-003 active
     const casesRes = await server.app.inject({
       method: 'GET',
       url: `/api/projects/${projectId}/cases`,
     })
     const cases = casesRes.json().cases
-    expect(cases.find((item: { caseId: string }) => item.caseId === 'case-b').status).toBe('deleted')
-    expect(cases.find((item: { caseId: string }) => item.caseId === 'case-c').commit).toBe('b93ce02')
+    expect(cases.find((item: { caseId: string }) => item.caseId === 'TP-002').status).toBe('deleted')
+    expect(cases.find((item: { caseId: string }) => item.caseId === 'TP-003').commit).toBe('b93ce02')
 
-    // 按 DSL case id 查询
+    // 按 case id 查询
     const oneRes = await server.app.inject({
       method: 'GET',
-      url: `/api/projects/${projectId}/cases/case-a`,
+      url: `/api/projects/${projectId}/cases/TP-001`,
     })
     expect(oneRes.statusCode).toBe(200)
-    expect(oneRes.json().tags).toEqual(['smoke'])
+    expect(oneRes.json().tags).toEqual(['charter:error-path'])
 
     // sync-status:Web 项目概览
     const statusRes = await server.app.inject({
@@ -256,7 +194,7 @@ describe('server:control-plane', () => {
   test('多分支同步:分支即测试环境,main 与 release 互不影响', async () => {
     const projectId = server.ctx.defaultProject.id
 
-    // release 分支只同步 case-b:case-b 在 main 上已 deleted,但在 release 上存在 -> 整体恢复 active
+    // release 分支只同步 TP-002:TP-002 在 main 上已 deleted,但在 release 上存在 -> 整体恢复 active
     const syncRes = await server.app.inject({
       method: 'POST',
       url: `/api/projects/${projectId}/cases/sync`,
@@ -264,24 +202,24 @@ describe('server:control-plane', () => {
         repository: 'git@github.com:company/mall.git',
         branch: 'release',
         commit: 'c11ce02',
-        cases: [{ id: 'case-b', title: '用例 B', file: 'tests/e2e/cases/case-b.yaml' }],
+        cases: [{ id: 'TP-002', title: 'TP-002', file: 'tests/e2e/api/member.test.ts' }],
       },
     })
     expect(syncRes.statusCode).toBe(200)
     expect(syncRes.json()).toMatchObject({ added: 0, updated: 1, deleted: 0, activeTotal: 3 })
 
-    // case-b:main 成员 deleted + release 成员 active -> 整体 active,branches 仅 release
+    // TP-002:main 成员 deleted + release 成员 active -> 整体 active,branches 仅 release
     const caseBRes = await server.app.inject({
       method: 'GET',
-      url: `/api/projects/${projectId}/cases/case-b`,
+      url: `/api/projects/${projectId}/cases/TP-002`,
     })
     expect(caseBRes.json().status).toBe('active')
     expect(caseBRes.json().branches).toEqual(['release'])
 
-    // case-a 不受 release 同步影响:仍在 main 上
+    // TP-001 不受 release 同步影响:仍在 main 上
     const caseARes = await server.app.inject({
       method: 'GET',
-      url: `/api/projects/${projectId}/cases/case-a`,
+      url: `/api/projects/${projectId}/cases/TP-001`,
     })
     expect(caseARes.json().status).toBe('active')
     expect(caseARes.json().branches).toEqual(['main'])
@@ -300,7 +238,7 @@ describe('server:control-plane', () => {
     )
   })
 
-  test('Workspace:创建 / 绑定环境 / Case 声明解析到 Run 快照', async () => {
+  test('Workspace:显式 workspaceId 传入时 Run 记录环境快照', async () => {
     const projectId = server.ctx.defaultProject.id
 
     // 环境 + workspace + 绑定
@@ -326,8 +264,12 @@ describe('server:control-plane', () => {
     })
     expect(bindRes.statusCode).toBe(201)
 
-    // Case 声明 workspace: mall-test -> 运行时自动解析
-    const createRes = await server.app.inject({ method: 'POST', url: '/api/runs', payload: {} })
+    // 显式 workspaceId -> 运行行记录快照
+    const createRes = await server.app.inject({
+      method: 'POST',
+      url: '/api/runs',
+      payload: { workspaceId },
+    })
     expect(createRes.statusCode).toBe(202)
     const runId = createRes.json().id as string
     await server.ctx.orchestrator.wait(runId)
@@ -341,7 +283,7 @@ describe('server:control-plane', () => {
     expect(snapshot.bindings[0].environmentName).toBe('TEST')
   })
 
-  test('运行生命周期:202 -> passed -> events -> report,Run 记录显式 commit', async () => {
+  test('运行生命周期:202 -> passed -> report,Run 记录显式 commit', async () => {
     const createRes = await server.app.inject({
       method: 'POST',
       url: '/api/runs',
@@ -358,11 +300,6 @@ describe('server:control-plane', () => {
     expect(run.commit).toBe('a82fd91')
     expect(JSON.parse(run.totalsJson).cases).toBe(1)
 
-    const eventsRes = await server.app.inject({ method: 'GET', url: `/api/runs/${runId}/events` })
-    const events = eventsRes.json().events
-    expect(events[0].type).toBe('run-started')
-    expect(events.at(-1).type).toBe('run-finished')
-
     const reportRes = await server.app.inject({ method: 'GET', url: `/api/runs/${runId}/report` })
     expect(reportRes.statusCode).toBe(200)
     expect(reportRes.json().runId).toBe(runId)
@@ -373,7 +310,7 @@ describe('server:control-plane', () => {
     const res = await server.app.inject({
       method: 'POST',
       url: '/api/runs',
-      payload: { paths: ['tests/e2e/cases/broken.yaml'] },
+      payload: { paths: ['tests/e2e/api/missing.test.ts'] },
     })
     expect(res.statusCode).toBe(422)
   })
@@ -392,7 +329,7 @@ describe('server:control-plane', () => {
     const listRes = await server.app.inject({ method: 'GET', url: `/api/runs/${runId}/artifacts` })
     const paths = listRes.json().files.map((file: { path: string }) => file.path)
     expect(paths).toContain('result.json')
-    expect(paths).toContain('events.ndjson')
+    expect(paths.some((path: string) => path.endsWith('.tap'))).toBe(true)
 
     const fileRes = await server.app.inject({
       method: 'GET',
@@ -410,114 +347,54 @@ describe('server:control-plane', () => {
   })
 
   test('项目并发运行 409;运行中取消 -> cancelled;重复取消 409', async () => {
-    gate.block()
-
-    const createRes = await server.app.inject({ method: 'POST', url: '/api/runs', payload: {} })
-    expect(createRes.statusCode).toBe(202)
-    const runId = createRes.json().id as string
-
-    // 等待 wait 步骤进入阻塞
-    await until(async () => {
-      const res = await server.app.inject({ method: 'GET', url: `/api/runs/${runId}/events` })
-      return res.json().events.some(
-        (item: { event: { action?: string } }) => item.event.action === 'wait',
-      )
+    const gate = makeGateSpawn()
+    const gateServer = await buildServer({
+      root,
+      dbPath: join(root, '.testpilot', 'server-gate.db'),
+      spawnImpl: gate.spawnImpl,
     })
+    try {
+      const createRes = await server.app.inject({ method: 'POST', url: '/api/runs', payload: {} })
+      expect(createRes.statusCode).toBe(202)
+      const runId = createRes.json().id as string
 
-    // 同项目第二个运行应 409
-    const busyRes = await server.app.inject({ method: 'POST', url: '/api/runs', payload: {} })
-    expect(busyRes.statusCode).toBe(409)
+      // gate server 的运行进入挂起的 spawn
+      const gateCreate = await gateServer.app.inject({ method: 'POST', url: '/api/runs', payload: {} })
+      expect(gateCreate.statusCode).toBe(202)
+      const gateRunId = gateCreate.json().id as string
 
-    // 运行中取消:当前用例完成后停止
-    const cancelRes = await server.app.inject({
-      method: 'POST',
-      url: `/api/runs/${runId}/cancel`,
-    })
-    expect(cancelRes.statusCode).toBe(200)
+      // 同项目第二个运行应 409
+      const busyRes = await gateServer.app.inject({ method: 'POST', url: '/api/runs', payload: {} })
+      expect(busyRes.statusCode).toBe(409)
 
-    gate.unblock()
-    await server.ctx.orchestrator.wait(runId)
-    const runRes = await server.app.inject({ method: 'GET', url: `/api/runs/${runId}` })
-    expect(runRes.json().status).toBe('cancelled')
+      // 运行中取消:spawn 被唤醒后停止
+      const cancelRes = await gateServer.app.inject({
+        method: 'POST',
+        url: `/api/runs/${gateRunId}/cancel`,
+      })
+      expect(cancelRes.statusCode).toBe(200)
 
-    const againRes = await server.app.inject({
-      method: 'POST',
-      url: `/api/runs/${runId}/cancel`,
-    })
-    expect(againRes.statusCode).toBe(409)
+      await gateServer.ctx.orchestrator.wait(gateRunId)
+      const runRes = await gateServer.app.inject({ method: 'GET', url: `/api/runs/${gateRunId}` })
+      expect(runRes.json().status).toBe('cancelled')
+
+      const againRes = await gateServer.app.inject({
+        method: 'POST',
+        url: `/api/runs/${gateRunId}/cancel`,
+      })
+      expect(againRes.statusCode).toBe(409)
+
+      // 主 server 的运行照常收尾
+      await server.ctx.orchestrator.wait(runId)
+    } finally {
+      gate.release()
+      await gateServer.close()
+    }
   })
 
   test('GET /api/runs 列表', async () => {
     const res = await server.app.inject({ method: 'GET', url: '/api/runs' })
     expect(res.statusCode).toBe(200)
     expect(res.json().runs.length).toBeGreaterThanOrEqual(3)
-  })
-
-  test('POST Agent Job:在业务项目工作区写入 Case', async () => {
-    const projectId = server.ctx.defaultProject.id
-    const res = await server.app.inject({
-      method: 'POST',
-      url: `/api/projects/${projectId}/agent/jobs`,
-      payload: {
-        prompt: `\`\`\`yaml
-id: from-agent-api
-name: 来自 Agent API
-tags:
-  - agent
-steps:
-  - target: web
-    action: navigate
-    url: /
-  - target: web
-    action: screenshot
-\`\`\``,
-      },
-    })
-    expect(res.statusCode).toBe(202)
-    const job = res.json() as { id: string; status: string }
-    expect(job.id).toMatch(/^agent-/)
-    expect(['queued', 'running', 'passed']).toContain(job.status)
-
-    await server.ctx.agentOrchestrator.wait(job.id)
-    const detail = await server.app.inject({ method: 'GET', url: `/api/agent/jobs/${job.id}` })
-    expect(detail.statusCode).toBe(200)
-    const body = detail.json() as {
-      status: string
-      caseFile: string
-      caseId: string
-      nextSteps: string[]
-    }
-    expect(body.status).toBe('passed')
-    expect(body.caseId).toBe('from-agent-api')
-    expect(body.caseFile).toBe('tests/e2e/cases/from-agent-api.yaml')
-    expect(body.nextSteps.some((step) => step.includes('sync-metadata'))).toBe(true)
-
-    const events = await server.app.inject({
-      method: 'GET',
-      url: `/api/agent/jobs/${job.id}/events`,
-    })
-    expect(events.statusCode).toBe(200)
-    expect(events.json().events.some((item: { type: string }) => item.type === 'case-written')).toBe(
-      true,
-    )
-
-    const list = await server.app.inject({
-      method: 'GET',
-      url: `/api/projects/${projectId}/agent/jobs`,
-    })
-    expect(list.json().jobs.some((item: { id: string }) => item.id === job.id)).toBe(true)
-
-    const all = await server.app.inject({ method: 'GET', url: '/api/agent/jobs' })
-    expect(all.statusCode).toBe(200)
-    expect(all.json().jobs.some((item: { id: string }) => item.id === job.id)).toBe(true)
-  })
-
-  test('Agent Job 无 prompt 时 422', async () => {
-    const res = await server.app.inject({
-      method: 'POST',
-      url: `/api/projects/${server.ctx.defaultProject.id}/agent/jobs`,
-      payload: { prompt: '  ' },
-    })
-    expect(res.statusCode).toBe(422)
   })
 })

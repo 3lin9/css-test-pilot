@@ -163,17 +163,6 @@ export const runs = sqliteTable('runs', {
   message: text('message'),
 })
 
-export const runEvents = sqliteTable('run_events', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  runId: text('run_id')
-    .notNull()
-    .references(() => runs.id),
-  seq: integer('seq').notNull(),
-  type: text('type').notNull(),
-  payloadJson: text('payload_json').notNull(),
-  ts: text('ts').notNull(),
-})
-
 export const reports = sqliteTable('reports', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   runId: text('run_id')

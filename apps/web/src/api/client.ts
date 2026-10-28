@@ -1,13 +1,10 @@
 import type {
   ArtifactFile,
-  AgentJob,
-  AgentJobEvent,
   CaseView,
   Environment,
   Project,
   ProjectWithCount,
   Run,
-  RunEvent,
   RunSummary,
   SyncStatus,
   WorkspaceDetail,
@@ -78,13 +75,11 @@ export const api = {
     return request<{ runs: Run[] }>(`/api/runs${query ? `?${query}` : ''}`).then((r) => r.runs)
   },
   run: (id: string) => request<Run>(`/api/runs/${id}`),
-  runEvents: (id: string) =>
-    request<{ events: RunEvent[] }>(`/api/runs/${id}/events`).then((r) => r.events),
   runSummary: (id: string) => request<RunSummary>(`/api/runs/${id}/summary`),
   runArtifacts: (id: string) =>
     request<{ files: ArtifactFile[] }>(`/api/runs/${id}/artifacts`).then((r) => r.files),
   cancelRun: (id: string) => request<Run>(`/api/runs/${id}/cancel`, { method: 'POST' }),
-  createRun: (body: { projectId?: number; paths?: string[]; tag?: string }) =>
+  createRun: (body: { projectId?: number; paths?: string[]; workspaceId?: number }) =>
     request<Run>('/api/runs', { method: 'POST', body: JSON.stringify(body) }),
   report: (id: string) =>
     request<{ runId: string; jsonPath: string; htmlPath: string }>(`/api/runs/${id}/report`),
@@ -103,28 +98,4 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(body),
     }),
-
-  // ---- agent jobs ----
-  agentJobs: (filter: { projectId?: number; status?: string } = {}) => {
-    const params = new URLSearchParams()
-    if (filter.projectId !== undefined) params.set('projectId', String(filter.projectId))
-    if (filter.status) params.set('status', filter.status)
-    const query = params.toString()
-    return request<{ jobs: AgentJob[] }>(`/api/agent/jobs${query ? `?${query}` : ''}`).then((r) => r.jobs)
-  },
-  projectAgentJobs: (projectId: number) =>
-    request<{ jobs: AgentJob[] }>(`/api/projects/${projectId}/agent/jobs`).then((r) => r.jobs),
-  agentJob: (id: string) => request<AgentJob>(`/api/agent/jobs/${id}`),
-  agentJobEvents: (id: string) =>
-    request<{ events: AgentJobEvent[] }>(`/api/agent/jobs/${id}/events`).then((r) => r.events),
-  createAgentJob: (
-    projectId: number,
-    body: { prompt: string; runAfterCreate?: boolean; overwrite?: boolean; file?: string },
-  ) =>
-    request<AgentJob>(`/api/projects/${projectId}/agent/jobs`, {
-      method: 'POST',
-      body: JSON.stringify(body),
-    }),
-  cancelAgentJob: (id: string) =>
-    request<AgentJob>(`/api/agent/jobs/${id}/cancel`, { method: 'POST' }),
 }

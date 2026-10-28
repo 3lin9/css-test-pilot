@@ -75,9 +75,7 @@ export async function runInit(root: string, options: InitOptions = {}): Promise<
   const testStructure = await initTestStructure(root, project)
   const reuseNote = project.existingE2eDirs.filter((dir) => dir !== 'tests/e2e')
   console.log(
-    testStructure.cases === 'reused'
-      ? '✓ 测试目录          tests/e2e(已存在,复用)'
-      : '✓ 测试目录          tests/e2e/{cases,data,reviews}',
+    '✓ 测试目录          tests/e2e/{web,miniapp,api,data,reviews}',
   )
   if (reuseNote.length > 0) {
     console.log(`  ⚠ 检测到其他 E2E 目录:${reuseNote.join(', ')}(保留不动,未强制迁移)`)
@@ -123,8 +121,8 @@ export async function runInit(root: string, options: InitOptions = {}): Promise<
   console.log('下一步:')
   console.log('  1. 让 AI 阅读 .agents/skills/testpilot/SKILL.md(项目上下文见 references/)')
   console.log('     可选:按所用 Agent 复制到 .cursor/skills/、.claude/skills/ 等目录')
-  console.log('  2. 在 tests/e2e/cases/ 创建 Case(遵循 references/test-conventions.md)')
-  console.log('  3. npx csspilot validate && npx csspilot run')
+  console.log('  2. 按测试点写原生脚本:tests/e2e/web、tests/e2e/miniapp、tests/e2e/api')
+  console.log('  3. npx csspilot run')
 
   return { project, adapters, config, testStructure, skill, doctor }
 }

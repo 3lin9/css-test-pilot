@@ -1,7 +1,13 @@
 export * from './types'
 export { TestPilotError } from './errors'
-export { caseStatusFromErrorCode, verdictFromErrorCode } from './verdict'
+export {
+  NATIVE_CODE_PREFIX,
+  caseStatusFromErrorCode,
+  nativeCodeFromMessage,
+  verdictFromErrorCode,
+} from './verdict'
 export type { Verdict } from './verdict'
+export { buildRunSummary } from './run-summary'
 export {
   DEFAULT_CASES_DIR,
   DEFAULT_STEP_TIMEOUT_MS,

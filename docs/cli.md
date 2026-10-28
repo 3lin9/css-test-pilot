@@ -7,11 +7,8 @@
 | 命令                                    | 作用                                           |
 | --------------------------------------- | ---------------------------------------------- |
 | `csspilot init`                         | 把 TestPilot 接入当前业务项目(项目测试基础设施初始化) |
-| `csspilot validate [paths...] [--runtime]` | 校验 DSL；可追加真实界面只读 probe          |
-| `csspilot discover [paths...]`          | 只读 observe/probe，保存语义树/WXML/截图       |
-| `csspilot rehearse [paths...]`          | 完整彩排，通过后签发 Ready Certificate         |
-| `csspilot list [--tag <tag>]`           | 列出用例                                       |
-| `csspilot run [paths...] [--tag <tag>] [--require-ready]` | 确定性执行；可启用证书门禁       |
+| `csspilot validate [paths...]`          | 原生脚本 lint(evidence 头注释 / reviews 清单出处 / env 引用) |
+| `csspilot run [paths...]`               | 原生执行:交给各端框架,ingest 归一落 result.json(blocked 退出码 2) |
 | `csspilot report [--run <id>] [--open]` | 生成交互式单文件 HTML 报告(步骤树 / 失败分类 / 历史趋势)+ report.json |
 | `csspilot sync-metadata`                | 同步 Case Metadata 到 Server(CI / git push 后) |
 | `csspilot doctor`                       | 健康检查(分组报告:error / warning)          |
@@ -29,7 +26,7 @@ npx csspilot init    # 重新接入时自动同步(版本一致则跳过)
 npx csspilot update  # 只做同步;--force 版本一致时也强制覆盖 Skill
 ```
 
-同步范围:Skill 主体(SKILL.md、manifest.yaml、rules/、workflows/)、`.env.testing`(已存在则保留用户内容,只提示模板新增变量)、`.gitignore` 忽略 `.env.testing`;`references/` 是项目级上下文,不会被覆盖。**绝不触碰用户资产**:`.env.testing`(真实凭据)、前端项目自身的 `.env`、`tests/e2e/cases/`、`.testpilot/`、`testpilot.yaml`。`doctor` 的 Agent 段会显示 Skill 版本并提示可更新。发新版本时记得同步更新仓库里 `skills/testpilot/manifest.yaml` 的 `version`(与 CLI 版本保持一致)。
+同步范围:Skill 主体(SKILL.md、manifest.yaml、rules/、workflows/)、`.env.testing`(已存在则保留用户内容,只提示模板新增变量)、`.gitignore` 忽略 `.env.testing`;`references/` 是项目级上下文,不会被覆盖。**绝不触碰用户资产**:`.env.testing`(真实凭据)、前端项目自身的 `.env`、`tests/e2e/`(用例与数据)、`.testpilot/`、`testpilot.yaml`。`doctor` 的 Agent 段会显示 Skill 版本并提示可更新。发新版本时记得同步更新仓库里 `skills/testpilot/manifest.yaml` 的 `version`(与 CLI 版本保持一致)。
 
 ## init —— 接入业务项目
 
@@ -41,8 +38,8 @@ npx csspilot init [--server <url>]
 
 1. **项目识别**:名称 / 类型(web / wechat-miniapp / hybrid / unknown)/ 语言 / 包管理器 / Git / 已有测试目录
 2. **Adapter 检测**:Playwright 依赖、微信开发者工具;不可用仅提示 warning,不阻塞
-3. **配置初始化**:生成 `testpilot.yaml`(含 environment 环境段,baseUrl 用 `${VAR}` 引用)+ `.testpilot/{project.json,artifacts/}`;project.json 含 `version / projectId / testDir / caseDir / defaultAdapter`;Server 可达时注册项目,不可达时生成本地 ID
-4. **测试目录**:`tests/e2e/{cases,data,reviews}`(已有直接复用;检测到其他 E2E 目录只提示不迁移)
+3. **配置初始化**:生成 `testpilot.yaml`(baseUrl 用 `${VAR}` 引用)+ `.testpilot/{project.json,artifacts/}`;project.json 含 `version / projectId / testDir`;Server 可达时注册项目,不可达时生成本地 ID
+4. **测试目录**:`tests/e2e/{web,miniapp,api,data,reviews}`(已有直接复用;检测到其他 E2E 目录只提示不迁移)
 5. **Agent Skill**:安装到 `.agents/skills/testpilot/`,并生成项目级上下文 `references/{project,test-conventions,adapters}.md`
 6. **环境配置**:生成 `.env.testing`(`TEST_BASE_URL` / `STAGING_BASE_URL` / `WEB_BASE_URL` / `MINIAPP_PROJECT_PATH` 等),确保 `.gitignore` 忽略 `.env.testing`;**直接在该文件填真实值**,CLI 运行时自动加载(刻意不读前端项目自身的 `.env`,互不影响);也可设为环境变量,配置中的 `${VAR}` 引用加载时自动注入
 7. **CI 准备**:只检测已有 CI 并提示,可用 `csspilot ci init` 生成模板
@@ -80,60 +77,27 @@ npx csspilot sync-metadata
 ## validate —— 校验用例
 
 ```bash
-npx csspilot validate                                # 默认 casesDir 全量
-npx csspilot validate tests/e2e/cases/order.yaml    # 指定文件/目录
-npx csspilot validate --runtime                     # 静态校验 + 真实界面 observe/probe
+npx csspilot validate                                     # 原生脚本 lint(tests/e2e 全量收集)
+npx csspilot validate tests/e2e/web/order-create.spec.ts  # 指定脚本/目录
 ```
 
-检查:YAML 格式 → DSL 结构(zod schema)→ 语义规则(action/target 支持、必填字段、字段误用、locator 合法性、变量引用)。任何失败以退出码 1 结束。
+原生脚本 lint 三道卡:
 
-## discover / rehearse —— 从草稿到 Ready
+1. **头注释 evidence 链**:`// 测试点: <ID>` 必填,`// 视角: charter:*` 取值在 5 个枚举内(persona / edge-input / numbers-copy / state-recovery / error-path)
+2. **清单出处**:测试点 ID 必须在 `tests/e2e/reviews/` 的需求评审清单中存在——清单是唯一的用例来源,清单外 ID 直接报错(no-invention 硬卡)
+3. **env 声明**:脚本引用的 `process.env.*` 必须在 `.env.testing`(`KEY=`)、`testpilot.yaml`(`${VAR}`)或白名单(`TESTPILOT_*` / `NODE_ENV` / `CI`)中已声明
 
-```bash
-npx csspilot discover tests/e2e/cases/order.yaml
-npx csspilot discover --target miniapp --url /pages/checkout/index --intent "提交订单"
-npx csspilot rehearse tests/e2e/cases/order.yaml
-```
-
-`discover` 只执行 launch/navigate/observe/probe，不执行业务副作用动作。Web 使用 AI aria snapshot；小程序融合运行时节点、WXML、边界框与模拟器截图。产物写入 `.testpilot/artifacts/discovery/`。意图发现模式会把已验证 locator 缓存在 `.testpilot/cache/locators.json`；每次复用前重新 probe，失效后自动 observe 并替换缓存。
-
-`rehearse` 会在可重置测试环境真实执行完整 Case：locator 动作前必须唯一、可见、可操作，动作后等待稳定并验证状态变化。全部数据行通过才签发 `.testpilot/ready/<case-id>.json`。代码、Case、数据或环境指纹变化后证书失效。
-
-彩排以可信度优先，不是正式 Run 的低成本替代：每个需要验证状态变化的动作都会做动作前观察、稳定轮询和动作后观察。小程序观察会枚举最多 200 个运行时节点，并分批读取节点属性、WXML、尺寸和偏移；复杂大页面或跨多页 Case 可能耗时数分钟。CI 应只对准备发布或明确变更的 Case 执行彩排，普通回归使用 `run --require-ready`。
-
-`.testpilot/artifacts/`、`.testpilot/cache/` 和 `.testpilot/ready/` 都是绑定当前机器与测试环境的临时数据，`init` 默认写入 `.gitignore`，不要提交 Git。CI 可把产物和证书作为单次流水线 artifact 在 job 间传递；本地与 CI 分别彩排，不共享证书。`pageStateHashes` 当前用于彩排证据与诊断，正式执行仍会逐 locator 重新 probe，不提供“宽松哈希”绕过验证。
-
-小程序 `trigger` 会参与动作后状态验证。若界面无变化且没有 `expectRequests` 证明副作用，该步骤记为 warning，当前彩排不会签发 Ready Certificate。
-
-## Agent 生成 Case 前的配置预检
-
-Planner 会先在内存中形成 Case，再在 Case 落盘前读取其中的显式依赖并幂等补齐项目配置。名称全部来自当前 Case，不预设任何业务系统：
-
-- `system: app-admin` + `target: web`：在 `testpilot.yaml` 增加 `systems.app-admin.baseUrl: ${APP_ADMIN_BASE_URL}`，并在 `.env.testing` 增加 `APP_ADMIN_BASE_URL=`。
-- `${variable.projectId}`：增加 `variables.projectId: ${PROJECT_ID}` 与 `.env.testing` 的 `PROJECT_ID=`。
-- `accountRef: test-user`：只在 `.env.testing` 增加 `TESTPILOT_ACCOUNT_TEST_USER={"username":"","password":""}`；Case 和 `testpilot.yaml` 都不保存账号密码。
-
-提示中明确给出 `ENV_NAME=value` 时可作为新字段初值；已有 `.env.testing` 值永不覆盖。无法确定的值保持空占位，填写完成前 doctor/Rehearse 会阻止其被当作可执行配置。普通业务字段只有加入 `variables` 白名单后才能被 Case 读取，凭据不得加入该白名单。
-
-## list —— 列出用例
-
-```bash
-npx csspilot list
-npx csspilot list --tag smoke
-```
-
-输出用例 id、文件路径与标签;解析失败的文件单独标出。
+任何失败以退出码 1 结束。AI 生成脚本后的自查与 CI 卡点跑同一道卡。
 
 ## run —— 执行用例
 
 ```bash
-npx csspilot run                                  # 按 testpilot.yaml 配置
-npx csspilot run tests/e2e/cases/order.yaml       # 指定用例
-npx csspilot run --tag smoke                      # 按标签
-npx csspilot run --require-ready                  # 正式运行前验证 Ready Certificate
+npx csspilot run                                      # tests/e2e/web、miniapp、api 下的原生脚本
+npx csspilot run tests/e2e/web/order-create.spec.ts   # 指定 Playwright 脚本
+npx csspilot run tests/e2e/miniapp/list.test.ts       # 指定 miniprogram-automator 脚本
 ```
 
-链路:Case Loader → DSL Validator → Execution Engine → Adapter(Playwright / WeChatIDE)→ Evidence → Reporter。校验失败的用例跳过并在输出中标注。
+`run` 按目录把脚本交给该端框架:`tests/e2e/web` 运行 `npx playwright test`,`tests/e2e/miniapp` 与 `tests/e2e/api` 运行 `node --test`(逐文件 spawn,单文件崩溃不拖垮其他文件)。TestPilot 不翻译脚本——脚本本身就是各端框架的原生代码。run 结束后 **ingest 归一**:读取各端结构化输出(Playwright `--reporter=json` / node:test 内置 TAP),连同头注释元数据与 `[TESTPILOT:*]` 三态标记,写成 run 目录 `result.json`——`report` 与跨 run 汇总基于它直接可用。脚本抛 `blocked('环境不可达')` / `inconclusive('前置缺失')`(或零依赖手写 `[TESTPILOT:ENVIRONMENT_UNAVAILABLE]` / `[TESTPILOT:PREREQ_VARIABLE_MISSING]` 错误前缀)时按三态归类,未标记的失败一律按产品失败(宁红勿漏)。
 
 退出码(三态判定,环境问题不污染产品缺陷统计):
 
@@ -141,7 +105,7 @@ npx csspilot run --require-ready                  # 正式运行前验证 Ready 
 | --- | --- | --- |
 | 0 | 全部通过 / 跳过 | `passed`、`skipped` |
 | 1 | 产品回归或证据不足 | `failed`(产品 bug)、`inconclusive`(前置变量缺失,没测到) |
-| 2 | 环境/前置阻塞,非产品回归 | `blocked`(服务不可达、adapter 未注册、fixture/凭据缺失) |
+| 2 | 环境/前置阻塞,非产品回归 | `blocked`(服务不可达、凭据缺失) |
 
 输出行 `⊘` = blocked 计数,`?` = inconclusive 计数;规则:未知错误码一律按产品失败(宁红勿漏)。CI 判定:0 通过,**1 与 2 都必须判失败**(2 只是分流到环境排查,不代表运行成功);fixture 缺失的用例按 blocked 阻塞,同一 run 中其余用例照常执行。
 
@@ -159,7 +123,7 @@ npx csspilot report --summary --last 50 # 汇总统计窗口改为最近 50 次
 
 ## 项目配置(testpilot.yaml)
 
-`csspilot init` 生成的完整形态(旧字段 `casesDir` 仍兼容,与 `test.caseDirectory` 等价):
+`csspilot init` 生成的形态:
 
 ```yaml
 version: 1
@@ -168,71 +132,45 @@ project:
   name: my-project            # 项目名(识别/注册用)
 
 test:
-  directory: tests/e2e
-  caseDirectory: tests/e2e/cases
+  directory: tests/e2e        # 原生脚本根目录(web / miniapp / api / data / reviews)
 
-environment:                  # Case 用 environment: <名称> 引用
+# 环境配置:baseUrl 由环境变量注入,禁止写明文
+environment:
   default: test
   test:
-    baseUrl: ${TEST_BASE_URL} # 敏感值由环境变量注入,禁止写明文
+    baseUrl: ${TEST_BASE_URL}
   staging:
     baseUrl: ${STAGING_BASE_URL}
 
+# 项目声明的执行端(可用性以 doctor 为准)
 adapters:
-  - playwright                # 项目声明的执行端(可用性以 doctor 为准)
+  - playwright
 
 # workspace:
-#   default: my-workspace     # 默认 Workspace(多系统环境组合)
+#   default: my-workspace     # 默认 Workspace(多系统环境组合;Server 触发运行时指定)
 
 # server:
 #   baseUrl: http://127.0.0.1:3000  # TestPilot Server(Control Plane)
 
 web:
-  baseUrl: http://127.0.0.1:8080    # navigate 相对 url 的基准
+  baseUrl: ${TEST_BASE_URL}   # 被测系统地址备忘;脚本直接读 process.env
 
-api:                                 # target: api 的 HTTP 执行端
-  baseUrl: http://127.0.0.1:8080     # request 相对 url 的基准
-  # timeoutMs: 15000                 # 单请求超时
+api:
+  baseUrl: ${API_BASE_URL}
 
 # miniapp:
-#   projectPath: path/to/miniprogram
-#   cliPath: "C:/.../cli.bat"      # 可省略:自动探测
+#   projectPath: ${MINIAPP_PROJECT_PATH}
+#   cliPath: ${MINIAPP_CLI_PATH}    # 可省略:自动探测
 
-systems:                             # 额外业务系统(需求跨系统时声明;Case 用 system: <名称> 引用)
-  mall-admin:                        # 顶层 web:/miniapp:/api: 段仍是各 target 的默认系统
-    type: web
-    baseUrl: ${MALL_ADMIN_URL}       # 值放 .env.testing;doctor 逐系统探测可达性
-  mall-miniapp:
-    type: miniapp
-    projectPath: ../mall-miniapp
+systems: {}                   # 额外业务系统(需求跨系统时登记,doctor 逐系统探测可达性)
 ```
 
-**跨系统只读**:`system:` 步骤仅允许查询(navigate/wait/assert/extract/screenshot 与 GET/HEAD request);input/click/callMethod/setData/非 GET request 被 validate 与运行时双重拒绝——其它系统只用于核对与被测系统的一致性,写操作只能发生在被测系统。
+### 账号凭据
 
-### API 用例(target: api)
+按角色登记引用名(如 `test-user`),真实凭据走环境变量或 Server Secrets,脚本不写明文:
 
-DSL 支持 `target: api` 的 HTTP 步骤(`request` / `assert` / `extract`),用于接口造数、UI+API 混合编排与数据层断言:
-
-```yaml
-steps:
-  - target: api
-    action: request
-    url: /api/orders          # 相对 api.baseUrl
-    method: POST
-    body: { skuId: S1 }
-    expected: '201'           # 断言状态码
-  - target: api
-    action: extract
-    value: data.orderId       # 点号 JSON path
-    variable: orderId
-```
-
-### 账号凭据(accountRef)
-
-Case 声明 `accountRef: test-user` 后,步骤中用 `${account.username}` / `${account.password}` 引用凭据,不写明文:
-
-- **本地运行**:`TESTPILOT_ACCOUNT_TEST_USER='{"username":"a","password":"b"}'`(ref 的 `-` 转 `_` 并大写;缺失时 CLI 输出告警)
-- **Server 触发**:按环境存凭据,值只写不回显
+- **本地运行**:`TESTPILOT_ACCOUNT_TEST_USER='{"username":"a","password":"b"}'`(ref 的 `-` 转 `_` 并大写),脚本用 `process.env.TESTPILOT_ACCOUNT_TEST_USER` 读取
+- **Server Secrets**(团队共享,值只写不回显):
 
 ```bash
 # 写入 TEST 环境的 test-user 凭据(幂等;列表只返回 key)
@@ -240,8 +178,6 @@ curl -X POST $SERVER/api/projects/1/environments/1/secrets \
   -H 'content-type: application/json' \
   -d '{"key":"test-user","value":"{\"username\":\"a\",\"password\":\"b\"}"}'
 ```
-
-Server 运行时优先取**运行分支绑定环境**的凭据(如 release 分支取 STAGING),找不到再依次查项目其他环境;凭据只进引擎模板变量,不写 Run 行、不进事件流,取证对敏感头自动脱敏。
 
 ## 环境变量
 
@@ -263,8 +199,9 @@ Server 运行时优先取**运行分支绑定环境**的凭据(如 release 分�
 
 ```text
 .testpilot/artifacts/runs/<runId>/
-├── result.json      # 引擎写入的运行结果(RunSummary)
-├── events.ndjson    # 运行事件流(run/case/step 级)
+├── result.json      # 运行结果(RunSummary;原生 run 由 ingest 归一写入)
+├── playwright.json  # web run:Playwright --reporter=json 原始输出(深查用)
+├── <端>-<N>.tap     # node:test run:TAP 原始输出(逐文件一份,深查用)
 ├── logs/run.log     # 文本日志
 ├── screenshots/     # 步骤截图(失败自动取证)
 ├── videos/          # 用例录屏(webm,仅 Web 端)
@@ -301,8 +238,8 @@ AI 不会自动知道 Skill 的存在 —— 让它生效的方式 = **让 AI �
    ```text
    评审:按 test-requirements-review 评审「XX 需求」,输出测试点清单和平台执行信息
    建用例:按 create-case 基于 TP-001/TP-002 生成 Case,缺的 .env.testing 变量问我
-   执行:npx csspilot run --tag smoke
-   分析:按 analyze-result 分析最新 run,失败给出结论(改 Case 还是产品 bug)
+   执行:npx csspilot run
+   分析:按 analyze-result 分析最新 run,失败给出结论(改脚本还是产品 bug)
    ```
 
 Skill 已安装并提交进仓库后,团队里每个人(和每个人的 AI)共享同一套规范。
@@ -313,4 +250,3 @@ Skill 已安装并提交进仓库后,团队里每个人(和每个人的 AI)共�
 - **cli auto 报"服务端口未开启"**:开发者工具 设置 → 安全设置 → 服务端口 开启后重试。
 - **小程序项目打不开/模拟器空白**:确认 IDE 已登录、首次打开时处理项目导入与信任提示,必要时点工具栏"编译"。
 - **Chromium 未安装**:`pnpm exec playwright install chromium`。
-- **小程序端 select/text locator 报错**:V0.1 小程序只支持 css 定位(class/id),select 交互用 click 替代;validate 阶段就会拦截。

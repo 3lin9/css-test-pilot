@@ -4,7 +4,6 @@ import type { RunStatus } from '../repositories/run-repo'
 import {
   cancelRun,
   createRun,
-  getRunEventViews,
   getRunViewOrThrow,
   listRunViews,
   type CreateRunInput,
@@ -29,19 +28,6 @@ export function registerRunRoutes(app: FastifyInstance, ctx: ServerContext): voi
   app.get('/api/runs/:id', async (request) => {
     const { id } = request.params as { id: string }
     return getRunViewOrThrow(ctx.db, id)
-  })
-
-  app.get('/api/runs/:id/events', async (request) => {
-    const { id } = request.params as { id: string }
-    const rows = await getRunEventViews(ctx.db, id)
-    return {
-      events: rows.map((row) => ({
-        seq: row.seq,
-        type: row.type,
-        ts: row.ts,
-        event: JSON.parse(row.payloadJson) as unknown,
-      })),
-    }
   })
 
   app.post('/api/runs/:id/cancel', async (request) => {

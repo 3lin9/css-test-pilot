@@ -3,12 +3,9 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import Fastify, { type FastifyInstance, type FastifyReply } from 'fastify'
 import fastifyStatic from '@fastify/static'
-import { resolveRoot } from '@testpilot/sdk'
-import type { AdapterFactory } from '@testpilot/adapter-core'
+import { resolveRoot, type NativeSpawn } from '@testpilot/sdk'
 import { openDatabase, type Db } from './db'
-import { AgentOrchestrator } from './orchestrator/agent-orchestrator'
 import { RunOrchestrator } from './orchestrator/run-orchestrator'
-import { registerAgentRoutes } from './routes/agent'
 import { registerArtifactRoutes } from './routes/artifacts'
 import { registerCaseRoutes } from './routes/cases'
 import { registerHealthRoutes } from './routes/health'
@@ -22,7 +19,6 @@ import { registerProject, type ProjectRow } from './services/project-service'
 export interface ServerContext {
   db: Db
   orchestrator: RunOrchestrator
-  agentOrchestrator: AgentOrchestrator
   /** 默认项目(服务启动时按根目录注册) */
   defaultProject: ProjectRow
 }
@@ -31,8 +27,8 @@ export interface BuildServerOptions {
   /** 业务项目根目录,默认 TESTPILOT_PROJECT_ROOT 或 process.cwd() */
   root?: string
   dbPath?: string
-  /** 注入自定义 adapter(测试);缺省用 SDK 默认组合 */
-  adapters?: readonly AdapterFactory[]
+  /** 注入自定义 spawn(测试);缺省真实 spawn 各端框架命令 */
+  spawnImpl?: NativeSpawn
   logger?: boolean
 }
 
@@ -48,8 +44,7 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Tes
   const root = resolveRoot(options.root ?? process.env.TESTPILOT_PROJECT_ROOT ?? undefined)
   const db = openDatabase({ root, dbPath: options.dbPath })
   const defaultProject = await registerProject(db, root)
-  const orchestrator = new RunOrchestrator(db, { adapters: options.adapters })
-  const agentOrchestrator = new AgentOrchestrator(db)
+  const orchestrator = new RunOrchestrator(db, { spawnImpl: options.spawnImpl })
 
   const app = Fastify({ logger: options.logger ?? false })
 
@@ -77,12 +72,11 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Tes
     void reply.code(statusCode).send({ error: error.message })
   })
 
-  const ctx: ServerContext = { db, orchestrator, agentOrchestrator, defaultProject }
+  const ctx: ServerContext = { db, orchestrator, defaultProject }
   registerHealthRoutes(app, ctx)
   registerProjectRoutes(app, ctx)
   registerCaseRoutes(app, ctx)
   registerRunRoutes(app, ctx)
-  registerAgentRoutes(app, ctx)
   registerReportRoutes(app, ctx)
   registerIntegrationRoutes(app, ctx)
   registerWorkspaceRoutes(app, ctx)
@@ -105,7 +99,7 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Tes
     app,
     ctx,
     async close() {
-      await Promise.all([orchestrator.waitAll(), agentOrchestrator.waitAll()])
+      await orchestrator.waitAll()
       await app.close()
     },
   }

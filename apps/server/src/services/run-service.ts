@@ -1,26 +1,22 @@
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import { allocateRunId } from '@testpilot/sdk'
+import { allocateRunId, collectNativeCases } from '@testpilot/sdk'
 import type { Db } from '../db'
 import type { RunOrchestrator } from '../orchestrator/run-orchestrator'
 import {
   getRunRow,
   insertRun,
-  listRunEvents,
   listRunRows,
   updateRun,
   type RunRow,
   type RunStatus,
 } from '../repositories/run-repo'
 import {
-  findEnvironmentSecretValue,
-  findWorkspaceByName,
   getWorkspaceRow,
   listBindings,
-  listEnvironments,
   type BindingView,
 } from '../repositories/workspace-repo'
-import { clientFor, getProjectOrThrow, type ProjectRow } from './project-service'
+import { getProjectOrThrow, type ProjectRow } from './project-service'
 
 const execFileAsync = promisify(execFile)
 
@@ -98,12 +94,10 @@ export async function createRun(
     throw new RunValidationError(`项目 ${project.name} 未配置本地根目录,无法执行本地运行`)
   }
 
-  // 预检:必须存在可执行用例,避免 202 之后立刻失败
-  const client = clientFor(project)
-  const cases = await client.listCases(input.paths, input.tag)
-  if (cases.filter((item) => item.valid).length === 0) {
-    const detail = cases.length === 0 ? '未找到用例文件' : '所有用例校验失败,无可执行用例'
-    throw new RunValidationError(`${detail}(project: ${project.name})`)
+  // 预检:必须存在可执行的原生脚本,避免 202 之后立刻失败
+  const nativeScripts = await collectNativeCases(input.paths ?? [], { root: project.rootPath })
+  if (nativeScripts.length === 0) {
+    throw new RunValidationError(`未找到原生用例脚本(project: ${project.name};查找 tests/e2e/{web,miniapp,api})`)
   }
 
   // Git 上下文:请求显式给出(CI)优先,否则读本地 git
@@ -111,15 +105,11 @@ export async function createRun(
   const branch = input.branch ?? git.branch ?? null
   const commit = input.commit ?? git.commit ?? null
 
-  // Workspace:显式 workspaceId 优先;否则按 Case 声明的 workspace 名解析
-  const declared = cases.find((item) => item.case?.workspace)?.case?.workspace
+  // Workspace:仅显式 workspaceId(原生脚本不声明 workspace,由触发方决定环境组合)
   let workspaceId: number | null = null
   let snapshotJson: string | null = null
   if (input.workspaceId !== undefined) {
     workspaceId = input.workspaceId
-  } else if (declared) {
-    const byName = await findWorkspaceByName(db, declared)
-    if (byName) workspaceId = byName.id
   }
   if (workspaceId !== null) {
     const snapshot = await buildWorkspaceSnapshot(db, workspaceId)
@@ -138,43 +128,8 @@ export async function createRun(
     workspaceSnapshotJson: snapshotJson,
     startedAt: new Date().toISOString(),
   })
-  // accountRef 凭据:优先取运行分支绑定的环境,找不到再依次查项目其他环境
-  const accounts = await resolveAccounts(db, project.id, branch, cases)
-  orchestrator.start(runId, project, { paths: input.paths, tag: input.tag, accounts })
+  orchestrator.start(runId, project, { paths: input.paths })
   return row
-}
-
-/**
- * 解析用例声明的 accountRef -> 环境凭据值。
- * 环境优先级:绑定运行分支的环境 > 项目其他环境;同一个 ref 第一个命中的环境生效。
- * 凭据只进引擎内存(模板变量),不写 Run 行、不进事件流。
- */
-export async function resolveAccounts(
-  db: Db,
-  projectId: number,
-  branch: string | null,
-  cases: Array<{ case?: { accountRef?: string } }>,
-): Promise<Record<string, string>> {
-  const refs = [...new Set(cases.map((item) => item.case?.accountRef).filter((ref): ref is string => !!ref))]
-  if (refs.length === 0) return {}
-
-  const environments = await listEnvironments(db, projectId)
-  const ordered = [
-    ...environments.filter((env) => branch !== null && env.branch === branch),
-    ...environments.filter((env) => env.branch !== branch),
-  ]
-
-  const accounts: Record<string, string> = {}
-  for (const ref of refs) {
-    for (const env of ordered) {
-      const value = await findEnvironmentSecretValue(db, env.id, ref)
-      if (value !== undefined) {
-        accounts[ref] = value
-        break
-      }
-    }
-  }
-  return accounts
 }
 
 export interface WorkspaceSnapshot {
@@ -211,11 +166,6 @@ export async function getRunViewOrThrow(db: Db, id: string): Promise<RunRow> {
     throw Object.assign(new Error(`运行不存在:${id}`), { statusCode: 404 })
   }
   return row
-}
-
-export async function getRunEventViews(db: Db, id: string) {
-  await getRunViewOrThrow(db, id)
-  return listRunEvents(db, id)
 }
 
 export async function cancelRun(

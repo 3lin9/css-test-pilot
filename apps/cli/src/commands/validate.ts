@@ -1,63 +1,45 @@
 import { Command } from 'commander'
-import { TestPilotClient } from '@testpilot/sdk'
+import { collectNativeCases, isYamlCasePath, resolveRoot } from '@testpilot/sdk'
+import { lintNativeCases } from './native-lint'
 
 export function makeValidateCommand(): Command {
   return new Command('validate')
-    .description('校验用例 DSL')
-    .argument('[paths...]', '用例文件或目录,默认按项目配置')
-    .option('--runtime', '静态校验通过后启动真实环境执行只读 observe/probe')
-    .action(async (paths: string[] | undefined, options: { runtime?: boolean }) => {
-      const client = new TestPilotClient()
-      const infos = await client.listCases(paths).catch((err: Error) => {
-        console.error(err.message)
+    .description('校验用例:原生脚本 lint(evidence 头注释 / reviews 清单出处 / env 引用)')
+    .argument('[paths...]', '脚本文件或目录,默认收集 tests/e2e/{web,miniapp,api}')
+    .action(async (paths: string[] | undefined) => {
+      const requested = paths ?? []
+      const yamlRequested = requested.filter((file) => isYamlCasePath(file))
+      if (yamlRequested.length > 0) {
+        console.error(`YAML 用例链路已退役(${yamlRequested.join(', ')}),不再校验。`)
+        console.error('请按 skills/testpilot/rules/native.md 迁移为原生脚本后重试。')
         process.exitCode = 1
-        return undefined
-      })
-      if (!infos) return
+        return
+      }
 
-      if (infos.length === 0) {
-        console.error(`未找到用例文件(查找:${(paths ?? []).join(', ') || '项目配置的 casesDir'})`)
+      const root = resolveRoot()
+      const targets =
+        requested.length > 0 ? requested : await collectNativeCases([], { root }).catch(() => [])
+      if (targets.length === 0) {
+        console.error(`未找到原生用例(查找:${requested.join(', ') || 'tests/e2e/web、miniapp、api'})`)
         console.error('提示:先运行 npx csspilot init 接入 TestPilot')
         process.exitCode = 1
         return
       }
 
-      let failed = 0
-      for (const item of infos) {
-        if (item.valid) {
-          console.log(`✓ ${item.case?.id ?? '(unknown)'}  ${item.file}`)
+      const report = await lintNativeCases(targets, { root })
+      for (const item of report.files) {
+        if (item.issues.length === 0) {
+          console.log(`✓ ${item.file}`)
         } else {
-          failed++
           console.log(`✗ ${item.file}`)
           for (const issue of item.issues) {
-            const prefix = issue.code === 'yaml' ? '' : `${issue.path}: `
-            console.log(`    - ${prefix}${issue.message}`)
+            console.log(`    - ${issue}`)
           }
         }
       }
-
       console.log('')
-      console.log(`${infos.length - failed}/${infos.length} 个用例通过校验`)
-      if (failed > 0) {
-        process.exitCode = 1
-        return
-      }
-      if (options.runtime) {
-        try {
-          const discovery = await client.discoverCases({ paths })
-          const probes = discovery.cases.flatMap((item) => item.probes)
-          const runtimeFailed = probes.filter(
-            (probe) => probe.error || probe.skippedReason || !probe.result?.actionable,
-          )
-          console.log(
-            `运行时校验:${probes.length - runtimeFailed.length}/${probes.length} 个 locator 已在真实界面验证`,
-          )
-          console.log(`观察产物:${discovery.artifactDir}`)
-          if (runtimeFailed.length > 0) process.exitCode = 1
-        } catch (err) {
-          console.error(err instanceof Error ? err.message : err)
-          process.exitCode = 1
-        }
-      }
+      const passed = report.files.filter((item) => item.issues.length === 0).length
+      console.log(`${passed}/${report.files.length} 个原生脚本通过 lint`)
+      if (report.issueCount > 0) process.exitCode = 1
     })
 }

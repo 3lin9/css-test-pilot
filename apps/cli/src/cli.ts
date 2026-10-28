@@ -1,11 +1,8 @@
 import { Command } from 'commander'
 import { makeCiCommand } from './commands/ci'
 import { makeDoctorCommand } from './commands/doctor'
-import { makeDiscoverCommand } from './commands/discover'
 import { makeInitCommand } from './commands/init'
-import { makeListCommand } from './commands/list'
 import { makeReportCommand } from './commands/report'
-import { makeRehearseCommand } from './commands/rehearse'
 import { makeRunCommand } from './commands/run'
 import { makeSyncMetadataCommand } from './commands/sync-metadata'
 import { makeUpdateCommand } from './commands/update'
@@ -27,9 +24,6 @@ export async function createCli(): Promise<Command> {
     })
     .addCommand(makeInitCommand())
     .addCommand(makeValidateCommand())
-    .addCommand(makeListCommand())
-    .addCommand(makeDiscoverCommand())
-    .addCommand(makeRehearseCommand())
     .addCommand(makeRunCommand())
     .addCommand(makeReportCommand())
     .addCommand(makeSyncMetadataCommand())

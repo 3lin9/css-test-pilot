@@ -1,6 +1,6 @@
 import { existsSync, statSync } from 'node:fs'
 import { basename, resolve } from 'node:path'
-import { inspectProject, TestPilotClient } from '@testpilot/sdk'
+import { inspectProject } from '@testpilot/sdk'
 import type { Db } from '../db'
 import {
   findProjectByRoot,
@@ -122,13 +122,3 @@ export async function openLocalProject(db: Db, rootPath: string): Promise<Projec
   return registerProject(db, root)
 }
 
-/** 可本地执行的项目的 SDK 客户端 */
-export function clientFor(project: ProjectRow): TestPilotClient {
-  if (!project.rootPath) {
-    throw Object.assign(
-      new Error(`项目 ${project.name} 未配置本地根目录,无法执行本地运行`),
-      { statusCode: 422 },
-    )
-  }
-  return new TestPilotClient({ root: project.rootPath })
-}
