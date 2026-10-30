@@ -17,7 +17,9 @@ export {
   NATIVE_CASE_DIRS,
   type NativeCommand,
   type NativeRunResult,
+  type NativeProcessResult,
   type NativeSpawn,
+  type NativeSpawnOutput,
   type NativeTarget,
 } from './native-cases'
 export {

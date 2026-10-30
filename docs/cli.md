@@ -26,7 +26,9 @@ npx csspilot init    # 重新接入时自动同步(版本一致则跳过)
 npx csspilot update  # 只做同步;--force 版本一致时也强制覆盖 Skill
 ```
 
-同步范围:Skill 主体(SKILL.md、manifest.yaml、rules/、workflows/)、`.env.testing`(已存在则保留用户内容,只提示模板新增变量)、`.gitignore` 忽略 `.env.testing`;`references/` 是项目级上下文,不会被覆盖。**绝不触碰用户资产**:`.env.testing`(真实凭据)、前端项目自身的 `.env`、`tests/e2e/`(用例与数据)、`.testpilot/`、`testpilot.yaml`。`doctor` 的 Agent 段会显示 Skill 版本并提示可更新。发新版本时记得同步更新仓库里 `skills/testpilot/manifest.yaml` 的 `version`(与 CLI 版本保持一致)。
+同步范围:Skill 主体(SKILL.md、manifest.yaml、rules/、workflows/)、`.env.testing`(已存在则保留用户内容,只提示模板新增变量)、`.gitignore` 忽略 `.env.testing`;`references/` 是项目级上下文,不会被覆盖。**绝不触碰用户资产**:`.env.testing`(真实凭据)、前端项目自身的 `.env`、`tests/e2e/`(用例与数据)、`.testpilot/`、`testpilot.yaml`。`doctor` 的 Agent 段会显示 Skill 版本并提示可更新。
+
+**发布护栏**:`update` 按 manifest 版本判等——版本相等即判定"已是最新"并跳过同步。因此 **skill 内容(含 capabilities / workflows / rules)发生任何变更,都必须 bump `skills/testpilot/manifest.yaml` 的 `version`**,否则已接入的项目永远拿不到新内容;发 npm 时 CLI 版本与 manifest 版本保持一致(0.9.0 发布时 manifest 漏 bump 停在 0.8.0,导致一轮内容失效,0.9.1 起修正)。
 
 ## init —— 接入业务项目
 
@@ -199,9 +201,8 @@ curl -X POST $SERVER/api/projects/1/environments/1/secrets \
 
 ```text
 .testpilot/artifacts/runs/<runId>/
-├── result.json      # 运行结果(RunSummary;原生 run 由 ingest 归一写入)
-├── playwright.json  # web run:Playwright --reporter=json 原始输出(深查用)
-├── <端>-<N>.tap     # node:test run:TAP 原始输出(逐文件一份,深查用)
+├── result.json      # 运行结果。小程序和 API 的 node:test 输出直接归一进这里,不另存 TAP 文件
+├── playwright.json  # 仅 web:Playwright JSON reporter 的原始输出
 ├── logs/run.log     # 文本日志
 ├── screenshots/     # 步骤截图(失败自动取证)
 ├── videos/          # 用例录屏(webm,仅 Web 端)

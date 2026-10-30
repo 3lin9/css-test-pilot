@@ -79,8 +79,7 @@ test('golden: CLI 驱动原生用例(validate lint -> run -> report 全链路)',
     expect(result.status).toBe('passed')
     expect(result.totals).toMatchObject({ cases: 1, passed: 1 })
     expect(result.cases[0]?.caseId).toBe('TP-001') // 头注释 evidence 链回写
-    // 原始框架输出保留供深查
-    await readFile(join(runDir, 'api-0.tap'), 'utf8')
+    expect(runs.length).toBeGreaterThan(0)
 
     // report:吃归一 result.json 生成 HTML
     const report = await runCli(['report'], project)

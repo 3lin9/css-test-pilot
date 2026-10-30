@@ -7,7 +7,7 @@
    - `report.json` —— 结构化结果,AI 优先读这个:`{ generatedAt, summary: { runId, status, totals, cases: [{ caseId, rowId, status, skipReason?, missingDependencies?, warnings?, steps: [{ phase, index, target, action, status, durationMs, error?, screenshot?, extracted?, requestAssertions? }] }] }, history(最近 12 次运行趋势), failures(失败分类明细:category / caseId / message) }`;失败步骤的 `category` ∈ assert / element / adapter / env / timeout / other
    - `report.html` —— 交互式报告(步骤树、失败分类筛选、历史趋势)
    - `screenshots/`、`videos/`、`traces/`、`logs/` —— 失败取证
-3. 失败分析顺序:report.json 中失败步骤的 `category` 与 `error` → 对应 `screenshot` → run 目录内的框架原始输出(`playwright.json` / `*.tap`,深查定位与断言细节)。
+3. 失败分析顺序:report.json 中失败步骤的 `category` 与 `error` → 对应 `screenshot` → Web 的 `playwright.json`。小程序和 API 的断言细节在 `result.json` 的 case error 里。
 4. 得出结论:
    - Case 问题(locator 过期、步骤错误)→ 修改 Case,重新 validate → run
    - 产品 bug → 停止修改 Case,向用户报告证据与结论

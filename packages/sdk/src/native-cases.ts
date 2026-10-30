@@ -43,7 +43,25 @@ export interface NativeRunResult {
   summary?: RunSummary
 }
 
-export type NativeSpawn = (command: NativeCommand, cwd: string, stdoutPath?: string, signal?: AbortSignal) => Promise<number>
+export interface NativeProcessResult {
+  code: number
+  /** node:test 的 TAP 原文;调用方归一进 result.json,不写 *.tap */
+  stdout: string
+}
+
+export interface NativeSpawnOutput {
+  /** Web:把 JSON reporter 的 stdout 写到这个文件 */
+  stdoutPath?: string
+  /** 小程序 / API:把 TAP 留在返回值里,不写文件 */
+  captureStdout?: boolean
+}
+
+export type NativeSpawn = (
+  command: NativeCommand,
+  cwd: string,
+  output?: NativeSpawnOutput,
+  signal?: AbortSignal,
+) => Promise<NativeProcessResult>
 
 /** 按路径判断脚本属于哪个端;不在三个目录里、或扩展名不对时返回 undefined。 */
 export function targetForNativeFile(file: string): NativeTarget | undefined {
@@ -163,25 +181,25 @@ export async function runNativeCases(
 
   const spawnImpl = options.spawnImpl ?? defaultSpawn
   const playwrightJsonPath = runDir ? join(runDir, 'playwright.json') : undefined
-  const nodeTestTaps: Array<{ path: string; target: 'miniapp' | 'api'; file: string }> = []
+  const nodeTestTaps: Array<{ text: string; target: 'miniapp' | 'api'; file: string }> = []
   let exitCode = 0
-  let commandIndex = 0
   for (const base of planNativeCommands(files)) {
     if (options.signal?.aborted) break
     const command = withReporterArgs(base, runDir !== undefined)
-    let stdoutPath: string | undefined
-    if (runDir) {
-      stdoutPath =
-        command.target === 'web'
-          ? playwrightJsonPath
-          : join(runDir, `${command.target}-${commandIndex}.tap`)
+    // Web 仍把 JSON reporter 的 stdout 落到 playwright.json。小程序和 API 的 TAP 只留在内存里。
+    const captured = await spawnImpl(
+      command,
+      root,
+      {
+        stdoutPath: runDir && command.target === 'web' ? playwrightJsonPath : undefined,
+        captureStdout: Boolean(runDir) && command.target !== 'web',
+      },
+      options.signal,
+    )
+    if (runDir && command.target !== 'web') {
+      nodeTestTaps.push({ text: captured.stdout, target: command.target, file: command.files[0]! })
     }
-    commandIndex++
-    if (runDir && command.target !== 'web' && stdoutPath) {
-      nodeTestTaps.push({ path: stdoutPath, target: command.target, file: command.files[0]! })
-    }
-    const code = await spawnImpl(command, root, stdoutPath, options.signal)
-    if (code !== 0) exitCode = code
+    if (captured.code !== 0) exitCode = captured.code
   }
 
   if (!runDir || !runId) {
@@ -203,23 +221,33 @@ export async function runNativeCases(
   return { files, status: summary.status, exitCode, runId, runDir, summary }
 }
 
-function defaultSpawn(command: NativeCommand, cwd: string, stdoutPath?: string, signal?: AbortSignal): Promise<number> {
+function defaultSpawn(
+  _command: NativeCommand,
+  cwd: string,
+  output?: NativeSpawnOutput,
+  signal?: AbortSignal,
+): Promise<NativeProcessResult> {
   return new Promise((resolvePromise, reject) => {
-    const stdout = stdoutPath ? createWriteStream(stdoutPath) : undefined
-    const child = spawn(command.command, command.args, {
+    const file = output?.stdoutPath ? createWriteStream(output.stdoutPath) : undefined
+    const chunks: Buffer[] = []
+    const capture = Boolean(output?.stdoutPath) || Boolean(output?.captureStdout)
+    const child = spawn(_command.command, _command.args, {
       cwd,
-      stdio: ['ignore', stdout ? 'pipe' : 'inherit', 'inherit'],
-      shell: command.shell,
+      stdio: ['ignore', capture ? 'pipe' : 'inherit', 'inherit'],
+      shell: _command.shell,
       signal,
     })
-    if (stdout) child.stdout?.pipe(stdout)
+    child.stdout?.on('data', (chunk: Buffer) => {
+      file?.write(chunk)
+      if (output?.captureStdout) chunks.push(chunk)
+    })
     child.once('error', (err) => {
-      stdout?.end()
+      file?.end()
       reject(err)
     })
     child.once('exit', (code) => {
-      stdout?.end()
-      resolvePromise(code ?? 1)
+      file?.end()
+      resolvePromise({ code: code ?? 1, stdout: Buffer.concat(chunks).toString('utf8') })
     })
   })
 }

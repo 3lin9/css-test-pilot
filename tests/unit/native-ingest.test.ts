@@ -167,15 +167,11 @@ test('runNativeCases ingest:结构化输出落 run 目录,blocked 退出码 2', 
   const result = await runNativeCases({
     root,
     ingest: true,
-    spawnImpl: async (command, _cwd, stdoutPath) => {
+    spawnImpl: async (command, _cwd, output) => {
       seen.push(command)
-      if (stdoutPath) {
-        await writeFile(
-          stdoutPath,
-          command.target === 'web' ? PLAYWRIGHT_JSON('tests/e2e/web/order.spec.ts') : TAP_MIXED,
-        )
-      }
-      return 0
+      const text = command.target === 'web' ? PLAYWRIGHT_JSON('tests/e2e/web/order.spec.ts') : TAP_MIXED
+      if (output?.stdoutPath) await writeFile(output.stdoutPath, text)
+      return { code: 0, stdout: text }
     },
   })
 
@@ -195,6 +191,8 @@ test('runNativeCases ingest:结构化输出落 run 目录,blocked 退出码 2', 
   )
   expect(persisted.status).toBe('inconclusive')
   expect(persisted.cases).toHaveLength(4)
+  const names = await import('node:fs/promises').then((fs) => fs.readdir(result.runDir!))
+  expect(names.some((name) => name.endsWith('.tap'))).toBe(false)
 })
 
 test('runNativeCases ingest:纯 blocked run 退出码 2', async () => {
@@ -233,11 +231,10 @@ not ok 1 - 会员价展示
   const result = await runNativeCases({
     root,
     ingest: true,
-    spawnImpl: async (command, _cwd, stdoutPath) => {
-      if (stdoutPath) {
-        await writeFile(stdoutPath, command.target === 'web' ? blockedSpec : blockedTap)
-      }
-      return 0
+    spawnImpl: async (command, _cwd, output) => {
+      const text = command.target === 'web' ? blockedSpec : blockedTap
+      if (output?.stdoutPath) await writeFile(output.stdoutPath, text)
+      return { code: 0, stdout: text }
     },
   })
 

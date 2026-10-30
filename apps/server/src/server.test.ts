@@ -27,13 +27,13 @@ async function makeProject(): Promise<string> {
  */
 function makeGateSpawn(): { spawnImpl: NativeSpawn; release: () => void } {
   let releaseFn: (() => void) | undefined
-  const spawnImpl: NativeSpawn = async (_command, _cwd, _stdoutPath, signal) => {
+  const spawnImpl: NativeSpawn = async (_command, _cwd, _output, signal) => {
     await new Promise<void>((resolvePromise) => {
       if (signal?.aborted) return resolvePromise()
       signal?.addEventListener('abort', () => resolvePromise(), { once: true })
       releaseFn = resolvePromise
     })
-    return 1
+    return { code: 1, stdout: '' }
   }
   return { spawnImpl, release: () => releaseFn?.() }
 }
@@ -329,7 +329,7 @@ describe('server:control-plane', () => {
     const listRes = await server.app.inject({ method: 'GET', url: `/api/runs/${runId}/artifacts` })
     const paths = listRes.json().files.map((file: { path: string }) => file.path)
     expect(paths).toContain('result.json')
-    expect(paths.some((path: string) => path.endsWith('.tap'))).toBe(true)
+    expect(paths.some((path: string) => path.endsWith('.tap'))).toBe(false)
 
     const fileRes = await server.app.inject({
       method: 'GET',

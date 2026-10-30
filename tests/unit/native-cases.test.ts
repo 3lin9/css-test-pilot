@@ -52,7 +52,7 @@ test('收集约定目录中的脚本并按端执行', async () => {
     root,
     spawnImpl: async (command) => {
       seen.push(command)
-      return command.target === 'api' ? 0 : 1
+      return { code: command.target === 'api' ? 0 : 1, stdout: '' }
     },
   })
   expect(seen.map((item) => item.target)).toEqual(['api', 'web'])

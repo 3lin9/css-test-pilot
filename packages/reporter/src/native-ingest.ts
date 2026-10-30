@@ -84,8 +84,11 @@ export interface NativeIngestInput {
   files: readonly string[]
   /** Playwright `--reporter=json` 的输出文件 */
   playwrightJsonPath?: string
-  /** node:test 的 TAP 输出(逐文件 spawn,一个脚本一份;file 为脚本绝对路径) */
-  nodeTestTaps?: ReadonlyArray<{ path: string; target: 'miniapp' | 'api'; file: string }>
+  /**
+   * node:test 的 TAP 原文。file 为脚本绝对路径。
+   * text 为内存中的 stdout;path 仅供直接喂解析器的测试使用,运行时不落盘。
+   */
+  nodeTestTaps?: ReadonlyArray<{ text?: string; path?: string; target: 'miniapp' | 'api'; file: string }>
 }
 
 /**
@@ -113,7 +116,7 @@ export async function buildNativeRunSummary(input: NativeIngestInput): Promise<R
     cases.push(...(await parsePlaywright(input.playwrightJsonPath, input.root, fileOf, relOf, headerFor)))
   }
   for (const item of input.nodeTestTaps ?? []) {
-    cases.push(...(await parseNodeTestTap(item.path, item.file, item.target, input.root, fileOf, relOf, headerFor)))
+    cases.push(...(await parseNodeTestTap(item, item.file, item.target, input.root, fileOf, relOf, headerFor)))
   }
   // 原生框架不提供用例级绝对时间,统一填 run 级起止
   const startedIso = input.startedAt.toISOString()
@@ -216,7 +219,7 @@ async function parsePlaywright(
  * type: 'test' 是用例、'suite' 是 describe(失败冒泡,不重复计)。
  */
 export async function parseNodeTestTap(
-  tapPath: string,
+  source: { text?: string; path?: string },
   sourceFile: string,
   target: 'miniapp' | 'api',
   root: string,
@@ -224,7 +227,7 @@ export async function parseNodeTestTap(
   relOf: (abs: string) => string,
   headerFor: (file: string) => Promise<NativeCaseHeader>,
 ): Promise<CaseResult[]> {
-  const text = await readFile(tapPath, 'utf8').catch(() => '')
+  const text = source.text ?? (source.path ? await readFile(source.path, 'utf8').catch(() => '') : '')
   if (!text.trim()) return []
   const entries = parseTapEntries(text).filter((entry) => entry.yaml.type === 'test')
   if (entries.length === 0) return []
