@@ -47,5 +47,6 @@ test('staging 不可达', () => {
   const { writeReports } = await import('@testpilot/reporter')
   const written = await writeReports(result.runDir!, persisted)
   const html = await readFile(written.html, 'utf8')
-  expect(html).toContain('环境与前置(非产品回归)')
+  expect(html).toContain('TP-900')
+  expect(html).not.toContain('失败三桶')
 }, 60000)

@@ -364,10 +364,9 @@ describe('classifyFromCode + 三桶分组( errorCode 优先)', () => {
     expect(verdicts['checkout']).toBe('product')
     expect(verdicts['no-var']).toBe('unverified')
     const html = await readFile(written.html, 'utf8')
-    expect(html).toContain('产品失败')
-    expect(html).toContain('环境与前置(非产品回归)')
-    expect(html).toContain('未验证')
-    // 新状态徽章必须有背景色:.badge 默认白字,无背景规则即白底白字不可见(评审 F2)
+    expect(html).not.toContain('失败三桶')
+    expect(html).not.toContain('环境与前置(非产品回归)')
+    // 用例状态徽章仍要有背景色,blocked / inconclusive 不能白底白字
     expect(html).toContain('.blocked { background')
     expect(html).toContain('.inconclusive { background')
   })
