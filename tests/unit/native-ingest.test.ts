@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, test } from 'vitest'
@@ -177,9 +177,12 @@ test('runNativeCases ingest:结构化输出落 run 目录,blocked 退出码 2', 
 
   // web 一批;miniapp 逐文件 spawn 且 tap 是默认 reporter(无 reporter 参数)
   expect(seen).toHaveLength(2)
-  expect(seen.find((item) => item.target === 'web')?.args).toContain('--reporter=json')
+  const webCommand = seen.find((item) => item.target === 'web')
+  expect(webCommand?.args).toEqual(expect.arrayContaining(['--reporter=json', '--screenshot=on']))
   const miniCommand = seen.find((item) => item.target === 'miniapp')
   expect(miniCommand?.files).toHaveLength(1)
+  expect(miniCommand?.args[0]).toBe('--import')
+  expect(miniCommand?.args[1]).toMatch(/shot-hook\.mjs$/)
   expect(miniCommand?.args.join(' ')).not.toContain('--test-reporter')
 
   expect(result.summary?.status).toBe('inconclusive')
@@ -240,6 +243,115 @@ not ok 1 - 会员价展示
 
   expect(result.summary?.status).toBe('blocked')
   expect(result.exitCode).toBe(2)
+})
+
+test('ingest 截图:passed/failed 留在 shots,其它状态丢掉', async () => {
+  const root = await makeProject()
+  const webSpecAbs = join(root, 'tests/e2e/web/order.spec.ts')
+  const miniAbs = join(root, 'tests/e2e/miniapp/member.test.ts')
+  const runId = '20261028-009'
+  const shotsDir = join(root, '.testpilot', 'artifacts', 'shots', runId)
+  await mkdir(shotsDir, { recursive: true })
+
+  const { createShotNamer } = await import('../../packages/native/src/shot-name.mjs')
+  const namer = createShotNamer()
+  const passWeb = namer(webSpecAbs, 'chrome:加购下单')
+  const failWeb = namer(webSpecAbs, '金额不对')
+  const blockedWeb = namer(webSpecAbs, '下单页加载')
+  const passMini = namer(miniAbs, '首页加载')
+  const inconclusiveMini = namer(miniAbs, '会员价展示')
+
+  const webPassPng = join(root, 'web-pass.png')
+  const webFailPng = join(root, 'web-fail.png')
+  await writeFile(webPassPng, 'web-pass')
+  await writeFile(webFailPng, 'web-fail')
+  await writeFile(join(shotsDir, passMini), 'mini-pass')
+  await writeFile(join(shotsDir, inconclusiveMini), 'mini-drop')
+
+  const playwright = JSON.stringify({
+    suites: [
+      {
+        file: 'tests/e2e/web/order.spec.ts',
+        specs: [
+          {
+            title: '加购下单',
+            tests: [
+              {
+                projectName: 'chrome',
+                status: 'expected',
+                results: [{ status: 'passed', duration: 10, attachments: [{ name: 'screenshot', path: webPassPng }] }],
+              },
+            ],
+          },
+          {
+            title: '金额不对',
+            tests: [
+              {
+                status: 'unexpected',
+                results: [
+                  {
+                    status: 'failed',
+                    duration: 20,
+                    error: { message: '期望 10 实际 9' },
+                    attachments: [{ name: 'screenshot', path: webFailPng }],
+                  },
+                ],
+              },
+            ],
+          },
+          {
+            title: '下单页加载',
+            tests: [
+              {
+                status: 'unexpected',
+                results: [
+                  {
+                    status: 'failed',
+                    duration: 10,
+                    error: { message: '[TESTPILOT:ENVIRONMENT_UNAVAILABLE] staging 不可达' },
+                    attachments: [{ name: 'screenshot', path: webFailPng }],
+                  },
+                ],
+              },
+            ],
+          },
+          {
+            title: '跳过的',
+            tests: [{ status: 'skipped', results: [{ status: 'skipped', duration: 0 }] }],
+          },
+        ],
+      },
+    ],
+  })
+
+  const summary = await buildNativeRunSummary({
+    runId,
+    startedAt: new Date(),
+    root,
+    files: [webSpecAbs, miniAbs],
+    playwrightJsonPath: await writeTemp(root, 'playwright.json', playwright),
+    nodeTestTaps: [{ path: await writeTemp(root, 'miniapp-0.tap', TAP_MIXED), target: 'miniapp', file: miniAbs }],
+    shotsDir,
+  })
+
+  expect(summary.cases.find((item) => item.rowId === 'chrome:加购下单')?.steps[0]?.screenshot).toBe(
+    `shots/${runId}/${passWeb}`,
+  )
+  expect(summary.cases.find((item) => item.rowId === '金额不对')?.steps[0]?.screenshot).toBe(
+    `shots/${runId}/${failWeb}`,
+  )
+  expect(summary.cases.find((item) => item.rowId === '下单页加载')?.steps[0]?.screenshot).toBeUndefined()
+  expect(summary.cases.find((item) => item.rowId === '首页加载')?.steps[0]?.screenshot).toBe(
+    `shots/${runId}/${passMini}`,
+  )
+  expect(summary.cases.find((item) => item.rowId === '会员价展示')?.steps[0]?.screenshot).toBeUndefined()
+  expect(summary.cases.find((item) => item.status === 'skipped')?.steps[0]?.screenshot).toBeUndefined()
+
+  expect(await readFile(join(shotsDir, passWeb), 'utf8')).toBe('web-pass')
+  expect(await readFile(join(shotsDir, failWeb), 'utf8')).toBe('web-fail')
+  expect(await readFile(join(shotsDir, passMini), 'utf8')).toBe('mini-pass')
+  await expect(stat(join(shotsDir, blockedWeb))).rejects.toThrow()
+  await expect(stat(join(shotsDir, inconclusiveMini))).rejects.toThrow()
 })
 
 async function writeTemp(root: string, name: string, content: string): Promise<string> {

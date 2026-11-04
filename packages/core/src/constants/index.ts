@@ -3,6 +3,8 @@ import { join } from 'node:path'
 /** TestPilot 运行时目录与默认值约定 */
 export const TESTPILOT_DIR = '.testpilot'
 export const RUNS_DIR = `${TESTPILOT_DIR}/artifacts/runs`
+/** 成功/失败用例的截图,按 runId 分子目录 */
+export const SHOTS_DIR = `${TESTPILOT_DIR}/artifacts/shots`
 export const RESULT_FILE = 'result.json'
 export const DEFAULT_CASES_DIR = 'tests/e2e/cases'
 export const DEFAULT_STEP_TIMEOUT_MS = 15_000

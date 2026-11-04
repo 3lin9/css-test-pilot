@@ -10,6 +10,7 @@ export const PERSPECTIVES = [
   'charter:numbers-copy',
   'charter:state-recovery',
   'charter:error-path',
+  'charter:inverse',
 ] as const
 
 export interface NativeLintFile {

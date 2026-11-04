@@ -204,14 +204,16 @@ curl -X POST $SERVER/api/projects/1/environments/1/secrets \
 ├── result.json      # 运行结果。小程序和 API 的 node:test 输出直接归一进这里,不另存 TAP 文件
 ├── playwright.json  # 仅 web:Playwright JSON reporter 的原始输出
 ├── logs/run.log     # 文本日志
-├── screenshots/     # 步骤截图(失败自动取证)
 ├── videos/          # 用例录屏(webm,仅 Web 端)
 ├── traces/          # Playwright trace 包(zip,仅 Web 端)
 ├── report.json      # report 命令生成
-└── report.html      # report 命令生成
+└── report.html      # report 命令生成,通过/失败用例内嵌截图
+
+.testpilot/artifacts/shots/<runId>/
+└── <用例>.png        # 仅 passed / failed。blocked、inconclusive、skipped 不留
 ```
 
-runId 格式 `yyyymmdd-NNN`,同日递增。视频与 trace 为用例级(每用例独立 context 录制),trace 用 `npx playwright show-trace traces/<file>` 查看;小程序端 V0.1 仅截图取证。
+runId 格式 `yyyymmdd-NNN`,同日递增。视频与 trace 为用例级(每用例独立 context 录制),trace 用 `npx playwright show-trace traces/<file>` 查看。截图在报告和运行详情里按用例打开。API 用例没有界面,不截图。
 
 ## 与 AI 协作(让 Skill 生效)
 

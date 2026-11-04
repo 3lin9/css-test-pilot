@@ -10,6 +10,12 @@
 
 `npx csspilot run` 只按上面的目录收集脚本,并调用对应命令。它不生成步骤,也不改写脚本。
 
+## 编写和回归
+
+编写 Web 脚本时用 Playwright MCP 打开被测页,编写小程序脚本时用 wechatide MCP 操作模拟器。确认过的操作写入上表中的脚本。步骤见 `workflows/create-case.md`。
+
+回归只执行这些脚本。`csspilot run` 不调用 MCP,也不重放编写时的会话。
+
 ## 文件头
 
 ```ts
@@ -17,7 +23,7 @@
 // 视角: charter:error-path
 ```
 
-视角取值与评审清单一致:`charter:persona`、`charter:edge-input`、`charter:numbers-copy`、`charter:state-recovery`、`charter:error-path`。
+视角取值与评审清单一致:`charter:persona`、`charter:edge-input`、`charter:numbers-copy`、`charter:state-recovery`、`charter:error-path`、`charter:inverse`。
 
 ## Web
 
@@ -37,7 +43,7 @@
 - 点击与输入:`element.trigger` 只能调用组件的响应方法,无法触发 `tap` / `longpress`。模拟点击用 `element.tap()`,填输入框用 `element.input()`。
 - mock:`mockWxMethod` 传函数时函数内无法使用闭包变量(序列化传递),可用 `this.origin` 调原实现。插件方法用 `mockPluginWxMethod`(基础库 >= 2.19.3)。
 - 诊断:`miniProgram.on('console')` / `on('exception')` 实时监听;测试失败时把收集到的异常随错误输出。
-- 取证:`miniProgram.screenshot` 仅开发者工具模拟器可用,真机模式无截图。
+- 取证:通过和失败的用例各留一张结束时截图,放在 `.testpilot/artifacts/shots/<runId>/`。blocked、inconclusive、skipped 不留。Web 由运行器加 `--screenshot=on`。小程序由运行器在会话关闭前截图,仅模拟器有画面;真机没有这张图。API 没有界面,不截图。报告用 `screenshot` 字段直接打开这张图。
 - 版本:基础库 >= 2.7.3,开发者工具 >= 1.02.1907232。
 
 ## API

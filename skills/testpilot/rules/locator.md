@@ -13,7 +13,7 @@
 
 ## 铁律:不凭空发明 locator
 
-- locator 必须来自真实证据:Web aria snapshot/DOM、小程序运行时 WXML/节点树、组件代码或 screenshot。
+- locator 必须来自真实证据:Web 用 Playwright MCP 的 accessibility snapshot 或它生成的 locator;小程序用 wechatide MCP 的运行时节点树、console 或截图。MCP 未接入时,改为项目源码或真实 DOM/WXML。
 - 禁止根据业务名词猜测文案或类名。
 - 文案类 locator 要与真实渲染完全一致,注意空格与标点。
 - 优先级:`testId` > `role+name` > `label` > `placeholder` > 稳定业务属性 > 精确文案 > scoped CSS。

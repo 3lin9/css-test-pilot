@@ -189,8 +189,8 @@ function renderTestConventionsMd(): string {
 3. 小程序使用 tests/e2e/miniapp/*.test.ts 和 miniprogram-automator
 4. API 使用 tests/e2e/api/*.test.ts、node:test 和 fetch
 5. 不允许在脚本中写明文密码
-6. 定位器、选择器和接口路径必须来自项目代码或真实页面
-7. 新增脚本用 npx csspilot run <file> 执行
+6. 编写 Web / 小程序脚本时,先用 Playwright MCP 或 wechatide MCP 观察真实界面;MCP 未接入时,定位器和接口路径来自项目代码或真实页面
+7. 新增脚本用 npx csspilot run <file> 执行。回归执行脚本,不重放 MCP 会话
 8. 可复用输入放 tests/e2e/data
 9. 需求规则矩阵与 QA 覆盖映射写入 tests/e2e/reviews/<需求>-coverage.md
 10. 跨端场景拆成多份脚本,每份只调用该端框架

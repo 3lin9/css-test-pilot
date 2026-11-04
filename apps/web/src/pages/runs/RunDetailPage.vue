@@ -159,6 +159,12 @@ function stripAnsi(text: string): string {
             href="#"
             @click.prevent="activeScreenshot = step.screenshot"
           >[截图]</a>
+          <img
+            v-if="step.screenshot && run"
+            class="screenshot"
+            :src="api.artifactUrl(run.id, step.screenshot)"
+            alt="截图"
+          />
         </li>
       </ul>
     </div>

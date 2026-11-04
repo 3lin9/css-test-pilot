@@ -7,6 +7,8 @@ npx csspilot run tests/e2e/miniapp
 npx csspilot run tests/e2e/api/create-order.test.ts
 ```
 
+这次执行的是已写好的脚本。编写阶段的 Playwright MCP / wechatide MCP 会话不在这里重放。
+
 `csspilot run` 按目录把脚本交给当前端的框架:
 
 - `tests/e2e/web` → `npx playwright test`

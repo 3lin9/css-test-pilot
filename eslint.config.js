@@ -28,4 +28,13 @@ export default tseslint.config(
       globals: { App: 'readonly', Page: 'readonly', wx: 'readonly' },
     },
   },
+  {
+    // 注入各运行时的截图钩子(Playwright 页面上下文 / node:test loader):
+    // process / URL 在目标运行时存在;文件名清洗正则刻意剥控制字符
+    files: ['packages/native/src/**/*.mjs'],
+    languageOptions: {
+      globals: { process: 'readonly', URL: 'readonly', console: 'readonly' },
+    },
+    rules: { 'no-control-regex': 'off' },
+  },
 )

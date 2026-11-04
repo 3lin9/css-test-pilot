@@ -1,5 +1,6 @@
-import { readFile } from 'node:fs/promises'
-import { basename, isAbsolute, relative, resolve } from 'node:path'
+import { copyFile, mkdir, readFile, rm, stat } from 'node:fs/promises'
+import { basename, isAbsolute, join, relative, resolve } from 'node:path'
+import { createShotNamer } from '../../native/src/shot-name.mjs'
 import {
   buildRunSummary,
   caseStatusFromErrorCode,
@@ -84,6 +85,8 @@ export interface NativeIngestInput {
   files: readonly string[]
   /** Playwright `--reporter=json` 的输出文件 */
   playwrightJsonPath?: string
+  /** `.testpilot/artifacts/shots/<runId>`。只保留 passed/failed 的截图 */
+  shotsDir?: string
   /**
    * node:test 的 TAP 原文。file 为脚本绝对路径。
    * text 为内存中的 stdout;path 仅供直接喂解析器的测试使用,运行时不落盘。
@@ -118,6 +121,7 @@ export async function buildNativeRunSummary(input: NativeIngestInput): Promise<R
   for (const item of input.nodeTestTaps ?? []) {
     cases.push(...(await parseNodeTestTap(item, item.file, item.target, input.root, fileOf, relOf, headerFor)))
   }
+  await bindShots(cases, { shotsDir: input.shotsDir, runId: input.runId, root: input.root })
   // 原生框架不提供用例级绝对时间,统一填 run 级起止
   const startedIso = input.startedAt.toISOString()
   const finishedIso = finishedAt.toISOString()
@@ -200,7 +204,13 @@ async function parsePlaywright(
           item.warnings = ['Playwright 报告 flaky(重试后通过)']
         }
         for (const attachment of result?.attachments ?? []) {
-          if (attachment.name === 'screenshot' && attachment.path) step.screenshot = attachment.path
+          if (
+            attachment.name === 'screenshot' &&
+            attachment.path &&
+            (status === 'passed' || status === 'failed')
+          ) {
+            step.screenshot = attachment.path
+          }
           if (attachment.name === 'trace' && attachment.path) item.trace = attachment.path
           if (attachment.name === 'video' && attachment.path) item.video = attachment.path
         }
@@ -277,6 +287,40 @@ export async function parseNodeTestTap(
         ...(errorCode ? { errorCode } : {}),
       } satisfies CaseResult
     })
+}
+
+/** 成功和失败各留一张图;其它状态删掉钩子可能已经写下的文件。 */
+async function bindShots(
+  cases: CaseResult[],
+  opts: { shotsDir?: string; runId: string; root: string },
+): Promise<void> {
+  if (!opts.shotsDir) return
+  await mkdir(opts.shotsDir, { recursive: true })
+  const namer = createShotNamer()
+  for (const item of cases) {
+    if (item.status === 'skipped') continue
+    const fileName = namer(item.file, item.rowId ?? item.caseName)
+    const dest = join(opts.shotsDir, fileName)
+    const step = item.steps[0]
+    const keep = item.status === 'passed' || item.status === 'failed'
+    if (!keep) {
+      if (step) delete step.screenshot
+      await rm(dest, { force: true })
+      continue
+    }
+    const source = step?.screenshot
+    if (source && !source.replace(/\\/g, '/').startsWith('shots/')) {
+      const from = isAbsolute(source) ? source : resolve(opts.root, source)
+      if (from !== dest && (await fileExists(from))) await copyFile(from, dest)
+    }
+    if (step && (await fileExists(dest))) step.screenshot = `shots/${opts.runId}/${fileName}`
+    else if (step?.screenshot) delete step.screenshot
+  }
+}
+
+async function fileExists(file: string): Promise<boolean> {
+  const info = await stat(file).catch(() => undefined)
+  return Boolean(info?.isFile())
 }
 
 function parseTapEntries(text: string): TapEntry[] {

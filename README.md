@@ -11,8 +11,8 @@ TestPilot 是**工具,不是业务测试项目**:业务项目定义测什么、�
 ## 核心链路
 
 ```text
-AI → 测试点清单 → 各端原生脚本(Playwright / miniprogram-automator / node:test)
-    → csspilot run 交给对应框架
+AI → 测试点清单 → Playwright MCP / wechatide MCP 观察真实界面 → 各端原生脚本(Playwright / miniprogram-automator / node:test)
+    → csspilot run 交给对应框架(不重放 MCP 会话)
 ```
 
 ## 仓库结构

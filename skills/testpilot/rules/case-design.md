@@ -25,10 +25,10 @@
 ## AI 不能凭空生成测试
 
 ```text
-用户需求 → 测试点清单 → 代码 / 页面 / 接口证据 → 该端原生脚本
+用户需求 → 测试点清单 → Playwright MCP / wechatide MCP 观察真实界面 → 该端原生脚本 → csspilot run
 ```
 
-TestPilot 不设中间格式与翻译层(YAML 链路已退役);看到「测试登录」就写一个不存在的按钮定位,仍然是错的。先读项目里的真实页面、组件或接口,再写脚本。
+TestPilot 不设中间格式与翻译层(YAML 链路已退役)。编写时用 MCP 看真实界面,再把确认过的操作写成脚本。回归执行脚本,不重放 MCP 会话。MCP 未接入时,证据改为项目里的页面、组件或接口代码。看到「测试登录」就写一个不存在的按钮定位,仍然是错的。
 
 ## 业务数据
 
@@ -38,4 +38,4 @@ TestPilot 不设中间格式与翻译层(YAML 链路已退役);看到「测试�
 
 ## charter 视角
 
-文件头注释写明视角。取值固定为 `charter:persona`、`charter:edge-input`、`charter:numbers-copy`、`charter:state-recovery`、`charter:error-path`。某视角在本需求不适用时不写。
+文件头注释写明视角。取值固定为 `charter:persona`、`charter:edge-input`、`charter:numbers-copy`、`charter:state-recovery`、`charter:error-path`、`charter:inverse`。某视角在本需求不适用时不写。反向测试点的类型写「反向」,断言成功结果没有发生。

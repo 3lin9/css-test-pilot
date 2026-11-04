@@ -36,6 +36,7 @@ export function makeRunCommand(): Command {
             `Run ${result.runId}: ${result.summary.status.toUpperCase()} — 用例 ✓${totals.passed} ✗${totals.failed} ⊘${totals.blocked ?? 0} ?${totals.inconclusive ?? 0} ↷${totals.skipped ?? 0}`,
           )
           console.log(`产物目录:${join('.testpilot', 'artifacts', 'runs', result.runId ?? '')}`)
+          console.log(`截图目录:${join('.testpilot', 'artifacts', 'shots', result.runId ?? '')}`)
           console.log('查看报告:npx csspilot report')
         } else {
           console.log(`原生脚本 ${result.files.length} 个:${result.status.toUpperCase()}`)

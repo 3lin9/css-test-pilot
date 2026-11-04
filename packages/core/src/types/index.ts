@@ -18,7 +18,10 @@ export interface StepResult {
   error?: string
   /** TestPilotError.code,三态判定依据 */
   errorCode?: string
-  /** 相对 run 目录的截图路径 */
+  /**
+   * 截图。成功/失败用例为相对 `.testpilot/artifacts` 的路径 `shots/<runId>/<file>.png`。
+   * 更早的结果可能仍是相对 run 目录的路径。
+   */
   screenshot?: string
   /** extract 步骤捕获的变量 */
   extracted?: Record<string, string>

@@ -55,11 +55,12 @@ async function requireRunDir(db: Db, runId: string): Promise<string> {
   return runDir
 }
 
-/** 列出 run 目录内的全部文件(相对路径;上限 500 防御异常产物) */
+/** 列出 run 目录和该 run 的截图(相对路径;上限 500 防御异常产物) */
 export async function listRunArtifacts(db: Db, runId: string): Promise<ArtifactFile[]> {
   const runDir = await requireRunDir(db, runId)
   const files: ArtifactFile[] = []
   await walk(runDir, '', files)
+  await walk(resolve(runDir, '..', '..', 'shots', runId), `shots/${runId}`, files)
   return files.sort((a, b) => a.path.localeCompare(b.path))
 }
 
@@ -85,7 +86,7 @@ export interface ArtifactContent {
   download: boolean
 }
 
-/** 读取 run 内的单个产物;拒绝越出 run 目录的路径 */
+/** 读取 run 目录内的产物,或本 run 的截图;拒绝越出这两处的路径 */
 export async function readRunArtifact(
   db: Db,
   runId: string,
@@ -93,10 +94,7 @@ export async function readRunArtifact(
 ): Promise<ArtifactContent> {
   const runDir = await requireRunDir(db, runId)
   const normalized = filePath.replace(/\\/g, '/')
-  const absolute = resolve(runDir, normalized)
-  if (absolute !== runDir && !absolute.startsWith(runDir + sep)) {
-    throw new ArtifactError('非法的产物路径', 400)
-  }
+  const absolute = resolveArtifactPath(runDir, runId, normalized)
   const info = await stat(absolute).catch(() => undefined)
   if (!info?.isFile()) {
     throw new ArtifactError(`产物不存在:${normalized}`)
@@ -104,8 +102,27 @@ export async function readRunArtifact(
 
   const ext = extname(absolute).toLowerCase()
   const contentType = CONTENT_TYPES[ext] ?? 'application/octet-stream'
-  const download = !contentType.startsWith('text/') && contentType !== 'application/json'
-  return { stream: createReadStream(absolute), contentType, download }
+  const inline =
+    contentType.startsWith('text/') || contentType.startsWith('image/') || contentType === 'application/json'
+  return { stream: createReadStream(absolute), contentType, download: !inline }
+}
+
+/** run 目录内的文件,或本 run 的 shots/<runId>/。拒绝越出这两处。 */
+function resolveArtifactPath(runDir: string, runId: string, normalized: string): string {
+  if (normalized.startsWith('shots/')) {
+    const artifactsRoot = resolve(runDir, '..', '..')
+    const allowed = resolve(artifactsRoot, 'shots', runId)
+    const absolute = resolve(artifactsRoot, normalized)
+    if (absolute !== allowed && !absolute.startsWith(allowed + sep)) {
+      throw new ArtifactError('非法的产物路径', 400)
+    }
+    return absolute
+  }
+  const absolute = resolve(runDir, normalized)
+  if (absolute !== runDir && !absolute.startsWith(runDir + sep)) {
+    throw new ArtifactError('非法的产物路径', 400)
+  }
+  return absolute
 }
 
 /** 读取一次运行的汇总结果(引擎写盘的 result.json) */

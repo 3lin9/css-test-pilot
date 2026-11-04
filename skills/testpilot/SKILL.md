@@ -24,14 +24,15 @@ Use TestPilot when the user wants to:
 2. Review requirements, expand the rule matrix, and map QA coverage (`workflows/test-requirements-review.md`)
 3. Inspect project
 4. Identify test target
-5. Write one native script per test point, linked to its ID in the file header (`rules/native.md`)
-6. Run that script with `npx csspilot run <file>`
+5. Observe the live page with that platform's MCP, then write one native script per test point (`workflows/create-case.md`, `rules/native.md`). Web uses Playwright MCP. Mini Program uses wechatide MCP.
+6. Run that script with `npx csspilot run <file>`. The run executes the script. It does not replay the MCP session.
 7. Analyze the framework result (`workflows/analyze-result.md`)
 
 ## Important rules
 
 - Write the test in the current platform's framework. Do not write a YAML case for a new test point.
 - Web scripts call Playwright directly. Mini Program scripts call miniprogram-automator directly. API scripts call fetch directly.
+- When writing a Web or Mini Program script, observe the live page with Playwright MCP or wechatide MCP first, then save the confirmed steps as the native script. `csspilot run` executes that script.
 - Business scripts belong to the business project.
 - Prefer existing project conventions.
 - Never invent locators, selectors, or routes without evidence from the project.

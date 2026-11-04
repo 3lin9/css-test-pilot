@@ -85,7 +85,12 @@ export const api = {
     request<{ runId: string; jsonPath: string; htmlPath: string }>(`/api/runs/${id}/report`),
 
   // ---- artifacts ----
-  artifactUrl: (runId: string, path: string) => `/api/runs/${runId}/artifacts/${path}`,
+  artifactUrl: (runId: string, path: string) =>
+    `/api/runs/${runId}/artifacts/${path
+      .replace(/\\/g, '/')
+      .split('/')
+      .map((part) => encodeURIComponent(part))
+      .join('/')}`,
 
   // ---- workspaces ----
   workspaces: () =>

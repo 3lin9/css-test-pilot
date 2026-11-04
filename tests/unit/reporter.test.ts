@@ -370,4 +370,18 @@ describe('classifyFromCode + 三桶分组( errorCode 优先)', () => {
     expect(html).toContain('.blocked { background')
     expect(html).toContain('.inconclusive { background')
   })
+
+  test('writeReports:通过和失败用例内嵌截图', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'testpilot-reporter-shot-'))
+    roots.push(root)
+    const summary = summaryFixture('20260911-001', 'passed')
+    summary.cases[0]!.steps[1]!.screenshot = 'shots/20260911-001/login.png'
+    const runDir = join(root, 'run')
+    await mkdir(runDir, { recursive: true })
+    const written = await writeReports(runDir, summary)
+    const html = await readFile(written.html, 'utf8')
+    expect(html).toContain('../../shots/20260911-001/login.png')
+    expect(html).toContain('<img class="shot"')
+    expect(html).toContain('有截图')
+  })
 })

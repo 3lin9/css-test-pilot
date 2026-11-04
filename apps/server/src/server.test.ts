@@ -344,6 +344,27 @@ describe('server:control-plane', () => {
       url: `/api/runs/${runId}/artifacts/..%5C..%5Ctestpilot.yaml`,
     })
     expect([400, 404]).toContain(evil.statusCode)
+
+    const png = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+      'base64',
+    )
+    await mkdir(join(root, '.testpilot', 'artifacts', 'shots', runId), { recursive: true })
+    await writeFile(join(root, '.testpilot', 'artifacts', 'shots', runId, 'case.png'), png)
+    const shotRes = await server.app.inject({
+      method: 'GET',
+      url: `/api/runs/${runId}/artifacts/shots/${runId}/case.png`,
+    })
+    expect(shotRes.statusCode).toBe(200)
+    expect(String(shotRes.headers['content-type'])).toContain('image/png')
+    expect(String(shotRes.headers['content-disposition'] ?? '')).not.toContain('attachment')
+    const listed = await server.app.inject({ method: 'GET', url: `/api/runs/${runId}/artifacts` })
+    expect(listed.json().files.map((file: { path: string }) => file.path)).toContain(`shots/${runId}/case.png`)
+    const otherRun = await server.app.inject({
+      method: 'GET',
+      url: `/api/runs/${runId}/artifacts/shots/other-run/case.png`,
+    })
+    expect([400, 404]).toContain(otherRun.statusCode)
   })
 
   test('项目并发运行 409;运行中取消 -> cancelled;重复取消 409', async () => {

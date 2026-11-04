@@ -2,7 +2,7 @@ import { createWriteStream } from 'node:fs'
 import { spawn } from 'node:child_process'
 import { mkdir, readdir, stat, writeFile } from 'node:fs/promises'
 import { join, relative, resolve } from 'node:path'
-import { RUNS_DIR, type RunSummary } from '@testpilot/core'
+import { RUNS_DIR, SHOTS_DIR, type RunSummary } from '@testpilot/core'
 import { buildNativeRunSummary } from '@testpilot/reporter'
 import { resolveRoot, type ProjectOptions } from './project'
 import { allocateRunId } from './runs'
@@ -54,6 +54,8 @@ export interface NativeSpawnOutput {
   stdoutPath?: string
   /** 小程序 / API:把 TAP 留在返回值里,不写文件 */
   captureStdout?: boolean
+  /** 小程序钩子把截图写到这个目录 */
+  shotsDir?: string
 }
 
 export type NativeSpawn = (
@@ -112,10 +114,19 @@ export function planNativeCommands(files: readonly string[], nodeExec = process.
   return commands
 }
 
-/** ingest 时给 web 指定 JSON reporter;node:test 的 tap 是默认 reporter,无需参数 */
+/** Windows 上 node --import 只接受 file URL,不接受盘符路径。 */
+const SHOT_HOOK = new URL('../../native/src/shot-hook.mjs', import.meta.url).href
+
+/** ingest 时:Web 开 JSON reporter 和每条用例截图;小程序注入截图钩子。node:test 的 tap 仍是默认 reporter。 */
 function withReporterArgs(command: NativeCommand, ingest: boolean): NativeCommand {
-  if (!ingest || command.target !== 'web') return command
-  return { ...command, args: [...command.args, '--reporter=json'] }
+  if (!ingest) return command
+  if (command.target === 'web') {
+    return { ...command, args: [...command.args, '--reporter=json', '--screenshot=on'] }
+  }
+  if (command.target === 'miniapp') {
+    return { ...command, args: ['--import', SHOT_HOOK, ...command.args] }
+  }
+  return command
 }
 
 /** 收集原生脚本。paths 为空时扫描三个约定目录;目录会递归展开。 */
@@ -177,7 +188,10 @@ export async function runNativeCases(
     runId = options.runId ?? (await allocateRunId({ root }))
     runDir = join(root, RUNS_DIR, runId)
     await mkdir(runDir, { recursive: true })
+    await mkdir(join(root, SHOTS_DIR, runId), { recursive: true })
   }
+
+  const shotsDir = runId ? join(root, SHOTS_DIR, runId) : undefined
 
   const spawnImpl = options.spawnImpl ?? defaultSpawn
   const playwrightJsonPath = runDir ? join(runDir, 'playwright.json') : undefined
@@ -193,6 +207,7 @@ export async function runNativeCases(
       {
         stdoutPath: runDir && command.target === 'web' ? playwrightJsonPath : undefined,
         captureStdout: Boolean(runDir) && command.target !== 'web',
+        shotsDir: command.target === 'miniapp' ? shotsDir : undefined,
       },
       options.signal,
     )
@@ -214,6 +229,7 @@ export async function runNativeCases(
     // 输出文件缺失(端失败未产出)时 ingest 内部按空归一,不硬卡
     playwrightJsonPath,
     nodeTestTaps,
+    shotsDir,
   })
   await writeFile(join(runDir, 'result.json'), JSON.stringify(summary, null, 2), 'utf8')
   // 三态退出码契约:failed/inconclusive → 1,blocked → 2(与 run.ts 的 exitCodeForSummary 对齐)
@@ -236,6 +252,9 @@ function defaultSpawn(
       stdio: ['ignore', capture ? 'pipe' : 'inherit', 'inherit'],
       shell: _command.shell,
       signal,
+      env: output?.shotsDir
+        ? { ...process.env, TESTPILOT_SHOTS_DIR: output.shotsDir }
+        : process.env,
     })
     child.stdout?.on('data', (chunk: Buffer) => {
       file?.write(chunk)

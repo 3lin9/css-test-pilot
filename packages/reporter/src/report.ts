@@ -158,6 +158,7 @@ export function renderHtml(data: ReportData): string {
   .muted { color: var(--muted); }
   .hide { display: none !important; }
   .meta { color: var(--muted); font-size: 12px; margin: 6px 0; }
+  img.shot { display: block; max-width: min(720px, 100%); margin: 8px 0; border: 1px solid var(--line); border-radius: 6px; background: #fff; }
 </style>
 </head>
 <body>
@@ -289,17 +290,27 @@ function caseHtml(item: ReportCase): string {
   const linksLine = links.length > 0 ? `<p>${links.join(' · ')}</p>` : ''
   const search = escapeHtml(`${item.caseId} ${item.rowId ?? 'default'} ${item.caseName} ${item.file}`).replaceAll('"', '&quot;')
   const cats = escapeHtml(item.categories.join(','))
+  const shots = item.steps
+    .map((step) => step.screenshot)
+    .filter((shot): shot is string => Boolean(shot))
+  const shotBlock = shots
+    .map((shot) => {
+      const href = escapeHtml(screenshotHref(shot))
+      return `<p><a href="${href}">截图</a><img class="shot" src="${href}" alt="截图" /></p>`
+    })
+    .join('\n')
   return `
-<details class="case" data-status="${item.status}" data-cats="${cats}" data-search="${search}">
+<details class="case" ${shots.length > 0 ? 'open' : ''} data-status="${item.status}" data-cats="${cats}" data-search="${search}">
   <summary>
     <span class="badge ${item.status}">${item.status}</span>
     <b>数据行 ${escapeHtml(item.rowId ?? 'default')}</b> · ${escapeHtml(item.caseName)}
-    <span class="muted">· ${item.steps.length} 步 · ${(item.durationMs / 1000).toFixed(1)}s</span>
+    <span class="muted">· ${item.steps.length} 步 · ${(item.durationMs / 1000).toFixed(1)}s${shots.length > 0 ? ' · 有截图' : ''}</span>
   </summary>
   ${errorLine}
   ${skipLine}
   ${warningLine}
   ${linksLine}
+  ${shotBlock}
   <table>
     <tr><th>#</th><th>阶段</th><th>target</th><th>action</th><th>状态</th><th>耗时</th><th>详情</th></tr>
     ${rows}
@@ -316,7 +327,7 @@ function stepHtml(step: StepResult & { category?: FailureCategory }): string {
       details.push(`变量 ${escapeHtml(name)} = <code>${escapeHtml(value)}</code>`)
     }
   }
-  if (step.screenshot) details.push(`<a href="${escapeHtml(step.screenshot)}">截图</a>`)
+  if (step.screenshot) details.push(`<a href="${escapeHtml(screenshotHref(step.screenshot))}">截图</a>`)
   for (const assertion of step.requestAssertions ?? []) {
     details.push(
       `请求 ${escapeHtml(assertion.method ?? '*')} <code>${escapeHtml(assertion.urlContains)}</code>: ${assertion.actualCount}/${assertion.count}`,
@@ -374,6 +385,13 @@ function renderTrend(data: ReportData): string {
     .join('\n')
 
   return `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">${bars}</svg>`
+}
+
+/** 报告在 runs/<runId>/,截图在 artifacts/shots/<runId>/ */
+function screenshotHref(screenshot: string): string {
+  const normalized = screenshot.replace(/\\/g, '/')
+  if (normalized.startsWith('shots/')) return `../../${normalized}`
+  return screenshot
 }
 
 function shortId(runId: string): string {
