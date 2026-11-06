@@ -333,7 +333,7 @@ export function renderSummaryHtml(data: SummaryReportData): string {
   * { box-sizing: border-box; }
   body { font-family: system-ui, "Segoe UI", sans-serif; margin: 0; color: #1f2328; background: #f6f8fa; }
   .wrap { max-width: 1120px; margin: 0 auto; padding: 20px 16px 56px; }
-  h1 { font-size: 21px; margin: 8px 0; } h2 { font-size: 15px; margin: 26px 0 8px; }
+  h1 { font-size: 26px; margin: 10px 0 6px; } h2 { font-size: 15px; font-weight: 600; color: #1f2328; margin: 26px 0 8px; }
   .meta { color: var(--muted); font-size: 12px; margin: 4px 0 12px; }
   .cards { display: flex; gap: 12px; flex-wrap: wrap; margin: 14px 0; }
   .card { background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 12px 18px; min-width: 140px; }

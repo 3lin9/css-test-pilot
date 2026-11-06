@@ -129,7 +129,8 @@ export function renderHtml(data: ReportData): string {
   * { box-sizing: border-box; }
   body { font-family: system-ui, "Segoe UI", sans-serif; margin: 0; color: #1f2328; background: #f6f8fa; }
   .wrap { max-width: 1080px; margin: 0 auto; padding: 20px 16px 48px; }
-  h1 { font-size: 20px; margin: 8px 0; } h2 { font-size: 15px; margin: 24px 0 8px; }
+  /* 中文粗体下 15px 与 20px 视觉拉不开层级(报告标题曾被误读为比分节标题小),标题统一抬到 26px 与 Web 端 page-title 对齐 */
+  h1 { font-size: 26px; margin: 10px 0 6px; } h2 { font-size: 15px; font-weight: 600; color: #1f2328; margin: 26px 0 8px; }
   .badge { display: inline-block; padding: 2px 10px; border-radius: 10px; color: #fff; font-size: 12px; }
   .passed { background: var(--ok); } .failed { background: var(--fail); } .warning { background: var(--warn); } .skipped { background: var(--skip); } .blocked { background: var(--blocked); } .inconclusive { background: var(--inconclusive); }
   code { background: #eef1f4; padding: 1px 5px; border-radius: 4px; font-size: 12px; }

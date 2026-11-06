@@ -223,7 +223,7 @@ AI 不会自动知道 Skill 的存在 —— 让它生效的方式 = **让 AI �
 
    ```text
    请阅读 .agents/skills/testpilot/workflows/test-requirements-review.md,
-   严格按该流程对以下需求做测试需求评审,输出测试点清单、平台执行信息表和澄清问题:
+   严格按该流程对以下需求做测试需求评审,输出测试点清单、系统盘点、流程图和澄清问题:
    <粘贴需求内容>
    ```
 
@@ -239,7 +239,7 @@ AI 不会自动知道 Skill 的存在 —— 让它生效的方式 = **让 AI �
 3. **完整流程示例**(需求 → 上线一轮):
 
    ```text
-   评审:按 test-requirements-review 评审「XX 需求」,输出测试点清单和平台执行信息
+   评审:按 test-requirements-review 评审「XX 需求」,输出测试点清单、系统盘点和流程图
    建用例:按 create-case 基于 TP-001/TP-002 生成 Case,缺的 .env.testing 变量问我
    执行:npx csspilot run
    分析:按 analyze-result 分析最新 run,失败给出结论(改脚本还是产品 bug)
