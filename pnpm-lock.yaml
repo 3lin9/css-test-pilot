@@ -158,12 +158,18 @@ importers:
       '@testpilot/core':
         specifier: workspace:^
         version: link:../core
+      '@testpilot/native':
+        specifier: workspace:^
+        version: link:../native
 
   packages/sdk:
     dependencies:
       '@testpilot/core':
         specifier: workspace:^
         version: link:../core
+      '@testpilot/native':
+        specifier: workspace:^
+        version: link:../native
       '@testpilot/reporter':
         specifier: workspace:^
         version: link:../reporter

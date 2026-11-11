@@ -34,8 +34,16 @@ export function makeRunCommand(): Command {
 
       // 子进程输出进 run 目录,终端无回显;spinner 让等待可见(非 TTY 自动禁用)
       const spinner = startSpinner('csspilot run — 执行原生用例…')
+      // Ctrl+C 中止:abort 信号传给执行链,整棵框架/浏览器进程树被击杀(而非仅父进程)
+      const controller = new AbortController()
+      const onInterrupt = () => {
+        spinner.stop()
+        console.error('\n收到中断,正在终止运行中的框架与浏览器进程…')
+        controller.abort()
+      }
+      process.once('SIGINT', onInterrupt)
       try {
-        const result = await runNativeCases({ paths: requested, ingest: true })
+        const result = await runNativeCases({ paths: requested, ingest: true, signal: controller.signal })
         spinner.stop()
         if (result.files.length === 0) {
           console.error('未找到原生用例。请写入 tests/e2e/web/*.spec.ts、tests/e2e/miniapp/*.test.ts 或 tests/e2e/api/*.test.ts。')
@@ -64,6 +72,8 @@ export function makeRunCommand(): Command {
         spinner.stop()
         console.error(err instanceof Error ? err.message : err)
         process.exitCode = 1
+      } finally {
+        process.removeListener('SIGINT', onInterrupt)
       }
     })
 }

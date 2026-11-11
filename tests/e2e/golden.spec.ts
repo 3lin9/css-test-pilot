@@ -13,13 +13,18 @@ interface CliResult {
   stdout: string
 }
 
-/** 以临时业务项目为 cwd 运行打包后的 CLI */
+/** 以临时业务项目为 cwd 运行打包后的 CLI(显式关掉色码:e2e 只断言语义输出) */
 function runCli(args: string[], cwd: string): Promise<CliResult> {
   return new Promise((resolve) => {
     execFile(
       process.execPath,
       [cliBin, ...args],
-      { cwd, timeout: 150_000, maxBuffer: 16 * 1024 * 1024 },
+      {
+        cwd,
+        timeout: 150_000,
+        maxBuffer: 16 * 1024 * 1024,
+        env: { ...process.env, FORCE_COLOR: '0' },
+      },
       (err, stdout) => {
         const code = err && typeof err.code === 'number' ? err.code : err ? 1 : 0
         resolve({ code, stdout })
@@ -65,8 +70,8 @@ test('golden: CLI 驱动原生用例(validate lint -> run -> report 全链路)',
     // run:真实 node:test spawn + TAP ingest -> result.json
     const run = await runCli(['run'], project)
     expect(run.code).toBe(0)
-    expect(run.stdout).toMatch(/Run \d{8}-\d{3}: PASSED/)
-    expect(run.stdout).toContain('✓1')
+    expect(run.stdout).toMatch(/Run \d{8}-\d{3,4}: PASSED/)
+    expect(run.stdout).toContain('✔1')
 
     const runsRoot = join(project, '.testpilot', 'artifacts', 'runs')
     const runs = await readdir(runsRoot)

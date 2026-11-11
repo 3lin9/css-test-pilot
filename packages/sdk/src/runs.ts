@@ -1,4 +1,4 @@
-import { readFile, readdir } from 'node:fs/promises'
+import { mkdir, readFile, readdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { RUNS_DIR, RESULT_FILE, type RunSummary } from '@testpilot/core'
 import { resolveRoot, type ProjectOptions } from './project'
@@ -20,18 +20,26 @@ function runsRoot(root?: string): string {
   return join(resolveRoot(root), RUNS_DIR)
 }
 
-/** 按 yyyymmdd-NNN 规则分配下一个 runId(与 run 目录落盘一致;原生 run 由 runNativeCases 调用) */
+/**
+ * 按 yyyymmdd-NNN 规则分配下一个 runId(序号三位,超过 999 自然进位到四位)。
+ * 分配即占位:对 run 目录做独占 mkdir,EEXIST 说明已被并发分配(CLI 与 Server
+ * 同时对同一项目 run 时不会撞号),换下一个序号重试。
+ */
 export async function allocateRunId(options: ProjectOptions = {}): Promise<string> {
   const base = runsRoot(options.root)
-  const entries = await readdir(base).catch(() => [] as string[])
+  await mkdir(base, { recursive: true })
   const now = new Date()
   const prefix = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`
-  let max = 0
-  for (const entry of entries) {
-    const match = new RegExp(`^${prefix}-(\\d{3})$`).exec(entry)
-    if (match) max = Math.max(max, Number(match[1]))
+  for (let n = 1; n <= 9999; n++) {
+    const id = `${prefix}-${String(n).padStart(3, '0')}`
+    try {
+      await mkdir(join(base, id))
+      return id
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err
+    }
   }
-  return `${prefix}-${String(max + 1).padStart(3, '0')}`
+  throw new Error(`当日 run 数量超出分配上限(9999):${prefix}`)
 }
 
 /** 列出历史运行,按 runId 倒序(最近的在前);原生与旧 YAML run 同形态可读 */
@@ -39,7 +47,7 @@ export async function listRuns(options: ProjectOptions = {}): Promise<RunMeta[]>
   const base = runsRoot(options.root)
   const entries = await readdir(base).catch(() => [] as string[])
   const metas: RunMeta[] = []
-  for (const entry of entries.filter((name) => /^\d{8}-\d{3}$/.test(name)).sort().reverse()) {
+  for (const entry of entries.filter((name) => /^\d{8}-\d{3,4}$/.test(name)).sort().reverse()) {
     metas.push({ ...(await readRunMeta(base, entry)), runId: entry, dir: join(base, entry) })
   }
   return metas

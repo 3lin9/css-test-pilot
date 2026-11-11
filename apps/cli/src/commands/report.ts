@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { Command } from 'commander'
 import { RUNS_DIR, type RunSummary } from '@testpilot/core'
-import { generateReport, generateSummaryReport, getRun, latestRunId, resolveRoot } from '@testpilot/sdk'
+import { generateReport, generateSummaryReport, getRun, latestRunId, resolvePlaywrightCliFor, resolveRoot } from '@testpilot/sdk'
 import { infoMark, okMark, paint } from '../lib/ui'
 
 export function makeReportCommand(): Command {
@@ -80,10 +80,20 @@ async function replayTrace(runIdArg: string | undefined, caseIdArg: string | und
   const status = paint(target.status.toUpperCase(), target.status === 'passed' ? 'green' : 'red')
   console.log(`回放 ${status} ${target.caseName}(${traceFile})`)
   console.log(`${infoMark()} trace viewer 已在新窗口打开:时间线 + DOM 快照逐帧 + 网络 + 控制台`)
-  // Windows 下 shell 让 .cmd shim(npx)可解析;detached + unref 让 viewer 独立常驻,CLI 即退
-  const child = spawn('npx', ['playwright', 'show-trace', traceFile], {
-    shell: process.platform === 'win32',
-    detached: process.platform === 'win32',
+  // 用 node 直启业务项目本地 cli.js:shell 包装下 trace 路径无法安全转义(空格断参、元字符注入);
+  // detached + unref 让 viewer 独立常驻,CLI 即退
+  let playwrightCli: string
+  try {
+    playwrightCli = resolvePlaywrightCliFor(resolveRoot())
+  } catch (err) {
+    console.error(err instanceof Error ? err.message : err)
+    console.error(`可手动执行:npx playwright show-trace ${traceFile}`)
+    process.exitCode = 1
+    return
+  }
+  const child = spawn(process.execPath, [playwrightCli, 'show-trace', traceFile], {
+    shell: false,
+    detached: true,
     stdio: 'ignore',
   })
   child.unref()

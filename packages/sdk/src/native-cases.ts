@@ -1,9 +1,11 @@
-import { createWriteStream } from 'node:fs'
+import { createWriteStream, existsSync } from 'node:fs'
 import { spawn } from 'node:child_process'
 import { mkdir, readdir, stat, writeFile } from 'node:fs/promises'
-import { join, relative, resolve } from 'node:path'
+import { createRequire } from 'node:module'
+import { dirname, join, relative, resolve } from 'node:path'
 import { RUNS_DIR, SHOTS_DIR, type RunSummary } from '@testpilot/core'
 import { buildNativeRunSummary } from '@testpilot/reporter'
+import { shotHookPath } from '@testpilot/native'
 import { resolveRoot, type ProjectOptions } from './project'
 import { allocateRunId } from './runs'
 
@@ -29,7 +31,6 @@ export interface NativeCommand {
   files: string[]
   command: string
   args: string[]
-  shell: boolean
 }
 
 export interface NativeRunResult {
@@ -47,6 +48,8 @@ export interface NativeProcessResult {
   code: number
   /** node:test 的 TAP 原文;调用方归一进 result.json,不写 *.tap */
   stdout: string
+  /** 命令超过时限被终止(避免挂死拖住整个 run/server) */
+  timedOut?: boolean
 }
 
 export interface NativeSpawnOutput {
@@ -76,8 +79,17 @@ export function targetForNativeFile(file: string): NativeTarget | undefined {
   return undefined
 }
 
-/** 把已发现的脚本按端分组,生成该端框架自己的启动命令。node:test 逐文件 spawn(单文件隔离,崩溃不拖垮其他文件)。 */
-export function planNativeCommands(files: readonly string[], nodeExec = process.execPath): NativeCommand[] {
+/**
+ * 把已发现的脚本按端分组,生成该端框架自己的启动命令。node:test 逐文件 spawn(单文件隔离,崩溃不拖垮其他文件)。
+ * Web 端用业务项目本地 @playwright/test 的 cli.js 直接以 node 启动(不经 npx 的 shell 包装:
+ * Windows 下 shell 模式既会在路径含空格时断参,也无法安全转义用例路径里的 shell 元字符)。
+ * resolvePlaywrightCli 只在有 web 用例时才调用:纯 api/miniapp 项目不要求安装 Playwright。
+ */
+export function planNativeCommands(
+  files: readonly string[],
+  nodeExec = process.execPath,
+  resolvePlaywrightCli: () => string = () => resolvePlaywrightCliFor(process.cwd()),
+): NativeCommand[] {
   const groups = new Map<NativeTarget, string[]>()
   for (const file of files) {
     const target = targetForNativeFile(file)
@@ -95,9 +107,8 @@ export function planNativeCommands(files: readonly string[], nodeExec = process.
       commands.push({
         target,
         files: group,
-        command: 'npx',
-        args: ['playwright', 'test', ...group],
-        shell: process.platform === 'win32',
+        command: nodeExec,
+        args: [resolvePlaywrightCli(), 'test', ...group],
       })
       continue
     }
@@ -107,15 +118,29 @@ export function planNativeCommands(files: readonly string[], nodeExec = process.
         files: [file],
         command: nodeExec,
         args: ['--test', ...(file.endsWith('.ts') ? ['--experimental-strip-types'] : []), file],
-        shell: false,
       })
     }
   }
   return commands
 }
 
-/** Windows 上 node --import 只接受 file URL,不接受盘符路径。 */
-const SHOT_HOOK = new URL('../../native/src/shot-hook.mjs', import.meta.url).href
+/**
+ * 定位业务项目本地安装的 @playwright/test CLI(cli.js,与包主入口同目录)。
+ * 未安装时抛错并给出安装指引 —— 刻意不回退到 npx(shell 包装下用例路径无法安全转义)。
+ */
+export function resolvePlaywrightCliFor(cwd: string): string {
+  try {
+    const entry = createRequire(join(cwd, 'package.json')).resolve('@playwright/test')
+    const cli = join(dirname(entry), 'cli.js')
+    if (existsSync(cli)) return cli
+  } catch {
+    // 未安装 @playwright/test,落到下方统一报错
+  }
+  throw new Error('未找到 @playwright/test;请先在业务项目安装:npm i -D @playwright/test')
+}
+
+/** Windows 上 node --import 只接受 file URL,不接受盘符路径(路径由 @testpilot/native 按自身位置解析) */
+const SHOT_HOOK = shotHookPath()
 
 /** ingest 时:Web 开 JSON reporter、每条用例截图与失败 trace;小程序注入截图钩子。node:test 的 tap 仍是默认 reporter。 */
 function withReporterArgs(command: NativeCommand, ingest: boolean): NativeCommand {
@@ -196,10 +221,15 @@ export async function runNativeCases(
   const shotsDir = runId ? join(root, SHOTS_DIR, runId) : undefined
 
   const spawnImpl = options.spawnImpl ?? defaultSpawn
+  // 只要有 web 用例才解析 Playwright CLI(从项目根的业务依赖解析);
+  // 注入 spawnImpl(测试/编排)时不做真实解析,避免对执行环境的不必要依赖
+  const playwrightCli = options.spawnImpl
+    ? () => '<playwright-cli>'
+    : () => resolvePlaywrightCliFor(root)
   const playwrightJsonPath = runDir ? join(runDir, 'playwright.json') : undefined
   const nodeTestTaps: Array<{ text: string; target: 'miniapp' | 'api'; file: string }> = []
   let exitCode = 0
-  for (const base of planNativeCommands(files)) {
+  for (const base of planNativeCommands(files, process.execPath, playwrightCli)) {
     if (options.signal?.aborted) break
     const command = withReporterArgs(base, runDir !== undefined)
     // Web 仍把 JSON reporter 的 stdout 落到 playwright.json。小程序和 API 的 TAP 只留在内存里。
@@ -215,6 +245,9 @@ export async function runNativeCases(
     )
     if (runDir && command.target !== 'web') {
       nodeTestTaps.push({ text: captured.stdout, target: command.target, file: command.files[0]! })
+    }
+    if (captured.timedOut) {
+      console.error(`命令超时被终止(${Math.round(NATIVE_COMMAND_TIMEOUT_MS / 1000)}s):${command.target} ${command.files.join(', ')}`)
     }
     if (captured.code !== 0) exitCode = captured.code
   }
@@ -241,36 +274,87 @@ export async function runNativeCases(
   return { files, status: summary.status, exitCode, runId, runDir, summary }
 }
 
+/** 单个框架命令的时限(挂死的浏览器/runner 不应拖住整个 run 与 server 退出);可用环境变量覆盖 */
+const NATIVE_COMMAND_TIMEOUT_MS = Number(process.env.TESTPILOT_NATIVE_TIMEOUT_MS ?? 10 * 60_000)
+
+/** 杀掉整棵进程树:abort/超时时只 SIGTERM 直接子进程会留下孤儿浏览器(cmd 包装下更是整树存活) */
+function killProcessTree(pid: number): void {
+  if (process.platform === 'win32') {
+    spawn('taskkill', ['/pid', String(pid), '/T', '/F'], { stdio: 'ignore' })
+  } else {
+    // POSIX 端子进程以 detached 独立进程组启动,负 pid 杀整组
+    try {
+      process.kill(-pid, 'SIGKILL')
+    } catch {
+      // 进程组已退出
+    }
+  }
+}
+
 function defaultSpawn(
   _command: NativeCommand,
   cwd: string,
   output?: NativeSpawnOutput,
   signal?: AbortSignal,
 ): Promise<NativeProcessResult> {
-  return new Promise((resolvePromise, reject) => {
-    const file = output?.stdoutPath ? createWriteStream(output.stdoutPath) : undefined
+  return new Promise((resolvePromise) => {
     const chunks: Buffer[] = []
     const capture = Boolean(output?.stdoutPath) || Boolean(output?.captureStdout)
+    const file = output?.stdoutPath ? createWriteStream(output.stdoutPath) : undefined
+    // 写文件流失败(被占用/权限/杀毒扫描)不能击穿进程:丢输出但不丢运行
+    let streamBroken = false
+    file?.on('error', () => {
+      streamBroken = true
+    })
+
     const child = spawn(_command.command, _command.args, {
       cwd,
       stdio: ['ignore', capture ? 'pipe' : 'inherit', 'inherit'],
-      shell: _command.shell,
+      // 一律不走 shell:命令与参数都是我们构造的绝对路径,shell 包装既可能断参也无法安全转义
+      shell: false,
       signal,
+      // POSIX 独立进程组:abort/超时可整组击杀;Windows 用 taskkill /T 杀树
+      detached: process.platform !== 'win32',
       env: output?.shotsDir
         ? { ...process.env, TESTPILOT_SHOTS_DIR: output.shotsDir }
         : process.env,
     })
+
+    let timedOut = false
+    const timer = setTimeout(() => {
+      timedOut = true
+      if (child.pid) killProcessTree(child.pid)
+    }, NATIVE_COMMAND_TIMEOUT_MS)
+    if (typeof timer.unref === 'function') timer.unref()
+    signal?.addEventListener(
+      'abort',
+      () => {
+        clearTimeout(timer)
+        if (child.pid) killProcessTree(child.pid)
+      },
+      { once: true },
+    )
+
+    const settle = (code: number) => {
+      clearTimeout(timer)
+      file?.end()
+      resolvePromise({
+        code,
+        stdout: Buffer.concat(chunks).toString('utf8'),
+        ...(timedOut ? { timedOut: true } : {}),
+      })
+    }
+
     child.stdout?.on('data', (chunk: Buffer) => {
-      file?.write(chunk)
+      if (!streamBroken) file?.write(chunk)
       if (output?.captureStdout) chunks.push(chunk)
     })
     child.once('error', (err) => {
-      file?.end()
-      reject(err)
+      console.error(`启动命令失败(${_command.target}):${err.message}`)
+      settle(1)
     })
     child.once('exit', (code) => {
-      file?.end()
-      resolvePromise({ code: code ?? 1, stdout: Buffer.concat(chunks).toString('utf8') })
+      settle(code ?? 1)
     })
   })
 }

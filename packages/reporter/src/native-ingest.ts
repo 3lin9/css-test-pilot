@@ -1,6 +1,6 @@
 import { copyFile, mkdir, readFile, rm, stat } from 'node:fs/promises'
 import { basename, extname, isAbsolute, join, relative, resolve } from 'node:path'
-import { createShotNamer } from '../../native/src/shot-name.mjs'
+import { createShotNamer } from '@testpilot/native'
 import {
   buildRunSummary,
   caseStatusFromErrorCode,

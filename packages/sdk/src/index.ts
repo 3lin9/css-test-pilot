@@ -12,6 +12,7 @@ export {
   collectNativeCases,
   isYamlCasePath,
   planNativeCommands,
+  resolvePlaywrightCliFor,
   runNativeCases,
   targetForNativeFile,
   NATIVE_CASE_DIRS,

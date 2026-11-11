@@ -1,5 +1,5 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
-import { net } from 'node:net'
+import * as net from 'node:net'
 import { dirname, join } from 'node:path'
 import { NATIVE_CODE_PREFIX } from '@testpilot/core'
 

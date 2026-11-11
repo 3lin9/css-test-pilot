@@ -20,7 +20,7 @@ export async function collectHistory(
   limit = 12,
 ): Promise<HistoryPoint[]> {
   const entries = (await readdir(runsRoot).catch(() => [] as string[]))
-    .filter((name) => /^\d{8}-\d{3}$/.test(name) && name !== skipRunId)
+    .filter((name) => /^\d{8}-\d{3,4}$/.test(name) && name !== skipRunId)
     .sort()
     .slice(-limit)
 

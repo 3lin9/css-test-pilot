@@ -44,4 +44,10 @@ await build({
 // Skill 随包分发:init 在打包形态下从 dist/skills/testpilot 安装到业务项目
 cpSync(join(repoRoot, 'skills', 'testpilot'), join(dist, 'skills', 'testpilot'), { recursive: true })
 
+// native 包的截图钩子是独立 .mjs(node --import 运行时加载,不能打入 bundle);
+// shotHookPath() 按 import.meta.url 定位到 dist/,必须复制到产物旁
+for (const hook of ['shot-hook.mjs', 'shot-loader.mjs', 'shot-name.mjs']) {
+  cpSync(join(repoRoot, 'packages', 'native', 'src', hook), join(dist, hook))
+}
+
 console.log('build done ->', dist)
