@@ -25,6 +25,9 @@ jobs:
       - name: Lint
         run: pnpm lint
 
+      - name: Typecheck
+        run: pnpm typecheck
+
       - name: Build
         run: pnpm build
 
@@ -52,5 +55,6 @@ jobs:
       - name: Install Chromium
         run: pnpm exec playwright install --with-deps chromium
 
-      - name: E2E(Web 链路)
+      # golden 全链路:CLI 驱动原生用例(validate -> run -> report)
+      - name: E2E(原生链路)
         run: pnpm e2e

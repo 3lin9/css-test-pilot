@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { api } from '../../api/client'
-import type { ProjectWithCount, Run } from '../../api/types'
+import type { Run } from '../../api/types'
 import RunBars from '../../components/RunBars.vue'
 import StatCard from '../../components/StatCard.vue'
 import StatusBadge from '../../components/StatusBadge.vue'

@@ -21,6 +21,11 @@ pipeline {
         sh 'pnpm lint'
       }
     }
+    stage('Typecheck') {
+      steps {
+        sh 'pnpm typecheck'
+      }
+    }
     stage('Build') {
       steps {
         sh 'pnpm build'
@@ -31,7 +36,7 @@ pipeline {
         sh 'pnpm test'
       }
     }
-    // Web e2e 需要 Playwright 浏览器,按 agent 能力开启:
+    // 全链路 e2e 需要 Playwright 浏览器,按 agent 能力开启:
     // stage('E2E') {
     //   steps {
     //     sh 'pnpm exec playwright install --with-deps chromium && pnpm e2e'
