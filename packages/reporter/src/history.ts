@@ -1,5 +1,6 @@
 import { readFile, readdir } from 'node:fs/promises'
 import { join } from 'node:path'
+import { RUN_ID_PATTERN } from '@testpilot/core'
 
 export interface HistoryPoint {
   runId: string
@@ -20,7 +21,7 @@ export async function collectHistory(
   limit = 12,
 ): Promise<HistoryPoint[]> {
   const entries = (await readdir(runsRoot).catch(() => [] as string[]))
-    .filter((name) => /^\d{8}-\d{3,4}$/.test(name) && name !== skipRunId)
+    .filter((name) => RUN_ID_PATTERN.test(name) && name !== skipRunId)
     .sort()
     .slice(-limit)
 

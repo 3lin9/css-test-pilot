@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { RUNS_DIR, type RunSummary } from '@testpilot/core'
+import { ARTIFACTS_DIR, RUNS_DIR, type RunSummary } from '@testpilot/core'
 import {
   buildSummaryData,
   writeReports,
@@ -31,12 +31,8 @@ export async function generateReport(
   }
 
   const runDir = join(resolveRoot(options.root), RUNS_DIR, id)
-  let summary: RunSummary
-  try {
-    summary = JSON.parse(await readFile(join(runDir, 'result.json'), 'utf8')) as RunSummary
-  } catch {
-    throw new Error(`读取运行结果失败:${join(runDir, 'result.json')}(运行未完成或 runId 不存在)`)
-  }
+  // getRun 内含解析与形状守卫,读取失败/垃圾内容统一报错
+  const summary = await getRun(id, options)
 
   const written = await writeReports(runDir, summary)
   return { runId: id, json: written.json, html: written.html }
@@ -87,7 +83,7 @@ export async function generateSummaryReport(
   }
 
   const data = buildSummaryData(runs)
-  const artifactsDir = join(root, '.testpilot', 'artifacts')
+  const artifactsDir = join(root, ARTIFACTS_DIR)
   const written = await writeSummaryReport(artifactsDir, data)
   return { html: written.html, json: written.json, data, window: { runs: runs.length } }
 }
@@ -99,5 +95,11 @@ export async function readReport(
 ): Promise<ReportPayload | undefined> {
   const file = join(resolveRoot(options.root), RUNS_DIR, runId, 'report.json')
   const source = await readFile(file, 'utf8').catch(() => undefined)
-  return source ? (JSON.parse(source) as ReportPayload) : undefined
+  if (!source) return undefined
+  try {
+    return JSON.parse(source) as ReportPayload
+  } catch {
+    // report.json 损坏按报告缺失处理,调用方走重新生成
+    return undefined
+  }
 }

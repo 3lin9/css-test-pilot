@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
-import { readGitInfo } from '../../lib/git'
+import { PROJECT_LINK_FILE, readGitInfo } from '@testpilot/core'
 
 /** V0.1 项目类型(设计文档 §5) */
 export type ProjectType = 'web' | 'wechat-miniapp' | 'hybrid' | 'unknown'
@@ -123,7 +123,7 @@ export async function detectProject(root: string): Promise<ProjectInfo> {
     hasTestsE2e: existingE2eDirs.includes('tests/e2e'),
     existingE2eDirs,
     hasTestpilotConfig: existsSync(join(root, 'testpilot.yaml')),
-    hasProjectLink: existsSync(join(root, '.testpilot', 'project.json')),
+    hasProjectLink: existsSync(join(root, PROJECT_LINK_FILE)),
   }
 }
 

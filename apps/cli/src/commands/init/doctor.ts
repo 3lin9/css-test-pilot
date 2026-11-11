@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs'
 import { readdir, stat } from 'node:fs/promises'
 import { join } from 'node:path'
-import { inspectMiniappRuntime, loadTestpilotConfig } from '@testpilot/core'
+import { ARTIFACTS_DIR, inspectMiniappRuntime, loadTestpilotConfig, PROJECT_LINK_FILE } from '@testpilot/core'
 import { collectNativeCases, readProjectLink, targetForNativeFile } from '@testpilot/sdk'
 import { detectAdapters, type AdapterInfo } from './adapter-detector'
 import { collectEnvVarRefs } from './environment-initializer'
@@ -64,7 +64,7 @@ export async function runDoctor(root: string): Promise<DoctorReport> {
     info.git.commit
       ? ok(`Git repository(${info.git.branch ?? 'detached'} · ${info.git.commit.slice(0, 7)})`)
       : warn('Git repository 未检测到', 'Case Metadata 无法同步到 Server'),
-    existsSync(join(root, '.testpilot', 'project.json'))
+    existsSync(join(root, PROJECT_LINK_FILE))
       ? ok('.testpilot/project.json')
       : error('.testpilot/project.json', '运行 npx csspilot init 生成'),
     existsSync(join(root, 'testpilot.yaml'))
@@ -184,7 +184,7 @@ export async function runDoctor(root: string): Promise<DoctorReport> {
   }
 
   // ---- Artifacts(run 产物在本地/自托管机器上没有自动清理;trace/视频累积会吃满磁盘) ----
-  const artifactsBytes = await dirBytes(join(root, '.testpilot', 'artifacts'))
+  const artifactsBytes = await dirBytes(join(root, ARTIFACTS_DIR))
   const ARTIFACT_WARN_BYTES = 2 * 1024 ** 3
   push('Artifacts', [
     artifactsBytes === 0

@@ -2,6 +2,7 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import type { RunSummary } from '@testpilot/core'
 import { categoryLabel, classifyFromCode, classifyFailure, FAILURE_CATEGORIES, type FailureCategory } from './classify'
+import { escapeHtml } from './escape-html'
 
 export interface SummaryRunInput {
   runId: string
@@ -49,14 +50,6 @@ export interface SummaryReportData {
   platforms: string[]
   categories: Array<{ id: FailureCategory; label: string; count: number }>
   categoryLabels: Record<string, string>
-}
-
-function escapeHtml(value: string): string {
-  return String(value)
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
 }
 
 function pct(value: number): string {

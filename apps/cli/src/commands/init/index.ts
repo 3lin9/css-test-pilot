@@ -1,5 +1,6 @@
 import { join } from 'node:path'
 import { Command } from 'commander'
+import { ARTIFACTS_DIR } from '@testpilot/core'
 import { detectAdapters, type AdapterInfo } from './adapter-detector'
 import { detectCi } from './ci-initializer'
 import { initTestPilotConfig, type ConfigInitResult } from './config-initializer'
@@ -62,7 +63,7 @@ export async function runInit(root: string, options: InitOptions = {}): Promise<
       ? `${okMark()} 项目配置          testpilot.yaml`
       : `${okMark()} 项目配置          testpilot.yaml(已存在,保留)`,
   )
-  console.log(`${okMark()} Runtime 目录      ${join('.testpilot', 'artifacts')}`)
+  console.log(`${okMark()} Runtime 目录      ${ARTIFACTS_DIR}`)
   const serverMode = config.projectLink.serverUrl ? `Server:${config.projectLink.serverUrl}` : '本地模式'
   console.log(`${okMark()} 项目关联          ${config.projectLink.projectId}(${serverMode})`)
   console.log(

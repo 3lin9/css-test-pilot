@@ -2,6 +2,7 @@ import { readFile, readdir } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import { collectNativeCases, loadProjectConfig, resolveRoot, type ProjectOptions } from '@testpilot/sdk'
+import { parseNativeCaseHeader } from '@testpilot/reporter'
 
 /** native.md 约定的视角取值(与评审清单一致) */
 export const PERSPECTIVES = [
@@ -24,8 +25,6 @@ export interface NativeLintReport {
   issueCount: number
 }
 
-const HEADER_HEAD_CHARS = 4000
-
 /**
  * 原生脚本 lint:no-invention 的残留硬卡。
  * 1) 头注释 evidence 链(测试点 ID + 视角枚举)
@@ -44,16 +43,17 @@ export async function lintNativeCases(paths: readonly string[], options: Project
   for (const file of files) {
     const issues: string[] = []
     const source = await readFile(file, 'utf8').catch(() => '')
-    const head = source.slice(0, HEADER_HEAD_CHARS)
 
-    const testPointId = /^\s*\/\/\s*测试点[:：]\s*(\S+)/m.exec(head)?.[1]
+    // 头注释 evidence 链与 ingest 用同一份解析,避免两份正则漂移
+    const header = parseNativeCaseHeader(source)
+    const testPointId = header.testPointId
     if (!testPointId) {
       issues.push('缺少文件头 `// 测试点: <ID>`(evidence 链起点)')
     } else if (reviewsText && !reviewsText.includes(testPointId)) {
       issues.push(`测试点 ${testPointId} 不在 tests/e2e/reviews/ 清单中——清单里没有的 ID 不得生成用例`)
     }
 
-    const perspective = /^\s*\/\/\s*视角[:：]\s*(\S+)/m.exec(head)?.[1]
+    const perspective = header.perspective
     if (!perspective) {
       issues.push('缺少文件头 `// 视角: charter:*`')
     } else if (!(PERSPECTIVES as readonly string[]).includes(perspective)) {

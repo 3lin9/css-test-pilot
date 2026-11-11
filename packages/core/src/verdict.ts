@@ -54,3 +54,15 @@ export function caseStatusFromErrorCode(code: string | undefined): Extract<CaseS
   if (verdict === 'unverified') return 'inconclusive'
   return 'failed'
 }
+
+/**
+ * run 状态 → 进程退出码的唯一契约(CLI run / SDK ingest 共用):
+ * 0=passed/skipped,1=failed/inconclusive(产品失败或证据不足),2=blocked(环境/前置,非产品回归)。
+ */
+export function exitCodeForRunStatus(
+  status: 'passed' | 'failed' | 'blocked' | 'skipped' | 'inconclusive',
+): 0 | 1 | 2 {
+  if (status === 'failed' || status === 'inconclusive') return 1
+  if (status === 'blocked') return 2
+  return 0
+}

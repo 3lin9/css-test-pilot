@@ -1,7 +1,7 @@
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import * as net from 'node:net'
 import { dirname, join } from 'node:path'
-import { NATIVE_CODE_PREFIX } from '@testpilot/core'
+import { NATIVE_CODE_PREFIX, TESTPILOT_DIR } from '@testpilot/core'
 
 /** 官方默认自动化端口(cli auto --auto-port 9420) */
 export const DEFAULT_AUTOMATOR_PORT = 9420
@@ -62,7 +62,7 @@ export interface LaunchMiniAppOptions {
   wsEndpoint?: string
 }
 
-const TICKET_CACHE = join('.testpilot', 'cache', 'miniapp-ticket.json')
+const TICKET_CACHE = join(TESTPILOT_DIR, 'cache', 'miniapp-ticket.json')
 
 function infraError(message: string): Error {
   // 带 [TESTPILOT:ENVIRONMENT_UNAVAILABLE] 前缀:ingest 归一为 blocked,脚本不必自己标

@@ -15,10 +15,12 @@ export { classifyFromCode, classifyFailure, categoryLabel, FAILURE_CATEGORIES } 
 export type { FailureCategory } from './classify'
 export {
   buildNativeRunSummary,
+  parseNativeCaseHeader,
   readNativeCaseHeader,
   type NativeCaseHeader,
   type NativeIngestInput,
 } from './native-ingest'
+export { escapeHtml } from './escape-html'
 export { collectHistory } from './history'
 export type { HistoryPoint } from './history'
 export { diffLines, extractAssertionDiff, renderAssertionDiffHtml } from './diff'

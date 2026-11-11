@@ -1,8 +1,8 @@
 import { createReadStream } from 'node:fs'
 import { readdir, stat } from 'node:fs/promises'
 import { extname, join, resolve, sep } from 'node:path'
+import { RUNS_DIR, type RunSummary } from '@testpilot/core'
 import { getRun } from '@testpilot/sdk'
-import type { RunSummary } from '@testpilot/core'
 import type { Db } from '../db'
 import { getRunRow } from '../repositories/run-repo'
 import { getProjectRow } from '../repositories/project-repo'
@@ -47,7 +47,7 @@ async function requireRunDir(db: Db, runId: string): Promise<string> {
   if (!project?.rootPath) {
     throw new ArtifactError(`项目 ${project?.name ?? run.projectId} 未配置本地根目录,无法访问产物`, 422)
   }
-  const runDir = resolve(project.rootPath, '.testpilot', 'artifacts', 'runs', runId)
+  const runDir = resolve(project.rootPath, RUNS_DIR, runId)
   const info = await stat(runDir).catch(() => undefined)
   if (!info?.isDirectory()) {
     throw new ArtifactError(`运行产物目录不存在:${runId}`)

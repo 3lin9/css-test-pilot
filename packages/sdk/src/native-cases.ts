@@ -3,7 +3,7 @@ import { spawn } from 'node:child_process'
 import { mkdir, readdir, stat, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { dirname, join, relative, resolve } from 'node:path'
-import { RUNS_DIR, SHOTS_DIR, type RunSummary } from '@testpilot/core'
+import { RUNS_DIR, SHOTS_DIR, exitCodeForRunStatus, type RunSummary } from '@testpilot/core'
 import { buildNativeRunSummary } from '@testpilot/reporter'
 import { shotHookPath } from '@testpilot/native'
 import { resolveRoot, type ProjectOptions } from './project'
@@ -269,8 +269,8 @@ export async function runNativeCases(
     videosDir: runDir ? join(runDir, 'videos') : undefined,
   })
   await writeFile(join(runDir, 'result.json'), JSON.stringify(summary, null, 2), 'utf8')
-  // 三态退出码契约:failed/inconclusive → 1,blocked → 2(与 run.ts 的 exitCodeForSummary 对齐)
-  exitCode = summary.status === 'failed' || summary.status === 'inconclusive' ? 1 : summary.status === 'blocked' ? 2 : 0
+  // 三态退出码契约(failed/inconclusive → 1,blocked → 2)唯一实现见 @testpilot/core
+  exitCode = exitCodeForRunStatus(summary.status)
   return { files, status: summary.status, exitCode, runId, runDir, summary }
 }
 

@@ -1,6 +1,6 @@
 import { mkdir, readFile, readdir } from 'node:fs/promises'
 import { join } from 'node:path'
-import { RUNS_DIR, RESULT_FILE, type RunSummary } from '@testpilot/core'
+import { RUNS_DIR, RESULT_FILE, RUN_ID_PATTERN, type RunSummary } from '@testpilot/core'
 import { resolveRoot, type ProjectOptions } from './project'
 
 export interface RunMeta {
@@ -18,6 +18,16 @@ export interface RunMeta {
 
 function runsRoot(root?: string): string {
   return join(resolveRoot(root), RUNS_DIR)
+}
+
+/**
+ * result.json 是外部进程写盘的产物(可能半截、损坏或被人为改动),
+ * JSON 解析通过不等于内容可用;调用前先验最小形状,垃圾内容按读取失败处理。
+ */
+export function isSummaryLike(value: unknown): value is RunSummary {
+  if (typeof value !== 'object' || value === null) return false
+  const record = value as Partial<RunSummary>
+  return typeof record.status === 'string' && typeof record.totals === 'object' && record.totals !== null
 }
 
 /**
@@ -47,7 +57,7 @@ export async function listRuns(options: ProjectOptions = {}): Promise<RunMeta[]>
   const base = runsRoot(options.root)
   const entries = await readdir(base).catch(() => [] as string[])
   const metas: RunMeta[] = []
-  for (const entry of entries.filter((name) => /^\d{8}-\d{3,4}$/.test(name)).sort().reverse()) {
+  for (const entry of entries.filter((name) => RUN_ID_PATTERN.test(name)).sort().reverse()) {
     metas.push({ ...(await readRunMeta(base, entry)), runId: entry, dir: join(base, entry) })
   }
   return metas
@@ -63,7 +73,9 @@ export async function latestRunId(options: ProjectOptions = {}): Promise<string 
 export async function getRun(runId: string, options: ProjectOptions = {}): Promise<RunSummary> {
   const file = join(runsRoot(options.root), runId, RESULT_FILE)
   try {
-    return JSON.parse(await readFile(file, 'utf8')) as RunSummary
+    const parsed = JSON.parse(await readFile(file, 'utf8')) as RunSummary
+    if (!isSummaryLike(parsed)) throw new Error('内容不是合法的 run 结果')
+    return parsed
   } catch {
     throw new Error(`读取运行结果失败:${file}(运行未完成或 runId 不存在)`)
   }
@@ -74,6 +86,7 @@ async function readRunMeta(base: string, runId: string): Promise<Omit<RunMeta, '
     const summary = JSON.parse(
       await readFile(join(base, runId, RESULT_FILE), 'utf8'),
     ) as RunSummary
+    if (!isSummaryLike(summary)) return { status: 'unknown' }
     return {
       status: summary.status,
       cancelled: summary.cancelled,

@@ -1,6 +1,6 @@
 import { access, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { basename, join } from 'node:path'
-import { ENV_TESTING_FILE } from '@testpilot/core'
+import { ARTIFACTS_DIR, ENV_TESTING_FILE, TESTPILOT_DIR } from '@testpilot/core'
 import { readProjectLink, writeProjectLink, type ProjectLink } from '@testpilot/sdk'
 import type { AdapterInfo } from './adapter-detector'
 import { adaptersFor, defaultAdapterFor, type ProjectInfo } from './project-detector'
@@ -163,7 +163,7 @@ export async function initTestPilotConfig(
   }
 
   // 3. Runtime 目录
-  const runtimeDir = join(root, '.testpilot', 'artifacts')
+  const runtimeDir = join(root, ARTIFACTS_DIR)
   await mkdir(runtimeDir, { recursive: true })
 
   // 4. project.json:已有链接只补缺失字段,不重置 projectId(设计文档 §17)
@@ -188,7 +188,7 @@ export async function initTestPilotConfig(
 
   return {
     yaml,
-    runtimeDir: join(root, '.testpilot'),
+    runtimeDir: join(root, TESTPILOT_DIR),
     projectLink: link,
     projectLinkFile,
     envTesting,

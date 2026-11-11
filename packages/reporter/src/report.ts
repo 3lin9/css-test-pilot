@@ -6,6 +6,7 @@ import { categoryLabel, classifyFromCode, classifyFailure, FAILURE_CATEGORIES, t
 import { renderAssertionDiffHtml } from './diff'
 import { collectHistory, type HistoryPoint } from './history'
 import { toSummaryView, type ReportSummaryView } from './summary'
+import { escapeHtml } from './escape-html'
 
 export interface WrittenReports {
   json: string
@@ -560,14 +561,6 @@ async function inlineScreenshots(cases: ReportCase[], runDir: string): Promise<R
 
 function shortId(runId: string): string {
   return runId.replace(/^\d{8}-/, '')
-}
-
-function escapeHtml(input: string): string {
-  return input
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
 }
 
 function embedJson(data: ReportData): string {

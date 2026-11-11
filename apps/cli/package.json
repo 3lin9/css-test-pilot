@@ -49,6 +49,7 @@
   },
   "devDependencies": {
     "@testpilot/core": "workspace:^",
+    "@testpilot/reporter": "workspace:^",
     "@testpilot/sdk": "workspace:^",
     "@types/node": "^22.0.0",
     "commander": "^12.0.0",

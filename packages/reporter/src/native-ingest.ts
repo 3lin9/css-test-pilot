@@ -21,14 +21,18 @@ export interface NativeCaseHeader {
 
 const HEADER_HEAD_CHARS = 4000
 
-/** 解析脚本文件头注释(`// 测试点: <ID>` + `// 视角: charter:*`) */
-export async function readNativeCaseHeader(file: string): Promise<NativeCaseHeader> {
-  const source = await readFile(file, 'utf8').catch(() => '')
+/** 从脚本源码解析头注释(`// 测试点: <ID>` + `// 视角: charter:*`);lint 与 ingest 共用一份正则 */
+export function parseNativeCaseHeader(source: string): NativeCaseHeader {
   const head = source.slice(0, HEADER_HEAD_CHARS)
   return {
     testPointId: /^\s*\/\/\s*测试点[:：]\s*(\S+)/m.exec(head)?.[1],
     perspective: /^\s*\/\/\s*视角[:：]\s*(\S+)/m.exec(head)?.[1],
   }
+}
+
+/** 读取脚本文件并解析头注释 */
+export async function readNativeCaseHeader(file: string): Promise<NativeCaseHeader> {
+  return parseNativeCaseHeader(await readFile(file, 'utf8').catch(() => ''))
 }
 
 // ---- Playwright JSON reporter 结构(官方 schema 子集) ----
