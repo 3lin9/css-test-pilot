@@ -155,6 +155,9 @@ export async function initTestPilotConfig(
     '.testpilot/artifacts/',
     '.testpilot/cache/',
     '.testpilot/ready/',
+    // 旧版曾把 Control Plane 的 server.db(含环境凭据)按项目存放;现已统一收归 ~/.testpilot,
+    // 这里兜底忽略旧版本残留的库文件(含 .bak-v* / .migrated),防止业务仓库连同凭据一起被提交
+    '.testpilot/server.db*',
   ]) {
     await ensureGitignoreEntry(root, entry, 'csspilot 本地运行数据（不要提交）')
   }

@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises'
-import { basename, join, relative } from 'node:path'
+import { basename, relative, resolve, sep } from 'node:path'
 import { collectNativeCases } from '@testpilot/sdk'
 import { readNativeCaseHeader } from '@testpilot/reporter'
 import type { Db } from '../db'
@@ -123,7 +123,22 @@ export async function readCaseSource(db: Db, id: number): Promise<CaseView & { s
       statusCode: 422,
     })
   }
-  const source = await readFile(join(project.rootPath, view.filePath), 'utf8').catch(() => '')
+  // file 来自 cases/sync 入库的元数据:校验其解析结果落在项目根目录内,防路径穿越读任意文件
+  const rootDir = resolve(project.rootPath)
+  const sourcePath = resolve(rootDir, view.filePath)
+  if (sourcePath !== rootDir && !sourcePath.startsWith(rootDir + sep)) {
+    throw Object.assign(new Error(`用例文件路径越出项目根目录:${view.filePath}`), {
+      statusCode: 422,
+    })
+  }
+  let source: string
+  try {
+    source = await readFile(sourcePath, 'utf8')
+  } catch {
+    throw Object.assign(new Error(`用例源文件不存在或不可读:${view.filePath}`), {
+      statusCode: 404,
+    })
+  }
   return { ...view, source }
 }
 

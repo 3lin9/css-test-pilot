@@ -16,7 +16,7 @@ export interface StepResult {
   phase?: StepPhase
   durationMs: number
   error?: string
-  /** TestPilotError.code,三态判定依据 */
+  /** 三态判定依据的错误码(product / infra / unverified) */
   errorCode?: string
   /**
    * 截图。成功/失败用例为相对 `.testpilot/artifacts` 的路径 `shots/<runId>/<file>.png`。
@@ -80,7 +80,7 @@ export interface CaseResult {
   durationMs: number
   /** 用例级错误(如 adapter 缺失) */
   error?: string
-  /** TestPilotError.code,三态判定依据(取第一个失败来源的码) */
+  /** 三态判定依据的错误码(取第一个失败来源的码) */
   errorCode?: string
   skipReason?: 'dependency-not-ready'
   missingDependencies?: string[]

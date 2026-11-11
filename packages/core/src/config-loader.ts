@@ -118,9 +118,13 @@ export function loadProjectEnvFile(root: string = process.cwd()): void {
   }
 }
 
-/** 读取并校验业务项目的 testpilot.yaml;文件不存在时返回默认配置 */
+/**
+ * 读取并校验业务项目的 testpilot.yaml;文件不存在时返回默认配置。
+ * 刻意不在此处加载 .env.testing:Server(Control Plane)也会经 SDK 调到这里,
+ * 业务项目的测试凭据不应进入 Server 进程环境;env 文件由 CLI 入口(bin.ts)
+ * 显式调 loadProjectEnvFile 加载。
+ */
 export async function loadTestpilotConfig(cwd: string = process.cwd()): Promise<TestpilotConfig> {
-  loadProjectEnvFile(cwd)
   const file = join(cwd, 'testpilot.yaml')
   let raw: unknown
   try {

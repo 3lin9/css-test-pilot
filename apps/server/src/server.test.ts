@@ -418,4 +418,82 @@ describe('server:control-plane', () => {
     expect(res.statusCode).toBe(200)
     expect(res.json().runs.length).toBeGreaterThanOrEqual(3)
   })
+
+  test('本地防护:非回环 Host 拒绝(DNS rebinding 防线)', async () => {
+    const res = await server.app.inject({
+      method: 'GET',
+      url: '/api/health',
+      headers: { host: 'attacker.example.com' },
+    })
+    expect(res.statusCode).toBe(403)
+  })
+
+  test('本地防护:跨源 Origin 拒绝(CSRF 防线),回环 Origin 放行', async () => {
+    const evil = await server.app.inject({
+      method: 'GET',
+      url: '/api/projects',
+      headers: { origin: 'https://evil.example.com' },
+    })
+    expect(evil.statusCode).toBe(403)
+
+    // dev 模式 vite 代理带 5173 端口的回环 Origin:放行
+    const ok = await server.app.inject({
+      method: 'GET',
+      url: '/api/projects',
+      headers: { origin: 'http://localhost:5173' },
+    })
+    expect(ok.statusCode).toBe(200)
+  })
+
+  test('cases/sync 路径穿越:.. 段与绝对路径一律 400', async () => {
+    const projectId = server.ctx.defaultProject.id
+    const base = { repository: 'r', branch: 'main', commit: 'c0' }
+
+    const dotdot = await server.app.inject({
+      method: 'POST',
+      url: `/api/projects/${projectId}/cases/sync`,
+      payload: {
+        ...base,
+        cases: [{ id: 'TP-EVIL', file: '../../../etc/passwd' }],
+      },
+    })
+    expect(dotdot.statusCode).toBe(400)
+
+    const absolute = await server.app.inject({
+      method: 'POST',
+      url: `/api/projects/${projectId}/cases/sync`,
+      payload: {
+        ...base,
+        cases: [{ id: 'TP-EVIL2', file: 'C:/Windows/win.ini' }],
+      },
+    })
+    expect(absolute.statusCode).toBe(400)
+
+    const backslash = await server.app.inject({
+      method: 'POST',
+      url: `/api/projects/${projectId}/cases/sync`,
+      payload: {
+        ...base,
+        cases: [{ id: 'TP-EVIL3', file: '..\\..\\secret.txt' }],
+      },
+    })
+    expect(backslash.statusCode).toBe(400)
+  })
+
+  test('readCaseSource 纵深防御:库里已存的越界路径读取时 422', async () => {
+    const { insertCase } = await import('./repositories/case-repo')
+    const { readCaseSource } = await import('./services/case-service')
+    const projectId = server.ctx.defaultProject.id
+    const row = await insertCase(server.ctx.db, {
+      projectId,
+      caseId: 'TP-ESCAPE',
+      name: 'TP-ESCAPE',
+      filePath: '../outside.secret',
+      tagsJson: '[]',
+      valid: 1,
+      status: 'active',
+      checkedAt: new Date().toISOString(),
+    })
+    await expect(readCaseSource(server.ctx.db, row.id)).rejects.toMatchObject({ statusCode: 422 })
+  })
 })

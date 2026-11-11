@@ -1,5 +1,4 @@
 export * from './types'
-export { TestPilotError } from './errors'
 export {
   NATIVE_CODE_PREFIX,
   caseStatusFromErrorCode,

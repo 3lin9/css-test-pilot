@@ -2,7 +2,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { beforeAll, afterAll, beforeEach, describe, expect, test } from 'vitest'
-import { loadTestpilotConfig } from '@testpilot/core'
+import { loadProjectEnvFile, loadTestpilotConfig } from '@testpilot/core'
 
 let dir: string
 
@@ -27,6 +27,8 @@ beforeEach(() => {
 
 async function writeAndLoad(yaml: string) {
   await writeFile(join(dir, 'testpilot.yaml'), yaml)
+  // loadTestpilotConfig 不再隐式加载 env:CLI 入口(bin.ts)显式加载,此处模拟同一行为
+  loadProjectEnvFile(dir)
   return loadTestpilotConfig(dir)
 }
 
