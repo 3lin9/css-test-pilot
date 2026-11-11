@@ -6,14 +6,14 @@
 
 | 命令                                    | 作用                                           |
 | --------------------------------------- | ---------------------------------------------- |
-| `csspilot init`                         | 把 TestPilot 接入当前业务项目(项目测试基础设施初始化) |
+| `csspilot init`                         | 把 csspilot 接入当前业务项目(项目测试基础设施初始化) |
 | `csspilot validate [paths...]`          | 原生脚本 lint(evidence 头注释 / reviews 清单出处 / env 引用) |
 | `csspilot run [paths...]`               | 原生执行:交给各端框架,ingest 归一落 result.json(blocked 退出码 2) |
 | `csspilot report [--run <id>] [--open]` | 生成交互式单文件 HTML 报告(步骤树 / 失败分类 / 历史趋势)+ report.json |
 | `csspilot sync-metadata`                | 同步 Case Metadata 到 Server(CI / git push 后) |
 | `csspilot doctor`                       | 健康检查(分组报告:error / warning)          |
 | `csspilot update [--force]`             | 同步接入物到当前 CLI 版本(Skill / .env.testing;不触碰 .env 与用例) |
-| `csspilot ci init`                      | 生成 TestPilot CI 工作流模板(不改动已有 CI)   |
+| `csspilot ci init`                      | 生成 csspilot CI 工作流模板(不改动已有 CI)   |
 
 全局:`-V` 查看版本,`-h` 查看帮助。
 
@@ -71,7 +71,7 @@ npx csspilot ci init
 npx csspilot sync-metadata
 ```
 
-把**当前 Git Commit 的完整 Case 列表**作为快照同步到 TestPilot Server(`POST /api/projects/:id/cases/sync`):快照中消失的 Case 会被标记为 deleted(历史 Run 仍可引用)。
+把**当前 Git Commit 的完整 Case 列表**作为快照同步到 csspilot Server(`POST /api/projects/:id/cases/sync`):快照中消失的 Case 会被标记为 deleted(历史 Run 仍可引用)。
 
 - Git Push 是 Case Metadata 进入团队共享 Server 的正式同步边界,建议只在 CI 中运行;开发者本地未 push 的 Case 不应进入团队视图
 - Server 地址取值顺序:`--server` > 环境变量 `TESTPILOT_SERVER_URL` > `.testpilot/project.json` 的 `serverUrl` > 项目配置的 `server.baseUrl`
@@ -99,7 +99,7 @@ npx csspilot run tests/e2e/web/order-create.spec.ts   # 指定 Playwright 脚本
 npx csspilot run tests/e2e/miniapp/list.test.ts       # 指定 miniprogram-automator 脚本
 ```
 
-`run` 按目录把脚本交给该端框架:`tests/e2e/web` 运行 `npx playwright test`,`tests/e2e/miniapp` 与 `tests/e2e/api` 运行 `node --test`(逐文件 spawn,单文件崩溃不拖垮其他文件)。TestPilot 不翻译脚本——脚本本身就是各端框架的原生代码。run 结束后 **ingest 归一**:读取各端结构化输出(Playwright `--reporter=json` / node:test 内置 TAP),连同头注释元数据与 `[TESTPILOT:*]` 三态标记,写成 run 目录 `result.json`——`report` 与跨 run 汇总基于它直接可用。脚本抛 `blocked('环境不可达')` / `inconclusive('前置缺失')`(或零依赖手写 `[TESTPILOT:ENVIRONMENT_UNAVAILABLE]` / `[TESTPILOT:PREREQ_VARIABLE_MISSING]` 错误前缀)时按三态归类,未标记的失败一律按产品失败(宁红勿漏)。
+`run` 按目录把脚本交给该端框架:`tests/e2e/web` 运行 `npx playwright test`,`tests/e2e/miniapp` 与 `tests/e2e/api` 运行 `node --test`(逐文件 spawn,单文件崩溃不拖垮其他文件)。csspilot 不翻译脚本——脚本本身就是各端框架的原生代码。run 结束后 **ingest 归一**:读取各端结构化输出(Playwright `--reporter=json` / node:test 内置 TAP),连同头注释元数据与 `[TESTPILOT:*]` 三态标记,写成 run 目录 `result.json`——`report` 与跨 run 汇总基于它直接可用。脚本抛 `blocked('环境不可达')` / `inconclusive('前置缺失')`(或零依赖手写 `[TESTPILOT:ENVIRONMENT_UNAVAILABLE]` / `[TESTPILOT:PREREQ_VARIABLE_MISSING]` 错误前缀)时按三态归类,未标记的失败一律按产品失败(宁红勿漏)。
 
 退出码(三态判定,环境问题不污染产品缺陷统计):
 
@@ -152,7 +152,7 @@ adapters:
 #   default: my-workspace     # 默认 Workspace(多系统环境组合;Server 触发运行时指定)
 
 # server:
-#   baseUrl: http://127.0.0.1:3000  # TestPilot Server(Control Plane)
+#   baseUrl: http://127.0.0.1:3000  # csspilot Server(Control Plane)
 
 web:
   baseUrl: ${TEST_BASE_URL}   # 被测系统地址备忘;脚本直接读 process.env
@@ -185,7 +185,7 @@ curl -X POST $SERVER/api/projects/1/environments/1/secrets \
 
 | 变量                                   | 作用                                                |
 | -------------------------------------- | --------------------------------------------------- |
-| `TESTPILOT_SERVER_URL`                 | TestPilot Server 地址(init / sync-metadata)        |
+| `TESTPILOT_SERVER_URL`                 | csspilot Server 地址(init / sync-metadata)        |
 | `TEST_BASE_URL` / `STAGING_BASE_URL`  | 环境配置引用的被测系统地址;加载配置时由进程环境注入 `${VAR}` 引用,未设置的保持原样并由 doctor / inspect 标记缺失 |
 | `WECHAT_DEVTOOLS_CLI`                  | 指定开发者工具 cli 路径(探测优先级最高)             |
 | `TESTPILOT_MINIPROGRAM_PROJECT_PATH`   | 小程序项目路径(可被 testpilot.yaml 覆盖)            |
@@ -195,7 +195,7 @@ curl -X POST $SERVER/api/projects/1/environments/1/secrets \
 | `TESTPILOT_STEP_TIMEOUT`               | 单步操作超时毫秒,默认 15000                         |
 | `TESTPILOT_SKILL_DIR`                  | init 安装 Skill 的自定义源目录                      |
 
-除上表外,项目根目录的 **`.env.testing` 文件会自动加载**(Node 内建 `process.loadEnvFile`),适合放测试环境的本地敏感值;优先级为 **真实环境变量 > `.env.testing` 文件**。刻意**不加载前端项目自身的 `.env`**(已被 Vite / Next 等构建工具占用,混用互相污染)。`.env.testing` 含测试凭据,务必加入 `.gitignore`(init 自动写入)。旧版本生成的 `.env`(TestPilot 变量)请迁移为 `.env.testing`。
+除上表外,项目根目录的 **`.env.testing` 文件会自动加载**(Node 内建 `process.loadEnvFile`),适合放测试环境的本地敏感值;优先级为 **真实环境变量 > `.env.testing` 文件**。刻意**不加载前端项目自身的 `.env`**(已被 Vite / Next 等构建工具占用,混用互相污染)。`.env.testing` 含测试凭据,务必加入 `.gitignore`(init 自动写入)。旧版本生成的 `.env`(csspilot 变量)请迁移为 `.env.testing`。
 
 ## 产物目录
 

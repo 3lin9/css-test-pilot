@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "TestPilot Control Plane API:项目管理 / Case 元数据 / Run 编排 / Report 元数据",
+  "description": "csspilot Control Plane API:项目管理 / Case 元数据 / Run 编排 / Report 元数据",
   "scripts": {
     "dev": "tsx watch src/main.ts",
     "start": "tsx src/main.ts",

@@ -1,4 +1,4 @@
-// TestPilot 汇总报告样稿生成器:生成 docs/samples/summary.html(自包含单文件,纯演示数据)
+// csspilot 汇总报告样稿生成器:生成 docs/samples/summary.html(自包含单文件,纯演示数据)
 // 产品化时,本文件的渲染模板与聚合逻辑将迁移为 `csspilot summary` 命令的实现参考。
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -216,7 +216,7 @@ const html = `<!doctype html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8" />
-<title>TestPilot 汇总报告(样稿)</title>
+<title>csspilot 汇总报告(样稿)</title>
 <style>
   :root { --ok:#1a7f37; --fail:#cf222e; --warn:#bf8700; --skip:#6e7781; --line:#d0d7de; --muted:#59636e; }
   * { box-sizing: border-box; }
@@ -255,7 +255,7 @@ const html = `<!doctype html>
 </head>
 <body>
 <div class="wrap">
-  <h1>TestPilot 汇总报告 <span class="sample-tag">样稿(演示数据)</span></h1>
+  <h1>csspilot 汇总报告 <span class="sample-tag">样稿(演示数据)</span></h1>
   <p class="meta">统计范围:最近 ${runsView.length} 次运行(${esc(runsView[0].date)} → ${esc(runsView.at(-1).date)})· branch:main / release-1.2 · workspace:mall-test · 交互可点:趋势悬浮、分类条、Flaky 用例名、表头排序、平台筛选、搜索</p>
 
   <div class="cards">

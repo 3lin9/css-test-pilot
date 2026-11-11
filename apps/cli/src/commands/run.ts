@@ -1,12 +1,21 @@
 import { join } from 'node:path'
 import { Command } from 'commander'
 import { isYamlCasePath, runNativeCases } from '@testpilot/sdk'
+import { failMark, infoMark, okMark, paint, startSpinner } from '../lib/ui'
 
 /** run 的退出码契约:0=全过/跳过,1=产品失败或证据不足,2=环境/前置阻塞(非产品回归) */
 export function exitCodeForSummary(status: 'passed' | 'failed' | 'blocked' | 'skipped' | 'inconclusive'): 0 | 1 | 2 {
   if (status === 'failed' || status === 'inconclusive') return 1
   if (status === 'blocked') return 2
   return 0
+}
+
+const STATUS_PAINT: Record<string, (text: string) => string> = {
+  passed: (text) => paint(text, 'green'),
+  failed: (text) => paint(text, 'red'),
+  blocked: (text) => paint(text, 'yellow'),
+  inconclusive: (text) => paint(text, 'yellow'),
+  skipped: (text) => paint(text, 'gray'),
 }
 
 export function makeRunCommand(): Command {
@@ -23,8 +32,11 @@ export function makeRunCommand(): Command {
         return
       }
 
+      // 子进程输出进 run 目录,终端无回显;spinner 让等待可见(非 TTY 自动禁用)
+      const spinner = startSpinner('csspilot run — 执行原生用例…')
       try {
         const result = await runNativeCases({ paths: requested, ingest: true })
+        spinner.stop()
         if (result.files.length === 0) {
           console.error('未找到原生用例。请写入 tests/e2e/web/*.spec.ts、tests/e2e/miniapp/*.test.ts 或 tests/e2e/api/*.test.ts。')
           process.exitCode = 1
@@ -32,12 +44,16 @@ export function makeRunCommand(): Command {
         }
         if (result.summary) {
           const totals = result.summary.totals
+          const statusText = STATUS_PAINT[result.summary.status]?.(result.summary.status.toUpperCase()) ?? result.summary.status.toUpperCase()
           console.log(
-            `Run ${result.runId}: ${result.summary.status.toUpperCase()} — 用例 ✓${totals.passed} ✗${totals.failed} ⊘${totals.blocked ?? 0} ?${totals.inconclusive ?? 0} ↷${totals.skipped ?? 0}`,
+            `Run ${result.runId}: ${statusText} — 用例 ${okMark()}${totals.passed} ${failMark()}${totals.failed} ⊘${totals.blocked ?? 0} ?${totals.inconclusive ?? 0} ↷${totals.skipped ?? 0}`,
           )
           console.log(`产物目录:${join('.testpilot', 'artifacts', 'runs', result.runId ?? '')}`)
           console.log(`截图目录:${join('.testpilot', 'artifacts', 'shots', result.runId ?? '')}`)
           console.log('查看报告:npx csspilot report')
+          if (result.summary.status === 'failed' || result.summary.status === 'inconclusive') {
+            console.log(`${infoMark()} 失败用例已保留 trace,回放:npx csspilot report --trace`)
+          }
         } else {
           console.log(`原生脚本 ${result.files.length} 个:${result.status.toUpperCase()}`)
         }
@@ -45,6 +61,7 @@ export function makeRunCommand(): Command {
           result.summary?.status ?? (result.status === 'failed' ? 'failed' : 'passed'),
         )
       } catch (err) {
+        spinner.stop()
         console.error(err instanceof Error ? err.message : err)
         process.exitCode = 1
       }

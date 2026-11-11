@@ -21,5 +21,7 @@ export {
 } from './native-ingest'
 export { collectHistory } from './history'
 export type { HistoryPoint } from './history'
+export { diffLines, extractAssertionDiff, renderAssertionDiffHtml } from './diff'
+export type { AssertionDiff, DiffLine } from './diff'
 export { toSummaryView } from './summary'
 export type { ReportSummaryView } from './summary'

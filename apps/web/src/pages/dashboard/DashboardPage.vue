@@ -47,10 +47,10 @@ const arc = (count: number): number => (outcomes.value.total > 0 ? (count / outc
 <template>
   <div class="page-head">
     <h1 class="page-title">{{ greeting }}</h1>
-    <p class="page-sub">测试资产与执行概况总览。用 <RouterLink to="/agent">TestPilot AI</RouterLink> 规划 Case 并分析运行结果。</p>
+    <p class="page-sub">测试资产与执行概况总览。用 <RouterLink to="/agent">csspilot AI</RouterLink> 规划 Case 并分析运行结果。</p>
   </div>
 
-  <div v-if="error" class="error-banner">{{ error }}(请确认 TestPilot Server 已启动)</div>
+  <div v-if="error" class="error-banner">{{ error }}(请确认 csspilot Server 已启动)</div>
 
   <div class="cards">
     <StatCard :value="store.state.projects.length" label="项目总数" tone="purple" icon="folder" />

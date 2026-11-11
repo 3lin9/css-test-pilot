@@ -30,7 +30,7 @@ export function renderTestpilotYaml(info: ProjectInfo): string {
   const adapters = adaptersFor(info.type)
     .map((item) => `  - ${item}`)
     .join('\n')
-  return `# TestPilot 项目配置(Source of Truth)
+  return `# csspilot 项目配置(Source of Truth)
 version: 1
 
 project:
@@ -58,7 +58,7 @@ ${adapters}
 # 额外业务系统(需求跨系统时登记,doctor 逐系统探测可达性)
 systems: {}
 
-# TestPilot Server(Control Plane)地址;init 关联项目与 sync-metadata 使用
+# csspilot Server(Control Plane)地址;init 关联项目与 sync-metadata 使用
 # 也可用环境变量 TESTPILOT_SERVER_URL 覆盖
 # server:
 #   baseUrl: http://127.0.0.1:3000
@@ -82,7 +82,7 @@ api:
  * .env.testing 直接填真实值,不需要"复制为 .env"这一步。含测试凭据,init 会写入 .gitignore。
  */
 export function renderDotEnvTesting(): string {
-  return `# TestPilot 测试环境变量(CLI 自动加载本文件,直接填入真实值即可,无需复制)
+  return `# csspilot 测试环境变量(CLI 自动加载本文件,直接填入真实值即可,无需复制)
 # 只放测试相关变量,与前端项目自身的 .env 互不影响;本文件含测试凭据,已加入 .gitignore
 # 优先级:真实环境变量 > 本文件;testpilot.yaml 中的 \${VAR} 引用运行时自动注入
 
@@ -97,7 +97,7 @@ API_BASE_URL=http://127.0.0.1:8080/api
 # MINIAPP_PROJECT_PATH=path/to/miniprogram
 # MINIAPP_CLI_PATH=C:/Program Files (x86)/Tencent/微信web开发者工具/cli.bat
 
-# TestPilot Server(Control Plane,可选)
+# csspilot Server(Control Plane,可选)
 # TESTPILOT_SERVER_URL=http://127.0.0.1:3000
 
 # 账号凭据(按角色登记,脚本用 process.env.TESTPILOT_ACCOUNT_<REF> 读取),例如:
@@ -109,7 +109,7 @@ API_BASE_URL=http://127.0.0.1:8080/api
 export async function ensureGitignoreEntry(
   root: string,
   entry: string,
-  comment = 'TestPilot 本地环境变量',
+  comment = 'csspilot 本地环境变量',
 ): Promise<'created' | 'updated' | 'exists'> {
   const gitignorePath = join(root, '.gitignore')
   if (!(await exists(gitignorePath))) {
@@ -156,7 +156,7 @@ export async function initTestPilotConfig(
     '.testpilot/cache/',
     '.testpilot/ready/',
   ]) {
-    await ensureGitignoreEntry(root, entry, 'TestPilot 本地运行数据（不要提交）')
+    await ensureGitignoreEntry(root, entry, 'csspilot 本地运行数据（不要提交）')
   }
 
   // 3. Runtime 目录

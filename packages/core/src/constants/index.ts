@@ -1,6 +1,6 @@
 import { join } from 'node:path'
 
-/** TestPilot 运行时目录与默认值约定 */
+/** csspilot 运行时目录与默认值约定 */
 export const TESTPILOT_DIR = '.testpilot'
 export const RUNS_DIR = `${TESTPILOT_DIR}/artifacts/runs`
 /** 成功/失败用例的截图,按 runId 分子目录 */

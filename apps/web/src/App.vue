@@ -25,7 +25,7 @@ onMounted(async () => {
         <span class="dot" :class="{ down: serverOk === false }"></span>
         {{ serverOk === false ? 'Server 未连接' : 'Server 已连接' }}
       </span>
-      <div class="avatar" title="TestPilot">T</div>
+      <div class="avatar" title="csspilot">T</div>
     </div>
   </header>
 
@@ -47,7 +47,7 @@ onMounted(async () => {
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 3h9l4 4v14H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" /><path d="M14 3v5h5" /><path d="M9 13h6M9 17h6" /></svg>
       </RouterLink>
       <div class="sidebar-spacer"></div>
-      <div class="sidebar-user" title="TestPilot">T</div>
+      <div class="sidebar-user" title="csspilot">T</div>
     </aside>
     <main class="main">
       <RouterView />

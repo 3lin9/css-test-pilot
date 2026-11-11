@@ -88,7 +88,7 @@ export async function syncSkillFiles(
     const src = resolveSkillSourceDir()
     if (!src) {
       throw new Error(
-        '无法定位 TestPilot Skill 源目录;可通过环境变量 TESTPILOT_SKILL_DIR 指定 skills/testpilot 路径',
+        '无法定位 csspilot Skill 源目录;可通过环境变量 TESTPILOT_SKILL_DIR 指定 skills/testpilot 路径',
       )
     }
     await mkdir(dirname(dest), { recursive: true })
@@ -163,7 +163,7 @@ function renderProjectMd(
   const available = adapters.filter((item) => item.available).map((item) => item.id)
   return `# Project
 
-自动生成于 \`csspilot init\`,描述本项目的 TestPilot 接入信息;Agent 优先从这里了解项目。
+自动生成于 \`csspilot init\`,描述本项目的 csspilot 接入信息;Agent 优先从这里了解项目。
 
 - Project name: ${info.name}
 - Project type: ${info.type}

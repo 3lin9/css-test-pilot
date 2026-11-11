@@ -71,7 +71,7 @@ function infraError(message: string): Error {
 
 /**
  * 建立小程序自动化会话,返回官方 MiniProgram;之后的操作全部是原生 API,不做步骤翻译。
- * 连接模式的稳定性收益与官方参数透传见《TestPilot-原生脚本改造设计.md》§6.1。
+ * 连接模式的稳定性收益与官方参数透传见《csspilot-原生脚本改造设计.md》§6.1。
  */
 export async function launchMiniApp(options: LaunchMiniAppOptions = {}): Promise<MiniProgramLike> {
   const automator = await loadAutomator()

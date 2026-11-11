@@ -1,4 +1,4 @@
-/** TestPilot 统一错误基类:携带机器可读错误码 */
+/** csspilot 统一错误基类:携带机器可读错误码 */
 export class TestPilotError extends Error {
   readonly code: string
 

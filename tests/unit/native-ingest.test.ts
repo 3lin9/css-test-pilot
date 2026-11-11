@@ -354,6 +354,153 @@ test('ingest 截图:passed/failed 留在 shots,其它状态丢掉', async () => 
   await expect(stat(join(shotsDir, inconclusiveMini))).rejects.toThrow()
 })
 
+test('ingest 观测:console/network 附件按 base64 解码归一,trace 复制进 run 目录', async () => {
+  const root = await makeProject()
+  const webSpecAbs = join(root, 'tests/e2e/web/order.spec.ts')
+  const runId = '20261028-010'
+  const tracesDir = join(root, '.testpilot', 'artifacts', 'runs', runId, 'traces')
+
+  // 真实链路形态:JSON reporter 的 buffer 附件 body 恒为 base64
+  const consoleBody = Buffer.from(
+    JSON.stringify([{ level: 'error', text: 'boom' }, { bad: 1 }]),
+  ).toString('base64')
+  const networkBody = Buffer.from(
+    JSON.stringify([{ method: 'GET', url: 'https://x/api', status: 500, durationMs: 12 }, { nope: true }]),
+  ).toString('base64')
+  const traceZip = join(root, 'trace-src.zip')
+  await writeFile(traceZip, 'PK-trace')
+
+  const playwright = JSON.stringify({
+    suites: [
+      {
+        file: 'tests/e2e/web/order.spec.ts',
+        specs: [
+          {
+            title: '下单页加载',
+            tests: [
+              {
+                status: 'unexpected',
+                results: [
+                  {
+                    status: 'failed',
+                    duration: 10,
+                    error: { message: '期望 10 实际 9' },
+                    attachments: [
+                      { name: 'testpilot-console', contentType: 'application/json', body: consoleBody },
+                      { name: 'testpilot-network', contentType: 'application/json', body: networkBody },
+                      { name: 'trace', path: traceZip },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+          {
+            title: '无 trace 的用例',
+            tests: [
+              {
+                status: 'unexpected',
+                results: [
+                  {
+                    status: 'failed',
+                    duration: 5,
+                    error: { message: '断言失败' },
+                    attachments: [{ name: 'trace', path: join(root, 'missing.zip') }],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  })
+
+  const summary = await buildNativeRunSummary({
+    runId,
+    startedAt: new Date(),
+    root,
+    files: [webSpecAbs],
+    playwrightJsonPath: await writeTemp(root, 'playwright.json', playwright),
+    tracesDir,
+  })
+
+  const failed = summary.cases.find((item) => item.rowId === '下单页加载')
+  // 附件按 base64 解码;坏条目({bad:1}/{nope:true})整条跳过
+  expect(failed?.consoleLog).toEqual([{ level: 'error', text: 'boom' }])
+  expect(failed?.networkLog).toEqual([{ method: 'GET', url: 'https://x/api', status: 500, durationMs: 12 }])
+  // trace 复制进 run 目录,字段改写为相对 run 目录路径
+  expect(failed?.trace).toBe('traces/order.spec--下单页加载.zip')
+  expect(await readFile(join(tracesDir, 'order.spec--下单页加载.zip'), 'utf8')).toBe('PK-trace')
+  // 源文件不存在:去掉引用,不留死链
+  expect(summary.cases.find((item) => item.rowId === '无 trace 的用例')?.trace).toBeUndefined()
+})
+
+test('ingest 视频:失败用例 video 复制进 run 目录并改写为相对路径,死链移除', async () => {
+  const root = await makeProject()
+  const webSpecAbs = join(root, 'tests/e2e/web/order.spec.ts')
+  const runId = '20261028-011'
+  const videosDir = join(root, '.testpilot', 'artifacts', 'runs', runId, 'videos')
+  const videoFile = join(root, 'video-src.webm')
+  await writeFile(videoFile, 'webm-data')
+
+  const playwright = JSON.stringify({
+    suites: [
+      {
+        file: 'tests/e2e/web/order.spec.ts',
+        specs: [
+          {
+            title: '下单页加载',
+            tests: [
+              {
+                status: 'unexpected',
+                results: [
+                  {
+                    status: 'failed',
+                    duration: 10,
+                    error: { message: '期望 10 实际 9' },
+                    attachments: [{ name: 'video', path: videoFile }],
+                  },
+                ],
+              },
+            ],
+          },
+          {
+            title: '视频源已丢的用例',
+            tests: [
+              {
+                status: 'unexpected',
+                results: [
+                  {
+                    status: 'failed',
+                    duration: 5,
+                    error: { message: '断言失败' },
+                    attachments: [{ name: 'video', path: join(root, 'missing.webm') }],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  })
+
+  const summary = await buildNativeRunSummary({
+    runId,
+    startedAt: new Date(),
+    root,
+    files: [webSpecAbs],
+    playwrightJsonPath: await writeTemp(root, 'playwright.json', playwright),
+    videosDir,
+  })
+
+  const failed = summary.cases.find((item) => item.rowId === '下单页加载')
+  expect(failed?.video).toBe('videos/order.spec--下单页加载.webm')
+  expect(await readFile(join(videosDir, 'order.spec--下单页加载.webm'), 'utf8')).toBe('webm-data')
+  expect(summary.cases.find((item) => item.rowId === '视频源已丢的用例')?.video).toBeUndefined()
+})
+
 async function writeTemp(root: string, name: string, content: string): Promise<string> {
   const file = join(root, name)
   await writeFile(file, content)

@@ -52,6 +52,21 @@ export interface HttpEvidence {
   responseSnippet?: string
 }
 
+/** UI 观测:web 用例 fixtures.ts 采集的浏览器控制台消息(console / pageerror,条数与单条长度有上限) */
+export interface ConsoleEntry {
+  level: string
+  text: string
+}
+
+/** UI 观测:web 用例 fixtures.ts 采集的已完成网络请求(条数与 URL 长度有上限) */
+export interface NetworkEntry {
+  method: string
+  url: string
+  status: number
+  /** 请求发出到响应结束的毫秒数;拿不到时省略 */
+  durationMs?: number
+}
+
 export interface CaseResult {
   caseId: string
   caseName: string
@@ -72,10 +87,14 @@ export interface CaseResult {
   warnings?: string[]
   /** 相对 run 目录的用例录屏(仅支持录制的 adapter 产出) */
   video?: string
-  /** 相对 run 目录的 trace 包(如 Playwright trace.zip) */
+  /** 相对 run 目录的 trace 包(如 Playwright trace.zip,失败用例由运行器注入 retain-on-failure) */
   trace?: string
   /** 相对 run 目录的运行时诊断(仅失败用例;console 尾部/异常/页面栈/systemInfo) */
   diagnostics?: string
+  /** UI 观测:控制台消息(testpilot-console attachment,经 ingest 归一) */
+  consoleLog?: ConsoleEntry[]
+  /** UI 观测:网络请求(testpilot-network attachment,经 ingest 归一) */
+  networkLog?: NetworkEntry[]
 }
 
 export interface RunTotals {

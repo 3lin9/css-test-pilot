@@ -1,7 +1,7 @@
 # Workflow:测试需求评审(可测性评审 + 测试点分析)
 
 输入:需求文档 / PRD / 用户的一句话(如"帮我测试用户下单")。
-产出:**原子规则清单** + **规则矩阵** + **测试点清单** + **视角覆盖表** + **QA → TestPilot Coverage Map** + **系统盘点** + **流程图** + **环境与资料准备清单** + 澄清问题 + 评审结论。测试点清单是 `create-case` 的正式输入;随后按平台写成原生脚本,不再生成 YAML。
+产出:**原子规则清单** + **规则矩阵** + **测试点清单** + **视角覆盖表** + **QA → csspilot Coverage Map** + **系统盘点** + **流程图** + **环境与资料准备清单** + 澄清问题 + 评审结论。测试点清单是 `create-case` 的正式输入;随后按平台写成原生脚本,不再生成 YAML。
 
 ## 步骤
 
@@ -68,8 +68,8 @@
 8. **对标 QA 用例库**(用户提供时):
    - 将每条 QA 用例映射到一个或多个 TP
    - 标记 `covered` / `partial` / `missing` / `conflict`
-   - QA 有而 TestPilot 无的覆盖形成待补 checklist
-   - TestPilot 有而 QA 无的覆盖保留并说明来源,不得为追求一致而删除
+   - QA 有而 csspilot 无的覆盖形成待补 checklist
+   - csspilot 有而 QA 无的覆盖保留并说明来源,不得为追求一致而删除
    - 将完整结果写入 `tests/e2e/reviews/<需求-slug>-coverage.md`,回复中只给摘要和文件路径
 9. **澄清阻塞项**:需求缺失、矛盾、不可判定时,列出问题向用户提问。**不猜测**。charter 三分判定产生的澄清问题(带视角与风险等级)一并在此列出。
 10. **给出评审结论**:
@@ -136,14 +136,14 @@ flowchart LR
 
 矩阵只使用需求、代码、配置、已有 Case 或 QA 用例中的真实维度。缺少证据时提出问题,不得套用电商默认字段。
 
-## QA → TestPilot Coverage Map 模板
+## QA → csspilot Coverage Map 模板
 
 ```markdown
 | QA Case | 对应 TP | 覆盖状态 | 差异 / 冲突 | 行动 |
 | --- | --- | --- | --- | --- |
 | QA-101 | TP-001 | covered | — | 无 |
 | QA-102 | TP-004 | partial | 缺少上边界 | 补 dataset 行 |
-| QA-103 | — | missing | TestPilot 无对应 TP | 新增 TP 和 Case |
+| QA-103 | — | missing | csspilot 无对应 TP | 新增 TP 和 Case |
 
 ## Missing coverage checklist
 - [ ] QA-103: 新增……

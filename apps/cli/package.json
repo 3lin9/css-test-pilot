@@ -1,12 +1,32 @@
 {
   "name": "csspilot",
   "version": "0.9.5",
-  "description": "TestPilot — AI Native 跨端业务测试基础设施 CLI",
+  "description": "csspilot — AI-native cross-platform E2E testing CLI (Web / WeChat Mini Program / API)",
+  "keywords": [
+    "testing",
+    "e2e",
+    "e2e-testing",
+    "test-automation",
+    "playwright",
+    "miniprogram",
+    "wechat",
+    "weapp",
+    "mini-program",
+    "ai-testing",
+    "cross-platform",
+    "testing-framework",
+    "cli"
+  ],
+  "author": "3lin9",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/3lin9/css-test-pilot.git"
   },
+  "bugs": {
+    "url": "https://github.com/3lin9/css-test-pilot/issues"
+  },
+  "homepage": "https://github.com/3lin9/css-test-pilot#readme",
   "type": "module",
   "engines": {
     "node": ">=22"

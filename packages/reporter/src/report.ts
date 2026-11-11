@@ -1,8 +1,9 @@
-import { writeFile } from 'node:fs/promises'
+import { readFile, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
-import type { CaseResult, RunSummary, StepResult } from '@testpilot/core'
+import { RUNS_DIR, type CaseResult, type RunSummary, type StepResult } from '@testpilot/core'
 import { verdictFromErrorCode, type Verdict } from '@testpilot/core'
 import { categoryLabel, classifyFromCode, classifyFailure, FAILURE_CATEGORIES, type FailureCategory } from './classify'
+import { renderAssertionDiffHtml } from './diff'
 import { collectHistory, type HistoryPoint } from './history'
 import { toSummaryView, type ReportSummaryView } from './summary'
 
@@ -39,7 +40,8 @@ const HISTORY_LIMIT = 12
 
 /**
  * 生成 report.json(结构化,含历史趋势与失败分类)+ report.html(自包含单文件交互式报告)。
- * 历史趋势默认聚合 runs 目录下最近 12 次运行;截图/视频等附件使用相对路径,报告与 run 目录一起分发。
+ * 历史趋势默认聚合 runs 目录下最近 12 次运行;截图在体积上限内内联成 data URI(报告可单发分享),
+ * 超限或缺失回退相对路径;trace 用例带"Trace Viewer 一键命令"。
  */
 export async function writeReports(
   runDir: string,
@@ -77,6 +79,8 @@ export async function writeReports(
   const categoryLabels: Record<string, string> = {}
   for (const item of FAILURE_CATEGORIES) categoryLabels[item.id] = item.label
 
+  const inline = await inlineScreenshots(cases, dir)
+
   const data: ReportData = {
     generatedAt,
     summary: { ...summary, cases },
@@ -89,7 +93,7 @@ export async function writeReports(
   const jsonPath = join(dir, 'report.json')
   const htmlPath = join(dir, 'report.html')
   await writeFile(jsonPath, JSON.stringify(data, null, 2), 'utf8')
-  await writeFile(htmlPath, renderHtml(data), 'utf8')
+  await writeFile(htmlPath, renderHtml(data, inline), 'utf8')
   return { json: jsonPath, html: htmlPath }
 }
 
@@ -113,17 +117,18 @@ function categoryChips(data: ReportData): string {
   return chips.join('\n')
 }
 
-export function renderHtml(data: ReportData): string {
+export function renderHtml(data: ReportData, inline: Record<string, string> = {}): string {
   const view = toSummaryView(data.summary)
   const summary = data.summary
   const trendSvg = renderTrend(data)
-  const casesHtml = groupedCasesHtml(summary.cases)
+  const timelineHtml = renderTimeline(summary.cases)
+  const casesHtml = groupedCasesHtml(summary.cases, inline, summary.runId)
   const chips = categoryChips(data)
   return `<!doctype html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8" />
-<title>TestPilot Report ${escapeHtml(summary.runId)}</title>
+<title>csspilot Report ${escapeHtml(summary.runId)}</title>
 <style>
   :root { --ok:#1a7f37; --fail:#cf222e; --warn:#9a6700; --skip:#6e7781; --blocked:#8250df; --inconclusive:#9a6700; --line:#d0d7de; --muted:#59636e; }
   * { box-sizing: border-box; }
@@ -160,11 +165,41 @@ export function renderHtml(data: ReportData): string {
   .hide { display: none !important; }
   .meta { color: var(--muted); font-size: 12px; margin: 6px 0; }
   img.shot { display: block; max-width: min(720px, 100%); margin: 8px 0; border: 1px solid var(--line); border-radius: 6px; background: #fff; }
+  .tracebox { background: #fff; border: 1px solid var(--line); border-left: 3px solid #0969da; border-radius: 8px; padding: 10px 14px; margin: 8px 0; }
+  .tracebox.fail { border-left-color: var(--fail); background: #fff7f7; }
+  .tracebox .cmd { display: flex; gap: 8px; align-items: center; margin-top: 6px; flex-wrap: wrap; }
+  .tracebox .cmd code { flex: 1; min-width: 240px; user-select: all; }
+  .tracebox video.vid { display: block; max-width: min(720px, 100%); margin: 8px 0 4px; border: 1px solid var(--line); border-radius: 6px; background: #000; }
+  .diff { background: #fff; border: 1px solid var(--line); border-left: 3px solid var(--fail); border-radius: 8px; padding: 10px 14px; margin: 8px 0; }
+  .diff .d-head { font-weight: 600; font-size: 13px; margin-bottom: 6px; }
+  table.d-table { font-family: ui-monospace, Consolas, monospace; font-size: 12px; border-collapse: collapse; width: 100%; }
+  table.d-table td { padding: 1px 8px; white-space: pre-wrap; word-break: break-all; }
+  table.d-table td.d-sign { width: 16px; padding: 1px 2px; user-select: none; text-align: center; }
+  tr.d-del { background: #ffebe9; } tr.d-del .d-sign { color: var(--fail); font-weight: 700; }
+  tr.d-add { background: #e6ffec; } tr.d-add .d-sign { color: var(--ok); font-weight: 700; }
+  .timeline { background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; }
+  .tl-row { display: flex; align-items: center; gap: 8px; padding: 2px 0; cursor: pointer; font-size: 12px; }
+  .tl-row:hover { background: #f6f8fa; }
+  .tl-label { flex: 0 0 220px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tl-track { flex: 1; background: #f6f8fa; border-radius: 4px; height: 12px; overflow: hidden; }
+  .tl-bar { display: block; height: 100%; border-radius: 4px; }
+  .tl-bar.passed { background: var(--ok); } .tl-bar.failed { background: var(--fail); } .tl-bar.blocked { background: var(--blocked); } .tl-bar.inconclusive { background: var(--warn); } .tl-bar.skipped { background: var(--skip); }
+  .tl-dur { flex: 0 0 48px; text-align: right; color: var(--muted); }
+  details.obs { border: 1px solid var(--line); border-radius: 6px; margin: 8px 0; background: #fff; }
+  details.obs > summary { cursor: pointer; padding: 6px 10px; font-size: 13px; }
+  ul.console { list-style: none; margin: 0; padding: 4px 10px; font-size: 12px; font-family: ui-monospace, Consolas, monospace; max-height: 260px; overflow: auto; }
+  ul.console li { display: flex; gap: 8px; padding: 1px 0; border-top: 1px dashed #f0f2f4; }
+  ul.console .lv { flex: 0 0 70px; color: var(--muted); text-transform: uppercase; }
+  ul.console .lv-error, ul.console .lv-pageerror { color: var(--fail); }
+  ul.console .lv-warning { color: var(--warn); }
+  table.net { font-size: 12px; }
+  table.net td.url { word-break: break-all; }
+  td.net-bad { color: var(--fail); font-weight: 600; }
 </style>
 </head>
 <body>
 <div class="wrap">
-  <h1>TestPilot 测试报告 <span class="badge ${summary.status}">${summary.status}</span></h1>
+  <h1>csspilot 测试报告 <span class="badge ${summary.status}">${summary.status}</span></h1>
   <p class="meta">run <code>${escapeHtml(summary.runId)}</code> · 生成于 ${escapeHtml(data.generatedAt)} · 耗时 ${(view.durationMs / 1000).toFixed(1)}s</p>
 
   <div class="cards">
@@ -179,6 +214,9 @@ export function renderHtml(data: ReportData): string {
 
   <h2>历史趋势(最近 ${data.history.length + 1} 次运行)</h2>
   <div class="trend">${trendSvg}</div>
+
+  <h2>运行时间线</h2>
+  <div class="timeline">${timelineHtml}</div>
 
   <h2>失败分类</h2>
   <div class="toolbar" id="cat-chips">${chips}</div>
@@ -249,6 +287,28 @@ export function renderHtml(data: ReportData): string {
     document.querySelectorAll('details.case').forEach(function (c) { c.open = false; });
   });
 
+  document.querySelectorAll('[data-copy]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var text = btn.getAttribute('data-copy') || '';
+      var done = function (okc) {
+        btn.textContent = okc ? '已复制' : '复制失败,请手动选择';
+        setTimeout(function () { btn.textContent = '复制命令'; }, 1600);
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(function () { done(true); }, function () { done(false); });
+      } else done(false);
+    });
+  });
+  document.querySelectorAll('[data-tl]').forEach(function (row) {
+    row.addEventListener('click', function () {
+      var cid = row.getAttribute('data-cid');
+      if (!cid) return;
+      // CSS.escape 全现代浏览器可用(Chrome 46+,2015);此前手写 fallback 在模板字符串里连环转义出错
+      var el = document.querySelector('details.case[data-cid="' + CSS.escape(cid) + '"]');
+      if (el) { el.open = true; el.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+    });
+  });
+
   function failedSteps(card) {
     return data.summary.cases.find(function (c) { return c.caseId === card; });
   }
@@ -259,7 +319,11 @@ export function renderHtml(data: ReportData): string {
 </html>`
 }
 
-function groupedCasesHtml(cases: ReportCase[]): string {
+function groupedCasesHtml(
+  cases: ReportCase[],
+  inline: Record<string, string>,
+  runId: string,
+): string {
   const groups = new Map<string, ReportCase[]>()
   for (const item of cases) {
     const current = groups.get(item.caseId) ?? []
@@ -270,25 +334,24 @@ function groupedCasesHtml(cases: ReportCase[]): string {
     .map(
       ([caseId, rows]) => `<section class="template">
   <h3>${escapeHtml(caseId)} <span class="muted">· ${rows.length} 个数据行</span></h3>
-  ${rows.map((item) => caseHtml(item)).join('\n')}
+  ${rows.map((item) => caseHtml(item, inline, runId)).join('\n')}
 </section>`,
     )
     .join('\n')
 }
 
-function caseHtml(item: ReportCase): string {
+function caseHtml(item: ReportCase, inline: Record<string, string>, runId: string): string {
   const rows = item.steps.map((step) => stepHtml(step)).join('\n')
   const errorLine = item.error ? `<p class="error">${escapeHtml(item.error)}</p>` : ''
+  // 失败断言的结构化对比(Playwright expect / node assert),一眼看到期望与实际的差异
+  const failedStep = item.steps.find((step) => step.status === 'failed' && step.error)
+  const diffBlock = renderAssertionDiffHtml(failedStep?.error ?? item.error, escapeHtml)
   const skipLine = item.skipReason
     ? `<p class="muted">${escapeHtml(item.skipReason)}${item.missingDependencies?.length ? `: ${escapeHtml(item.missingDependencies.join(', '))}` : ''}</p>`
     : ''
   const warningLine = item.warnings?.length
     ? `<p class="error">⚠ ${item.warnings.map(escapeHtml).join('<br />⚠ ')}</p>`
     : ''
-  const links: string[] = []
-  if (item.video) links.push(`<a href="${escapeHtml(item.video)}">视频</a>`)
-  if (item.trace) links.push(`<a href="${escapeHtml(item.trace)}">Trace</a>`)
-  const linksLine = links.length > 0 ? `<p>${links.join(' · ')}</p>` : ''
   const search = escapeHtml(`${item.caseId} ${item.rowId ?? 'default'} ${item.caseName} ${item.file}`).replaceAll('"', '&quot;')
   const cats = escapeHtml(item.categories.join(','))
   const shots = item.steps
@@ -296,27 +359,93 @@ function caseHtml(item: ReportCase): string {
     .filter((shot): shot is string => Boolean(shot))
   const shotBlock = shots
     .map((shot) => {
-      const href = escapeHtml(screenshotHref(shot))
+      const href = escapeHtml(inline[shot] ?? screenshotHref(shot))
       return `<p><a href="${href}">截图</a><img class="shot" src="${href}" alt="截图" /></p>`
     })
     .join('\n')
+  const hasObs = (item.consoleLog?.length ?? 0) > 0 || (item.networkLog?.length ?? 0) > 0
+  const evidenceBox = evidenceBoxHtml(item, runId, hasObs)
+  const consoleBlock = item.consoleLog?.length
+    ? `<details class="obs"><summary>控制台(${item.consoleLog.length} 条)</summary><ul class="console">${item.consoleLog
+        .map((entry) => `<li><span class="lv lv-${escapeHtml(entry.level)}">${escapeHtml(entry.level)}</span><span>${escapeHtml(entry.text)}</span></li>`)
+        .join('')}</ul></details>`
+    : ''
+  const networkBlock = item.networkLog?.length
+    ? `<details class="obs"><summary>网络请求(${item.networkLog.length})</summary><table class="net"><tr><th>Method</th><th>Status</th><th>耗时</th><th>URL</th></tr>${item.networkLog
+        .map(
+          (entry) =>
+            `<tr><td>${escapeHtml(entry.method)}</td><td class="${entry.status >= 400 ? 'net-bad' : ''}">${entry.status}</td><td class="num">${entry.durationMs != null ? `${entry.durationMs}ms` : '-'}</td><td class="url">${escapeHtml(entry.url)}</td></tr>`,
+        )
+        .join('')}</table></details>`
+    : ''
   return `
-<details class="case" ${shots.length > 0 ? 'open' : ''} data-status="${item.status}" data-cats="${cats}" data-search="${search}">
+<details class="case" ${shots.length > 0 ? 'open' : ''} data-status="${item.status}" data-cats="${cats}" data-cid="${escapeHtml(item.caseId)}" data-search="${search}">
   <summary>
     <span class="badge ${item.status}">${item.status}</span>
     <b>数据行 ${escapeHtml(item.rowId ?? 'default')}</b> · ${escapeHtml(item.caseName)}
     <span class="muted">· ${item.steps.length} 步 · ${(item.durationMs / 1000).toFixed(1)}s${shots.length > 0 ? ' · 有截图' : ''}</span>
   </summary>
   ${errorLine}
+  ${diffBlock}
   ${skipLine}
   ${warningLine}
-  ${linksLine}
+  ${evidenceBox}
   ${shotBlock}
+  ${consoleBlock}
+  ${networkBlock}
   <table>
     <tr><th>#</th><th>阶段</th><th>target</th><th>action</th><th>状态</th><th>耗时</th><th>详情</th></tr>
     ${rows}
   </table>
 </details>`
+}
+
+/**
+ * 失败证据盒:trace 一键回放命令 + 失败视频内联播放,失败用例红色高亮。
+ * trace.zip 是 Playwright 的护城河(时间线 / DOM 快照逐帧 / 网络 / 控制台),show-trace 一步打开;
+ * 视频由业务项目 playwright.config 的 use.video='retain-on-failure' 开启后经 ingest 复制进 run 目录。
+ */
+function evidenceBoxHtml(item: ReportCase, runId: string, hasObs: boolean): string {
+  if (!item.trace && !item.video) return ''
+  const parts: string[] = []
+  if (item.trace) {
+    const rel = `${RUNS_DIR.replace(/\\/g, '/')}/${runId}/${item.trace.replace(/\\/g, '/')}`
+    const cmd = `npx playwright show-trace ${rel}`
+    const hint = hasObs
+      ? ''
+      : '<p class="muted">提示:用例从 tests/e2e/web/fixtures.ts 导入 test/expect(init 自动生成)后,报告会直接内嵌控制台与网络面板。</p>'
+    parts.push(
+      `<div><b>Trace Viewer</b> <span class="muted">时间线 · DOM 快照逐帧回放 · 网络请求 · 控制台,都在 trace 包里。在项目根目录执行:</span></div>
+  <div class="cmd"><code>${escapeHtml(cmd)}</code><button class="btn" data-copy="${escapeHtml(cmd)}">复制命令</button></div>
+  ${hint}`,
+    )
+  }
+  if (item.video) {
+    const href = escapeHtml(item.video)
+    parts.push(
+      `<video class="vid" controls preload="none" src="${href}"></video><p class="muted"><a href="${href}">下载视频</a>(失败录制,可拖动进度条看每一步)</p>`,
+    )
+  }
+  const highlighted = item.status === 'failed' || item.status === 'inconclusive'
+  return `<div class="tracebox${highlighted ? ' fail' : ''}">
+  ${parts.join('\n  ')}
+</div>`
+}
+
+/** 运行时间线:按用例执行顺序与耗时铺条形图,点击滚动到对应用例详情。 */
+function renderTimeline(cases: ReportCase[]): string {
+  if (cases.length === 0) return '<p class="muted">暂无用例</p>'
+  const total = Math.max(1, cases.reduce((sum, item) => sum + item.durationMs, 0))
+  const rows = cases
+    .map((item) => {
+      const pct = Math.max(1.5, (item.durationMs / total) * 100)
+      const label = item.rowId ? `${item.caseId} · ${item.rowId}` : item.caseId
+      const tip = `${label} ${(item.durationMs / 1000).toFixed(1)}s,点击查看详情`
+      return `<div class="tl-row" data-tl data-cid="${escapeHtml(item.caseId)}" title="${escapeHtml(tip)}"><span class="tl-label">${escapeHtml(label)}</span><span class="tl-track"><span class="tl-bar ${item.status}" style="width:${pct.toFixed(1)}%"></span></span><span class="tl-dur">${(item.durationMs / 1000).toFixed(1)}s</span></div>`
+    })
+    .join('\n')
+  return `${rows}
+<p class="muted">按用例执行顺序累计展示;web 端多 worker 并行时与真实并发有偏差,逐步回放请用 Trace Viewer。</p>`
 }
 
 function stepHtml(step: StepResult & { category?: FailureCategory }): string {
@@ -393,6 +522,40 @@ function screenshotHref(screenshot: string): string {
   const normalized = screenshot.replace(/\\/g, '/')
   if (normalized.startsWith('shots/')) return `../../${normalized}`
   return screenshot
+}
+
+/** 单图内联上限:超过则保留相对链接,防 HTML 体积失控。 */
+const INLINE_SHOT_LIMIT = 800 * 1024
+
+const SHOT_MIME: Record<string, string> = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+}
+
+/**
+ * 把 run 的截图内联成 data URI(报告单文件即可分享,不再依赖 artifacts 目录)。
+ * 截图路径相对 .testpilot/artifacts(shots/<runId>/x.png),基准目录是 runDir 的上两级;
+ * 文件缺失或超过体积上限时跳过,渲染侧回退相对链接。
+ */
+async function inlineScreenshots(cases: ReportCase[], runDir: string): Promise<Record<string, string>> {
+  const base = resolve(runDir, '..', '..')
+  const paths = new Set<string>()
+  for (const item of cases) {
+    for (const step of item.steps) if (step.screenshot) paths.add(step.screenshot)
+  }
+  const inline: Record<string, string> = {}
+  for (const shot of paths) {
+    const ext = shot.slice(shot.lastIndexOf('.')).toLowerCase()
+    const mime = SHOT_MIME[ext]
+    if (!mime) continue
+    const abs = resolve(base, shot.replace(/\\/g, '/'))
+    const buf = await readFile(abs).catch(() => undefined)
+    if (!buf || buf.length === 0 || buf.length > INLINE_SHOT_LIMIT) continue
+    inline[shot] = `data:${mime};base64,${buf.toString('base64')}`
+  }
+  return inline
 }
 
 function shortId(runId: string): string {

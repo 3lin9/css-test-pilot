@@ -32,8 +32,8 @@ export async function detectCi(root: string): Promise<CiDetection> {
   }
 }
 
-const CI_TEMPLATE = `# csspilot ci init 生成;Git Push -> TestPilot Server 的正式同步边界
-name: TestPilot
+const CI_TEMPLATE = `# csspilot ci init 生成;Git Push -> csspilot Server 的正式同步边界
+name: csspilot
 
 on:
   push:

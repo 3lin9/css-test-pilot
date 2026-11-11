@@ -17,7 +17,7 @@ export function categoryLabel(id: FailureCategory): string {
 const RULES: Array<{ id: FailureCategory; pattern: RegExp }> = [
   { id: 'assert', pattern: /断言失败|AssertionError|expect\(.+\)\.to/i },
   { id: 'element', pattern: /未找到元素|等待元素超时|waiting for locator|waiting for selector|element not found/i },
-  { id: 'adapter', pattern: /未注册 target|ADAPTER_NOT_FOUND|无法定位 TestPilot Skill/i },
+  { id: 'adapter', pattern: /未注册 target|ADAPTER_NOT_FOUND|无法定位 csspilot Skill/i },
   { id: 'env', pattern: /net::ERR|ECONNREFUSED|Connection closed|Failed to launch|服务端口|不可达|ENOTFOUND|EACCES/i },
   { id: 'timeout', pattern: /timeout|超时/i },
 ]

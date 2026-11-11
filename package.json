@@ -2,7 +2,7 @@
   "name": "testpilot-monorepo",
   "version": "0.1.0",
   "private": true,
-  "description": "TestPilot — AI Native 跨端业务测试基础设施",
+  "description": "csspilot — AI Native 跨端业务测试基础设施",
   "type": "module",
   "packageManager": "pnpm@10.32.1",
   "engines": {

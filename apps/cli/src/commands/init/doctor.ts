@@ -6,6 +6,7 @@ import { detectAdapters, type AdapterInfo } from './adapter-detector'
 import { collectEnvVarRefs } from './environment-initializer'
 import { detectProject, type ProjectInfo } from './project-detector'
 import { readManifestVersion, resolveSkillSourceDir } from './skill-installer'
+import { paint } from '../../lib/ui'
 
 export type CheckStatus = 'ok' | 'warn' | 'error'
 
@@ -27,7 +28,7 @@ export interface DoctorReport {
 }
 
 /**
- * TestPilot 健康检查(设计文档 §12)。
+ * csspilot 健康检查(设计文档 §12)。
  * 返回结构化报告:Adapter 缺失为 warning,配置/用例/环境变量问题为 error;
  * Server 未配置时跳过 Server 段。
  */
@@ -104,8 +105,8 @@ export async function runDoctor(root: string): Promise<DoctorReport> {
   const bundledSkillVersion = skillSource ? readManifestVersion(skillSource) : undefined
   const skillItems: DoctorItem[] = [
     installedSkillVersion
-      ? ok(`TestPilot Skill(.agents/skills/testpilot,v${installedSkillVersion})`)
-      : error('TestPilot Skill', '运行 npx csspilot init 安装'),
+      ? ok(`csspilot Skill(.agents/skills/testpilot,v${installedSkillVersion})`)
+      : error('csspilot Skill', '运行 npx csspilot init 安装'),
     existsSync(join(skillDir, 'references', 'project.md'))
       ? ok('Project testing guide(references/)')
       : warn('Project testing guide 缺失', 'references/ 由 init 生成;可重新运行 npx csspilot init'),
@@ -210,22 +211,35 @@ export async function runDoctor(root: string): Promise<DoctorReport> {
 }
 
 const MARK: Record<CheckStatus, string> = { ok: '✔', warn: '⚠', error: '✗' }
+const MARK_PAINT: Record<CheckStatus, (text: string) => string> = {
+  ok: (text) => paint(text, 'green'),
+  warn: (text) => paint(text, 'yellow'),
+  error: (text) => paint(text, 'red'),
+}
 
 /** 按设计文档 §12 的格式输出报告 */
 export function printDoctor(report: DoctorReport): void {
-  console.log('TestPilot Doctor')
+  console.log(paint('csspilot Doctor', 'bold'))
   console.log('')
   for (const section of report.sections) {
     console.log(section.name)
     console.log('────────────────────────')
     for (const item of section.items) {
       const hint = item.hint ? `(${item.hint})` : ''
-      console.log(`${MARK[item.status]} ${item.label}${hint}`)
+      console.log(`${MARK_PAINT[item.status](MARK[item.status])} ${item.label}${paint(hint, 'dim')}`)
     }
     console.log('')
   }
   console.log('Result')
   console.log('────────────────────────')
-  console.log(`${report.errors} error${report.errors === 1 ? '' : 's'}`)
-  console.log(`${report.warnings} warning${report.warnings === 1 ? '' : 's'}`)
+  console.log(
+    report.errors === 0
+      ? `${paint('0 errors', 'green')}`
+      : `${MARK_PAINT.error(`${report.errors} error${report.errors === 1 ? '' : 's'}`)}`,
+  )
+  console.log(
+    report.warnings === 0
+      ? `${paint('0 warnings', 'gray')}`
+      : `${MARK_PAINT.warn(`${report.warnings} warning${report.warnings === 1 ? '' : 's'}`)}`,
+  )
 }

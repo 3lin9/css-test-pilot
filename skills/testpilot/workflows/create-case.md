@@ -3,7 +3,7 @@
 输入:用户需求,或 `test-requirements-review` 产出的**测试点清单**(推荐先做需求评审)。
 
 1. 尚无测试点清单时,先执行 `workflows/test-requirements-review.md`;已有清单则直接使用。
-2. 阅读 `rules/case-design.md` 和 `rules/native.md`。按测试点的平台选择该端自己的测试框架,不要写 YAML,也不要经过 TestPilot DSL。
+2. 阅读 `rules/case-design.md` 和 `rules/native.md`。按测试点的平台选择该端自己的测试框架,不要写 YAML,也不要经过 csspilot DSL。
 3. 分析项目结构:确定被测端(miniapp / web / api)与业务入口。
 4. 用当前端的 MCP 对着真实界面收集证据,确定从入口到业务结果的完整路径。
    - web:用 Playwright MCP 打开被测页。定位取自 accessibility snapshot,或 MCP 生成的 locator。脚本里写成 Playwright 自己的 `getByRole` / `getByTestId` 等调用。

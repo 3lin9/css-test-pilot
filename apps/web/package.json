@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "TestPilot 测试控制台:项目 / Case Index / 运行可观测性",
+  "description": "csspilot 测试控制台:项目 / Case Index / 运行可观测性",
   "scripts": {
     "dev": "vite",
     "build": "vite build",

@@ -50,7 +50,7 @@ const configSchema = z.strictObject({
   /** 额外业务系统(名称为 kebab-case);Case 用 system: <名称> 引用,顶层 web/miniapp/api 段仍是默认系统 */
   systems: z.record(z.string().regex(/^[a-z0-9][a-z0-9-]*$/), systemEntrySchema).optional(),
   workspace: z.strictObject({ default: z.string().min(1).optional() }).optional(),
-  /** TestPilot Control Plane 地址(sync-metadata / init 关联项目时使用) */
+  /** csspilot Control Plane 地址(sync-metadata / init 关联项目时使用) */
   server: z.strictObject({ baseUrl: z.string().min(1).optional() }).optional(),
   web: z.strictObject({ baseUrl: z.string().min(1).optional() }).optional(),
   /** API 执行端(target: api):相对 url 的基准地址与超时 */
@@ -98,9 +98,9 @@ function interpolateEnvRefs(value: string): string {
 }
 
 /**
- * TestPilot 的测试环境变量文件。
+ * csspilot 的测试环境变量文件。
  * 刻意不用 `.env`:前端项目的 `.env` 通常已被 Vite / Next 等工具占用,
- * 混用会互相污染;TestPilot 只读 `.env.testing`,与业务项目自身环境变量互不影响。
+ * 混用会互相污染;csspilot 只读 `.env.testing`,与业务项目自身环境变量互不影响。
  */
 export const ENV_TESTING_FILE = '.env.testing'
 

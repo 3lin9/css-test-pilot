@@ -80,10 +80,10 @@ async function exists(path: string): Promise<boolean> {
   return (await stat(path).catch(() => undefined)) !== undefined
 }
 
-/** 本地项目与 TestPilot Server Project 的关联信息(.testpilot/project.json) */
+/** 本地项目与 csspilot Server Project 的关联信息(.testpilot/project.json) */
 export interface ProjectLink {
   projectId: string
-  /** TestPilot Server 地址(sync-metadata / Web 关联时使用) */
+  /** csspilot Server 地址(sync-metadata / Web 关联时使用) */
   serverUrl?: string
   repositoryUrl?: string
   branch?: string
@@ -111,7 +111,7 @@ export async function readProjectLink(root?: string): Promise<ProjectLink | unde
   }
 }
 
-/** 写入项目关联信息(init 时建立"业务项目 ↔ TestPilot Server Project"关联) */
+/** 写入项目关联信息(init 时建立"业务项目 ↔ csspilot Server Project"关联) */
 export async function writeProjectLink(link: ProjectLink, root?: string): Promise<string> {
   const file = join(resolveRoot(root), PROJECT_LINK_FILE)
   await mkdir(join(file, '..'), { recursive: true })

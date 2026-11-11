@@ -327,7 +327,7 @@ export function renderSummaryHtml(data: SummaryReportData): string {
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8" />
-<title>TestPilot 汇总报告</title>
+<title>csspilot 汇总报告</title>
 <style>
   :root { --ok:#1a7f37; --fail:#cf222e; --line:#d0d7de; --muted:#59636e; }
   * { box-sizing: border-box; }
@@ -365,7 +365,7 @@ export function renderSummaryHtml(data: SummaryReportData): string {
 </head>
 <body>
 <div class="wrap">
-  <h1>TestPilot 汇总报告</h1>
+  <h1>csspilot 汇总报告</h1>
   <p class="meta">统计范围:最近 ${data.window.runs} 次运行(${escapeHtml(range)})· 生成于 ${new Date().toISOString().slice(0, 10)}</p>
 
   <div class="cards">
@@ -462,7 +462,7 @@ export function renderSummaryHtml(data: SummaryReportData): string {
 </html>`
 }
 
-/** 汇总报告落盘到 TestPilot artifacts 目录(summary.html + summary.json),返回绝对路径 */
+/** 汇总报告落盘到 csspilot artifacts 目录(summary.html + summary.json),返回绝对路径 */
 export async function writeSummaryReport(
   artifactsDir: string,
   data: SummaryReportData,

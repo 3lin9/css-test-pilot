@@ -1,6 +1,6 @@
 # 原生脚本规范
 
-测试清单确定之后,用例正文就是当前端的官方测试脚本。TestPilot 不把一份中间格式翻译成各端动作。
+测试清单确定之后,用例正文就是当前端的官方测试脚本。csspilot 不把一份中间格式翻译成各端动作。
 
 | 平台 | 目录与文件 | 框架 | 启动 |
 | --- | --- | --- | --- |
@@ -27,7 +27,15 @@
 
 ## Web
 
-使用 Playwright 自己的定位和断言,例如 `page.getByRole`、`locator.click`、`expect`。不要写成 `action: click`。
+`test` / `expect` 从 `tests/e2e/web/fixtures.ts` 导入,不直接从 `@playwright/test` 导入。该 fixture 由 `csspilot init` / `update` 生成,包装官方 `@playwright/test` 并自动采集浏览器控制台与网络请求,进报告的"控制台 / 网络请求"面板:
+
+```ts
+import { test, expect } from './fixtures'
+```
+
+定位和断言用 Playwright 自己的 API,例如 `page.getByRole`、`locator.click`、`expect`。不要写成 `action: click`。
+
+失败取证由运行器负责:截图(`--screenshot=on`)与 trace(`--trace=retain-on-failure`)自动保留,无需脚本处理。失败用例在报告中可一键回放:`npx csspilot report --trace`,或 `npx playwright show-trace <trace 文件>` 打开 trace viewer(时间线 + DOM 快照逐帧 + 网络 + 控制台)。
 
 ## 小程序
 

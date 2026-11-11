@@ -5,7 +5,7 @@ const port = Number(process.env.PORT ?? 3000)
 const host = process.env.HOST ?? '127.0.0.1'
 
 await server.app.listen({ port, host })
-console.log(`TestPilot Control Plane API -> http://${host}:${port}`)
+console.log(`csspilot Control Plane API -> http://${host}:${port}`)
 console.log(`project: ${server.ctx.defaultProject.name} (${server.ctx.defaultProject.rootPath})`)
 
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {

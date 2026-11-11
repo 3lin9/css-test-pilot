@@ -1,6 +1,6 @@
 # 微信小程序测试能力与边界
 
-> 本文对照微信官方自动化能力(miniprogram-automator 的 MiniProgram / Element API、开发者工具工具链 Skills),说明 TestPilot 当前的小程序测试能力面、CI 无人值守的前置条件,以及明确不做的范围。能力定义以 `@testpilot/adapter-core` 的 `TestAdapter` 可选能力与 `@testpilot/dsl` schema 为准。
+> 本文对照微信官方自动化能力(miniprogram-automator 的 MiniProgram / Element API、开发者工具工具链 Skills),说明 csspilot 当前的小程序测试能力面、CI 无人值守的前置条件,以及明确不做的范围。能力定义以 `@testpilot/adapter-core` 的 `TestAdapter` 可选能力与 `@testpilot/dsl` schema 为准。
 
 ## 一、能力面(对照官方 API)
 
@@ -10,7 +10,7 @@
 | --- | --- | --- |
 | 启动开发者工具并连接 | `launch`(自动发现 cli;`.bat` 失败时降级自行拉起)。连接后等到当前页 data 可读才返回;超时记为 `PAGE_READY_TIMEOUT`,本阶段后续步骤不再执行 | `automator.launch` / `automator.connect` |
 | 页面路由 | `navigate url`(reLaunch + 就绪等待) | `miniProgram.reLaunch` |
-| 断线重连 | 模拟器重编译断开 ws 后自动重连重试 | —(TestPilot 增强) |
+| 断线重连 | 模拟器重编译断开 ws 后自动重连重试 | —(csspilot 增强) |
 
 ### 交互与断言
 
@@ -55,7 +55,7 @@ Case 失败时,adapter 会把以下诊断写入 `runs/<runId>/logs/diagnostics-<
 1. **登录态、服务端口和游客 appid 会阻断小程序 run**:`npx csspilot doctor` 与小程序 adapter 启动前都会检查 CLI、`cli islogin` 和 `project.config.json` 的 appid。未登录、无法确认服务端口、缺少真实 appid 或 `touristappid` 直接报错,不再等到自动化端口超时。
 2. **登录态过期是 CI 全线失败的常见根因**:工具登录态长期有效但会因改密等事件失效,失效后所有 Case 连接失败。建议:
    - CI runner 首次配置时人工扫码 `cli login`,此后保持工具定期运行;
-   - 官方 automator 提供 `getTicket` / `setTicket` / `refreshTicket` 票据接口,可用于跨机器迁移登录票据(需要从已登录机器导出);TestPilot 暂不封装票据管理,保持人工/脚本维护;
+   - 官方 automator 提供 `getTicket` / `setTicket` / `refreshTicket` 票据接口,可用于跨机器迁移登录票据(需要从已登录机器导出);csspilot 暂不封装票据管理,保持人工/脚本维护;
    - run 大面积 `ENVIRONMENT_UNAVAILABLE` / 连接失败时,先查 doctor 的登录态项。
 3. **首次连接授权**:安全端口开启后,自动化客户端首次连接可能需要在工具内确认授权;CI 环境请预先完成一次人工连接。
 

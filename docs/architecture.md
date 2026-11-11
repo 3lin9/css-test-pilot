@@ -1,22 +1,22 @@
-# TestPilot V0.1 架构
+# csspilot V0.1 架构
 
 ## 定位
 
-> TestPilot — AI Native 跨端业务测试基础设施:让 AI 能理解、生成、校验并执行业务测试。
+> csspilot — AI Native 跨端业务测试基础设施:让 AI 能理解、生成、校验并执行业务测试。
 
-TestPilot 是**工具,不是业务测试项目**。它定义"怎么描述 / 怎么校验 / 怎么执行测试";业务项目定义"测什么、怎么算通过",并把 Case 保存在自己的 `tests/e2e/cases/`。
+csspilot 是**工具,不是业务测试项目**。它定义"怎么描述 / 怎么校验 / 怎么执行测试";业务项目定义"测什么、怎么算通过",并把 Case 保存在自己的 `tests/e2e/cases/`。
 
 核心职责:
 
 ```text
-TestPilot
+csspilot
 ├── CLI                用户 / AI 的入口
 ├── DSL                测试描述语言
 ├── Execution Engine   测试执行引擎
 ├── Adapter            平台执行适配器(Playwright / WeChatIDE / API)
 ├── Evidence           截图 / Trace / 日志
 ├── Reporter           测试结果(JSON + HTML)
-└── Skill              AI 使用 TestPilot 的能力规范
+└── Skill              AI 使用 csspilot 的能力规范
 ```
 
 ## 最终架构图
@@ -28,9 +28,9 @@ TestPilot
                 .agents/skills/testpilot
                           │ 规范 / 能力
                           ▼
-                    TestPilot CLI
+                    csspilot CLI
                           ▼
-                    TestPilot DSL
+                    csspilot DSL
                           ▼
                  Execution Engine
                           │
@@ -51,9 +51,9 @@ TestPilot
 
 ## 核心原则
 
-1. **TestPilot 是工具,不是业务项目** —— 业务 Case 属于业务项目。
+1. **csspilot 是工具,不是业务项目** —— 业务 Case 属于业务项目。
 2. **Skill 不直接操作 Playwright / WeChatIDE** —— 链路固定为 Skill → CLI → DSL → Engine → Adapter。
-3. **Case 属于业务项目** —— TestPilot 只管描述、校验、执行。
+3. **Case 属于业务项目** —— csspilot 只管描述、校验、执行。
 4. **Web 与小程序共用测试模型,不共用执行实现** —— 共享 DSL / Case / Context / Event / Artifact / Result / Reporter,各自独立 Adapter。
 5. **AI 不能凭空生成测试** —— 必须 Evidence-first:需求 → 代码/页面 → 证据 → 步骤 → Case。
 
@@ -61,9 +61,9 @@ TestPilot
 
 | 东西             | 定义                         |
 | ---------------- | ---------------------------- |
-| TestPilot        | 测试基础设施                 |
-| CLI              | TestPilot 的统一入口         |
-| Skill            | AI 使用 TestPilot 的能力规范 |
+| csspilot        | 测试基础设施                 |
+| CLI              | csspilot 的统一入口         |
+| Skill            | AI 使用 csspilot 的能力规范 |
 | DSL              | 测试描述语言                 |
 | Case             | 业务项目中的测试资产         |
 | Execution Engine | 执行 DSL 的核心              |
@@ -71,7 +71,7 @@ TestPilot
 | Evidence         | 测试证据                     |
 | Reporter         | 测试结果输出                 |
 | `.agents/skills` | AI Skill 安装位置            |
-| `.testpilot`     | TestPilot Runtime 数据       |
+| `.testpilot`     | csspilot Runtime 数据       |
 | `tests/e2e`      | 业务项目测试目录             |
 
 ## V0.1 基线范围(已全部落地)
@@ -98,7 +98,7 @@ Phase 4  Execution Engine(Context / StepExecutor / AdapterResolver / EventBus / 
 Phase 5  Playwright Adapter
 Phase 6  WeChatIDE Adapter
 Phase 7  跨端黄金 Case
-Phase 8  TestPilot Skill 完善
+Phase 8  csspilot Skill 完善
 ```
 
 ## V0.1 明确不做

@@ -1,10 +1,10 @@
-# TestPilot
+# csspilot
 
 > AI Native 跨端业务测试基础设施 —— 让 AI 能理解、生成、校验并执行业务测试。
 
-CLI 是入口,Skill 告诉 AI 如何从测试清单写出各端脚本。测试用例使用当前端的框架:Web 用 Playwright,小程序用 miniprogram-automator,API 用 node:test。TestPilot 负责发现这些脚本并交给对应框架执行。
+CLI 是入口,Skill 告诉 AI 如何从测试清单写出各端脚本。测试用例使用当前端的框架:Web 用 Playwright,小程序用 miniprogram-automator,API 用 node:test。csspilot 负责发现这些脚本并交给对应框架执行。
 
-TestPilot 是**工具,不是业务测试项目**:业务项目定义测什么、怎么算通过。脚本放在 `tests/e2e/web`、`tests/e2e/miniapp` 和 `tests/e2e/api`。
+csspilot 是**工具,不是业务测试项目**:业务项目定义测什么、怎么算通过。脚本放在 `tests/e2e/web`、`tests/e2e/miniapp` 和 `tests/e2e/api`。
 
 完整架构见 [docs/architecture.md](docs/architecture.md),CLI 命令详见 [docs/cli.md](docs/cli.md),微信小程序测试能力与边界(CI 登录态、真机远期声明)见 [docs/miniapp-testing.md](docs/miniapp-testing.md)。
 
@@ -38,10 +38,11 @@ AI → 测试点清单 → Playwright MCP / wechatide MCP 观察真实界面 →
 
 | 命令                               | 作用                                                                                                                                       |
 | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `npx csspilot init`                | 把 TestPilot 接入当前业务项目(装 Skill 到 `.agents/skills/testpilot/`、初始化 `.testpilot/`、创建/复用 `tests/e2e`、生成 `testpilot.yaml`) |
+| `npx csspilot init`                | 把 csspilot 接入当前业务项目(装 Skill 到 `.agents/skills/testpilot/`、初始化 `.testpilot/`、创建/复用 `tests/e2e`、生成 `testpilot.yaml`) |
 | `npx csspilot validate [files]`    | 原生脚本 lint(头注释 evidence / reviews 清单出处 / env 引用)                                                                              |
-| `npx csspilot run [paths]`         | 把脚本交给各端框架执行(ingest 归一落 result.json;blocked 退出码 2)                                                                        |
-| `npx csspilot report [--run id]`   | 生成 JSON + HTML 报告(`.testpilot/artifacts/runs/<id>/`)                                                                                   |
+| `npx csspilot run [paths]`         | 把脚本交给各端框架执行(ingest 归一落 result.json;blocked 退出码 2;失败自动留 trace)                                                      |
+| `npx csspilot report [--run id]`   | 生成 JSON + HTML 报告(`.testpilot/artifacts/runs/<id>/`):截图内联、运行时间线、控制台 / 网络面板、断言对比、失败证据盒(trace 一键回放 / 失败视频);样稿见 [docs/samples/report.html](docs/samples/report.html) |
+| `npx csspilot report --trace [id]` | 用 Playwright trace viewer 回放失败用例(时间线 + DOM 快照逐帧 + 网络 + 控制台;缺省取最近一次失败)                                         |
 | `npx csspilot report --summary`    | 跨 run 汇总报告(`summary.html` + `summary.json`,默认统计最近 30 次)                                                                       |
 | `npx csspilot doctor`              | 环境体检(Node / Playwright / WeChat DevTools / 项目配置)                                                                                   |
 | `npx csspilot sync-metadata`       | 把当前 Commit 的用例头注释元数据快照同步到 Server(CI 专用,Git Push 后)                                                                    |
@@ -75,9 +76,9 @@ Phase 4  Execution Engine(✓ Context / StepExecutor / AdapterResolver / EventBu
 Phase 5  Playwright Adapter(✓ 9 个 Action 全部可用)
 Phase 6  WeChatIDE Adapter(✓ 基于 miniprogram-automator,已真机验证)
 Phase 7  跨端黄金 Case(✓ 已实测通过:小程序下单 → extract → Web 后台 assert,变量跨端传递)
-Phase 8  TestPilot Skill 完善(✓ rules/workflows 与实现对齐,随真实使用持续迭代)
+Phase 8  csspilot Skill 完善(✓ rules/workflows 与实现对齐,随真实使用持续迭代)
 
-增量(Web / Backend / Agent,见 TestPilot-V0.1-Web-Backend-Agent-增量设计-v4.md):
+增量(Web / Backend / Agent,见 csspilot-V0.1-Web-Backend-Agent-增量设计-v4.md):
 Phase 9  SDK @testpilot/sdk(✓ client/project/cases/runs/reports;CLI 已改为统一走 SDK;引擎支持取消)
 Phase 10 Backend Control Plane + Git Metadata Sync(✓ Fastify + SQLite + Drizzle;快照式 Case 同步 + Run 编排)
 Phase 11 Web 测试控制台(✓ Vue 3 + Vite:项目概览 / Case Index / Run 详情(Step 级结果 + 截图/日志/Trace)/ 同步状态;Server 静态托管)
@@ -89,7 +90,7 @@ Phase 14 数据驱动测试(✓ 数据集展开执行 / setup·teardown / 依赖
 Phase 15 三态判定 + charter 视角矩阵(✓ 失败三桶 product / infra / unverified → run 退出码 0/1/2;`charter:*` 视角 tags 与三分判定)
 Phase 16 自主观察与一次成功执行(✓ Web aria observe/probe/actionability/稳定等待/彩排/证书;✓ 小程序运行时节点+WXML+截图融合观察、定位缓存失效重观察)
 
-原生脚本改造(见 `TestPilot-原生脚本改造设计.md`):
+原生脚本改造(见 `csspilot-原生脚本改造设计.md`):
 Phase 17 各端原生脚本 + ingest 归一(✓ 用例即各端框架原生脚本;`csspilot run` 按目录交给 Playwright / node --test,ingest 归一进 run 目录;三态退出码)
 Phase 18 DSL 链路退役(✓ dsl/execution-engine/adapters/observation-core/evidence/discovery-engine 九包与 apps/agent 删除;discover/rehearse/list 命令退役;Server run 改为 spawn 原生链路)
 ```
@@ -108,7 +109,7 @@ TESTPILOT_PROJECT_ROOT=/path/to/project pnpm --filter @testpilot/server start
 **Git Push 是 Case Metadata 进入 Server 的正式同步边界**:Git 是 Case 的 Source of Truth,Server 只保存 Case Metadata / Index(不是第二个 Git);`POST /cases/sync` 以"当前 Commit 的完整用例列表"做快照同步,消失的 Case 标记 deleted(历史 Run 仍可引用)。
 
 ```bash
-npx csspilot init            # 关联/创建 TestPilot Project,写入 .testpilot/project.json
+npx csspilot init            # 关联/创建 csspilot Project,写入 .testpilot/project.json
 git push -> CI -> npx csspilot sync-metadata   # Case Metadata 同步(不建议开发者手动跑)
 ```
 
@@ -138,7 +139,7 @@ GET  /api/runs/:id/artifacts[/*]
 
 ## V0.1 明确不做
 
-RAG、AI 自动修复、Baseline、性能/业务数据基线、SQL/MySQL Adapter、业务 Skill(Login/Order/Payment)、Dashboard 高级 IDE、Multi-Agent、多用户、权限系统、复杂任务调度。业务动作(login / order / payment)永远属于业务项目,不要加进 TestPilot Core。
+RAG、AI 自动修复、Baseline、性能/业务数据基线、SQL/MySQL Adapter、业务 Skill(Login/Order/Payment)、Dashboard 高级 IDE、Multi-Agent、多用户、权限系统、复杂任务调度。业务动作(login / order / payment)永远属于业务项目,不要加进 csspilot Core。
 
 ## 构建与发布
 

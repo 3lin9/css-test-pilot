@@ -31,7 +31,7 @@ describe.skipIf(!existsSync(distBin))('cli:init:发布包布局', () => {
       timeout: 120_000,
     })
 
-    expect(res.stderr).not.toContain('无法定位 TestPilot Skill 源目录')
+    expect(res.stderr).not.toContain('无法定位 csspilot Skill 源目录')
     expect(existsSync(join(target, '.agents', 'skills', 'testpilot', 'manifest.yaml'))).toBe(true)
     expect(existsSync(join(target, '.agents', 'skills', 'testpilot', 'references', 'project.md'))).toBe(true)
     expect(res.stdout).toContain('Skill 安装')

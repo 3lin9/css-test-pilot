@@ -197,6 +197,80 @@ describe('writeReports(单文件交互式报告)', () => {
     expect(html).toContain('cleanup failed')
     expect(html).toContain('/api/orders')
   })
+
+  test('报告升级:截图内联、trace 一键命令、控制台 / 网络面板、运行时间线', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'testpilot-reporter-obs-'))
+    roots.push(root)
+    const runId = '20260911-901'
+    // 截图落在 shots/<runId>/(inline 基准目录 = artifacts)
+    const shotsDir = join(root, '.testpilot', 'artifacts', 'shots', runId)
+    await mkdir(shotsDir, { recursive: true })
+    const png = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+      'base64',
+    )
+    await writeFile(join(shotsDir, 'login.png'), png)
+
+    const summary = summaryFixture(runId, 'failed')
+    summary.cases[0]!.steps[1]!.screenshot = `shots/${runId}/login.png`
+    summary.cases[0]!.trace = 'traces/login--登录.zip'
+    summary.cases[0]!.consoleLog = [{ level: 'error', text: 'boom' }]
+    summary.cases[0]!.networkLog = [{ method: 'GET', url: 'https://x/api/orders', status: 500, durationMs: 12 }]
+
+    const runDir = await putRun(root, runId, summary)
+    const written = await writeReports(runDir, summary)
+    const html = await readFile(written.html, 'utf8')
+
+    // 截图内联为 data URI(不再依赖相对路径)
+    expect(html).toContain('data:image/png;base64,')
+    // tracebox:show-trace 一步打开,命令串与 run 目录布局一致
+    expect(html).toContain(`npx playwright show-trace .testpilot/artifacts/runs/${runId}/traces/login--登录.zip`)
+    expect(html).toContain('data-copy')
+    // 观测面板
+    expect(html).toContain('控制台(1 条)')
+    expect(html).toContain('网络请求(1)')
+    expect(html).toContain('https://x/api/orders')
+    // 运行时间线
+    expect(html).toContain('运行时间线')
+  })
+
+  test('报告升级:失败用例断言 diff 高亮 + 失败证据盒(红色)含视频播放', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'testpilot-reporter-ev-'))
+    roots.push(root)
+    const summary = summaryFixture('20260911-903', 'failed')
+    summary.cases[0]!.steps[1]!.error =
+      'Error: expect(received).toBe(expected) // Object.is equality\n\nExpected: "¥100"\nReceived: "¥99"\n\nCall log:\n  - expect.toHaveText with timeout 5000ms'
+    summary.cases[0]!.trace = 'traces/login--登录.zip'
+    summary.cases[0]!.video = 'videos/login--登录.webm'
+
+    const runDir = await putRun(root, '20260911-903', summary)
+    const written = await writeReports(runDir, summary)
+    const html = await readFile(written.html, 'utf8')
+
+    // 断言对比块:期望红删、实际绿加
+    expect(html).toContain('class="diff"')
+    expect(html).toContain('<tr class="d-del">')
+    expect(html).toContain('¥99')
+    // 证据盒:失败用例红色高亮 + trace 命令 + 视频内联播放
+    expect(html).toContain('class="tracebox fail"')
+    expect(html).toContain('npx playwright show-trace')
+    expect(html).toContain('<video class="vid" controls preload="none" src="videos/login--登录.webm">')
+  })
+
+  test('报告升级:截图缺失回退相对链接,无 trace 不渲染 tracebox', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'testpilot-reporter-obs2-'))
+    roots.push(root)
+    const summary = summaryFixture('20260911-902', 'failed')
+    summary.cases[0]!.steps[1]!.screenshot = 'shots/20260911-902/absent.png'
+    // trace 不设置
+
+    const runDir = await putRun(root, '20260911-902', summary)
+    const written = await writeReports(runDir, summary)
+    const html = await readFile(written.html, 'utf8')
+    expect(html).toContain('../../shots/20260911-902/absent.png')
+    expect(html).not.toContain('class="tracebox"')
+    expect(html).not.toContain('show-trace')
+  })
 })
 
 describe('buildSummaryData + writeSummaryReport(汇总报告)', () => {

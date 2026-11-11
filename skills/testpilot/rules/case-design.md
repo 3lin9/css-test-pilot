@@ -5,7 +5,7 @@
 - Web 用例放 `tests/e2e/web/*.spec.ts`。
 - 小程序用例放 `tests/e2e/miniapp/*.test.ts`。
 - API 用例放 `tests/e2e/api/*.test.ts`。
-- 不要把用例写进 TestPilot 仓库,也不要再写 `tests/e2e/cases/*.yaml`。
+- 不要把用例写进 csspilot 仓库,也不要再写 `tests/e2e/cases/*.yaml`。
 - 一个文件覆盖一个测试点。文件名是 kebab-case,与测试点对应,例如 `order-create.spec.ts`。
 
 ## 各端用自己的框架
@@ -28,7 +28,7 @@
 用户需求 → 测试点清单 → Playwright MCP / wechatide MCP 观察真实界面 → 该端原生脚本 → csspilot run
 ```
 
-TestPilot 不设中间格式与翻译层(YAML 链路已退役)。编写时用 MCP 看真实界面,再把确认过的操作写成脚本。回归执行脚本,不重放 MCP 会话。MCP 未接入时,证据改为项目里的页面、组件或接口代码。看到「测试登录」就写一个不存在的按钮定位,仍然是错的。
+csspilot 不设中间格式与翻译层(YAML 链路已退役)。编写时用 MCP 看真实界面,再把确认过的操作写成脚本。回归执行脚本,不重放 MCP 会话。MCP 未接入时,证据改为项目里的页面、组件或接口代码。看到「测试登录」就写一个不存在的按钮定位,仍然是错的。
 
 ## 业务数据
 

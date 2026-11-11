@@ -117,11 +117,13 @@ export function planNativeCommands(files: readonly string[], nodeExec = process.
 /** Windows 上 node --import 只接受 file URL,不接受盘符路径。 */
 const SHOT_HOOK = new URL('../../native/src/shot-hook.mjs', import.meta.url).href
 
-/** ingest 时:Web 开 JSON reporter 和每条用例截图;小程序注入截图钩子。node:test 的 tap 仍是默认 reporter。 */
+/** ingest 时:Web 开 JSON reporter、每条用例截图与失败 trace;小程序注入截图钩子。node:test 的 tap 仍是默认 reporter。 */
 function withReporterArgs(command: NativeCommand, ingest: boolean): NativeCommand {
   if (!ingest) return command
   if (command.target === 'web') {
-    return { ...command, args: [...command.args, '--reporter=json', '--screenshot=on'] }
+    // --trace=retain-on-failure:失败用例自动带 trace.zip(时间线/DOM 快照回放/网络/控制台),
+    // ingest 复制进 run 目录 traces/,report --trace 一键回放。
+    return { ...command, args: [...command.args, '--reporter=json', '--screenshot=on', '--trace=retain-on-failure'] }
   }
   if (command.target === 'miniapp') {
     return { ...command, args: ['--import', SHOT_HOOK, ...command.args] }
@@ -230,6 +232,8 @@ export async function runNativeCases(
     playwrightJsonPath,
     nodeTestTaps,
     shotsDir,
+    tracesDir: runDir ? join(runDir, 'traces') : undefined,
+    videosDir: runDir ? join(runDir, 'videos') : undefined,
   })
   await writeFile(join(runDir, 'result.json'), JSON.stringify(summary, null, 2), 'utf8')
   // 三态退出码契约:failed/inconclusive → 1,blocked → 2(与 run.ts 的 exitCodeForSummary 对齐)
