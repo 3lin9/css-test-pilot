@@ -62,6 +62,11 @@ jobs:
       # 需要在 CI 里跑用例时再启用(Server 触发或本地触发均可)
       # - name: Run cases
       #   run: npx -y csspilot@latest run
+
+      # 自托管 runner 的产物会累积(trace/视频占大头);托管 runner 每次检出是干净的可跳过
+      # - name: Clean artifacts
+      #   if: \${{ always() }}
+      #   run: rm -rf .testpilot/artifacts
 `
 
 /** 生成 .github/workflows/testpilot.yml(已有则跳过;设计文档 §13) */

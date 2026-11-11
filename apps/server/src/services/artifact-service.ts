@@ -102,8 +102,11 @@ export async function readRunArtifact(
 
   const ext = extname(absolute).toLowerCase()
   const contentType = CONTENT_TYPES[ext] ?? 'application/octet-stream'
+  // html 不内联:run 目录内的页面来自用例产物,页面里的脚本会在 Control Plane 源上执行(stored XSS);
+  // 一律按附件下载,浏览器不代渲染
   const inline =
-    contentType.startsWith('text/') || contentType.startsWith('image/') || contentType === 'application/json'
+    ext !== '.html' &&
+    (contentType.startsWith('text/') || contentType.startsWith('image/') || contentType === 'application/json')
   return { stream: createReadStream(absolute), contentType, download: !inline }
 }
 

@@ -131,8 +131,8 @@ export async function buildNativeRunSummary(input: NativeIngestInput): Promise<R
     cases.push(...(await parseNodeTestTap(item, item.file, item.target, input.root, fileOf, relOf, headerFor)))
   }
   await bindShots(cases, { shotsDir: input.shotsDir, runId: input.runId, root: input.root })
-  await bindTraces(cases, { tracesDir: input.tracesDir })
-  await bindVideos(cases, { videosDir: input.videosDir })
+  await bindTraces(cases, { tracesDir: input.tracesDir, root: input.root })
+  await bindVideos(cases, { videosDir: input.videosDir, root: input.root })
   // 原生框架不提供用例级绝对时间,统一填 run 级起止
   const startedIso = input.startedAt.toISOString()
   const finishedIso = finishedAt.toISOString()
@@ -347,7 +347,7 @@ async function fileExists(file: string): Promise<boolean> {
  */
 async function bindTraces(
   cases: CaseResult[],
-  opts: { tracesDir?: string },
+  opts: { tracesDir?: string; root: string },
 ): Promise<void> {
   if (!opts.tracesDir) return
   await mkdir(opts.tracesDir, { recursive: true })
@@ -356,7 +356,8 @@ async function bindTraces(
     const source = item.trace
     if (!source) continue
     const dest = join(opts.tracesDir, namer(item.file, item.rowId ?? item.caseName, 'zip'))
-    const from = isAbsolute(source) ? source : resolve(source)
+    // 相对路径按业务项目根解析(Playwright 报告以项目 cwd 运行);按进程 cwd 会在 Server 编排下解析错位
+    const from = isAbsolute(source) ? source : resolve(opts.root, source)
     if (from !== dest && (await fileExists(from))) {
       await copyFile(from, dest)
       item.trace = `traces/${basename(dest)}`
@@ -372,7 +373,7 @@ async function bindTraces(
  */
 async function bindVideos(
   cases: CaseResult[],
-  opts: { videosDir?: string },
+  opts: { videosDir?: string; root: string },
 ): Promise<void> {
   if (!opts.videosDir) return
   await mkdir(opts.videosDir, { recursive: true })
@@ -380,7 +381,7 @@ async function bindVideos(
   for (const item of cases) {
     const source = item.video
     if (!source) continue
-    const from = isAbsolute(source) ? source : resolve(source)
+    const from = isAbsolute(source) ? source : resolve(opts.root, source)
     const ext = extname(from).slice(1) || 'webm'
     const dest = join(opts.videosDir, namer(item.file, item.rowId ?? item.caseName, ext))
     if (from !== dest && (await fileExists(from))) {
@@ -446,13 +447,43 @@ function parseObservationList<T>(
   return list
 }
 
+/** URL query 里会带凭据的常见参数名(观测日志进报告与库,不在产物里泄露) */
+const SENSITIVE_QUERY_KEYS =
+  /^(?:authorization|token|access[-_]?token|refresh[-_]?token|id[-_]?token|api[-_]?key|apikey|key|secret|password|passwd|pwd|session(?:[-_]?id)?|cookie|sig|sign|signature)$/i
+
+/** 打码 URL query 中的敏感参数(?token=x → ?token=[masked]),其余部分原样保留 */
+function sanitizeUrl(url: string): string {
+  const qIndex = url.indexOf('?')
+  if (qIndex === -1) return url
+  const query = url.slice(qIndex + 1)
+  const hashIndex = query.indexOf('#')
+  const queryPart = hashIndex === -1 ? query : query.slice(0, hashIndex)
+  const hash = hashIndex === -1 ? '' : query.slice(hashIndex)
+  if (!queryPart) return url
+  const masked = queryPart
+    .split('&')
+    .map((pair) => {
+      const eq = pair.indexOf('=')
+      if (eq === -1) return pair
+      const name = pair.slice(0, eq)
+      return SENSITIVE_QUERY_KEYS.test(name) ? `${name}=[masked]` : pair
+    })
+    .join('&')
+  return `${url.slice(0, qIndex)}?${masked}${hash}`
+}
+
+/** console 文本里的 Bearer 凭据打码 */
+function maskConsoleText(text: string): string {
+  return text.replace(/Bearer\s+[A-Za-z0-9._~+/=-]+/gi, 'Bearer [masked]')
+}
+
 function consoleEntryFrom(raw: unknown): ConsoleEntry | undefined {
   if (typeof raw !== 'object' || raw === null) return undefined
   const record = raw as { level?: unknown; text?: unknown }
   if (typeof record.text !== 'string') return undefined
   return {
     level: typeof record.level === 'string' ? record.level.slice(0, 40) : 'log',
-    text: record.text.slice(0, 500),
+    text: maskConsoleText(record.text).slice(0, 500),
   }
 }
 
@@ -462,7 +493,7 @@ function networkEntryFrom(raw: unknown): NetworkEntry | undefined {
   if (typeof record.url !== 'string') return undefined
   return {
     method: typeof record.method === 'string' ? record.method.slice(0, 16) : 'GET',
-    url: record.url.slice(0, 500),
+    url: sanitizeUrl(record.url).slice(0, 500),
     status: typeof record.status === 'number' ? record.status : 0,
     ...(typeof record.durationMs === 'number' && record.durationMs >= 0
       ? { durationMs: Math.round(record.durationMs) }

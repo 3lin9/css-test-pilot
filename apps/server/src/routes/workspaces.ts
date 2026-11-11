@@ -15,6 +15,13 @@ import {
   listWorkspaces,
   upsertEnvironmentSecret,
 } from '../repositories/workspace-repo'
+import {
+  bindingSchema,
+  environmentSchema,
+  parseBody,
+  secretUpsertSchema,
+  workspaceSchema,
+} from '../schemas'
 /** Project Environment 与 Test Workspace 管理(V0.1 最小集) */
 export function registerWorkspaceRoutes(app: FastifyInstance, ctx: ServerContext): void {
   // ---- project environments ----
@@ -45,10 +52,7 @@ export function registerWorkspaceRoutes(app: FastifyInstance, ctx: ServerContext
     const { projectId, environmentId } = request.params as Record<string, string>
     await getProjectOrThrow(ctx.db, Number(projectId))
     await requireEnvironment(ctx, Number(projectId), Number(environmentId))
-    const body = (request.body ?? {}) as { key?: string; value?: string }
-    if (!body.key || !body.value) {
-      return reply.code(400).send({ error: '需要提供 key(对应 Case 的 accountRef)与 value(凭据,推荐 JSON)' })
-    }
+    const body = parseBody(secretUpsertSchema, request.body)
     const secret = await upsertEnvironmentSecret(ctx.db, {
       environmentId: Number(environmentId),
       secretKey: body.key,
@@ -69,10 +73,7 @@ export function registerWorkspaceRoutes(app: FastifyInstance, ctx: ServerContext
   app.post('/api/projects/:projectId/environments', async (request, reply) => {
     const { projectId } = request.params as { projectId: string }
     await getProjectOrThrow(ctx.db, Number(projectId))
-    const body = (request.body ?? {}) as { name?: string; branch?: string; baseUrl?: string }
-    if (!body.name) {
-      return reply.code(400).send({ error: '环境名称不能为空' })
-    }
+    const body = parseBody(environmentSchema, request.body)
     const environment = await insertEnvironment(ctx.db, {
       projectId: Number(projectId),
       name: body.name,
@@ -99,10 +100,7 @@ export function registerWorkspaceRoutes(app: FastifyInstance, ctx: ServerContext
   })
 
   app.post('/api/workspaces', async (request, reply) => {
-    const body = (request.body ?? {}) as { name?: string; description?: string }
-    if (!body.name) {
-      return reply.code(400).send({ error: 'Workspace 名称不能为空' })
-    }
+    const body = parseBody(workspaceSchema, request.body)
     const now = new Date().toISOString()
     const workspace = await insertWorkspace(ctx.db, {
       name: body.name,
@@ -123,10 +121,7 @@ export function registerWorkspaceRoutes(app: FastifyInstance, ctx: ServerContext
   app.post('/api/workspaces/:id/bindings', async (request, reply) => {
     const { id } = request.params as { id: string }
     const workspace = await requireWorkspace(ctx, Number(id))
-    const body = (request.body ?? {}) as { projectId?: number; environmentId?: number }
-    if (!body.projectId || !body.environmentId) {
-      return reply.code(400).send({ error: '需要提供 projectId 与 environmentId' })
-    }
+    const body = parseBody(bindingSchema, request.body)
     await getProjectOrThrow(ctx.db, body.projectId)
     const environment = await getEnvironmentRow(ctx.db, body.environmentId)
     if (!environment || environment.projectId !== body.projectId) {

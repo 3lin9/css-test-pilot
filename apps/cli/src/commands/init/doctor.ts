@@ -1,4 +1,5 @@
 import { existsSync } from 'node:fs'
+import { readdir, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { inspectMiniappRuntime, loadTestpilotConfig } from '@testpilot/core'
 import { collectNativeCases, readProjectLink, targetForNativeFile } from '@testpilot/sdk'
@@ -182,6 +183,20 @@ export async function runDoctor(root: string): Promise<DoctorReport> {
     push('Systems', systemItems)
   }
 
+  // ---- Artifacts(run 产物在本地/自托管机器上没有自动清理;trace/视频累积会吃满磁盘) ----
+  const artifactsBytes = await dirBytes(join(root, '.testpilot', 'artifacts'))
+  const ARTIFACT_WARN_BYTES = 2 * 1024 ** 3
+  push('Artifacts', [
+    artifactsBytes === 0
+      ? ok('产物目录干净(.testpilot/artifacts)')
+      : artifactsBytes > ARTIFACT_WARN_BYTES
+        ? warn(
+            `产物目录已达 ${(artifactsBytes / 1024 ** 3).toFixed(1)} GiB`,
+            '历史 runs/ 可按 run 目录整目录删除;自托管 CI 建议在流水线末尾清理',
+          )
+        : ok(`产物目录 ${(artifactsBytes / 1024 ** 2).toFixed(0)} MiB`),
+  ])
+
   // ---- Server(配置了才检查) ----
   const serverUrl = serverConfigured ? (process.env.TESTPILOT_SERVER_URL ?? config?.server?.baseUrl) : undefined
   if (serverUrl) {
@@ -208,6 +223,18 @@ export async function runDoctor(root: string): Promise<DoctorReport> {
     errors: all.filter((item) => item.status === 'error').length,
     warnings: all.filter((item) => item.status === 'warn').length,
   }
+}
+
+/** 递归统计目录字节大小(目录不存在返回 0;统计开销对 doctor 一次性行为可接受) */
+async function dirBytes(dir: string): Promise<number> {
+  const entries = await readdir(dir, { withFileTypes: true }).catch(() => [])
+  let total = 0
+  for (const entry of entries) {
+    const full = join(dir, entry.name)
+    if (entry.isDirectory()) total += await dirBytes(full)
+    else total += (await stat(full).catch(() => undefined))?.size ?? 0
+  }
+  return total
 }
 
 const MARK: Record<CheckStatus, string> = { ok: '✔', warn: '⚠', error: '✗' }

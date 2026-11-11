@@ -191,6 +191,41 @@ describe('server:control-plane', () => {
     expect(res.statusCode).toBe(400)
   })
 
+  test('请求体 schema 校验:错型/缺字段一律 400,不落服务层', async () => {
+    const badRun = await server.app.inject({
+      method: 'POST',
+      url: '/api/runs',
+      payload: { paths: 'not-an-array' },
+    })
+    expect(badRun.statusCode).toBe(400)
+
+    const badSync = await server.app.inject({
+      method: 'POST',
+      url: `/api/projects/${server.ctx.defaultProject.id}/cases/sync`,
+      payload: { branch: 'main', commit: 'c0', cases: [{ id: 'TP-X' }] }, // 缺 file
+    })
+    expect(badSync.statusCode).toBe(400)
+
+    const wsRes = await server.app.inject({
+      method: 'POST',
+      url: '/api/workspaces',
+      payload: { name: 'schema-ws' },
+    })
+    const badBind = await server.app.inject({
+      method: 'POST',
+      url: `/api/workspaces/${wsRes.json().id}/bindings`,
+      payload: { projectId: 'not-a-number' },
+    })
+    expect(badBind.statusCode).toBe(400)
+
+    const badEnv = await server.app.inject({
+      method: 'POST',
+      url: `/api/projects/${server.ctx.defaultProject.id}/environments`,
+      payload: { branch: 'no-name' },
+    })
+    expect(badEnv.statusCode).toBe(400)
+  })
+
   test('多分支同步:分支即测试环境,main 与 release 互不影响', async () => {
     const projectId = server.ctx.defaultProject.id
 
@@ -365,6 +400,24 @@ describe('server:control-plane', () => {
       url: `/api/runs/${runId}/artifacts/shots/other-run/case.png`,
     })
     expect([400, 404]).toContain(otherRun.statusCode)
+  })
+
+  test('run 产物 html 强制附件下载(stored XSS 防线)', async () => {
+    const createRes = await server.app.inject({ method: 'POST', url: '/api/runs', payload: {} })
+    const runId = createRes.json().id as string
+    await server.ctx.orchestrator.wait(runId)
+
+    await writeFile(
+      join(root, '.testpilot', 'artifacts', 'runs', runId, 'evil.html'),
+      '<script>alert(1)</script>',
+      'utf8',
+    )
+    const res = await server.app.inject({
+      method: 'GET',
+      url: `/api/runs/${runId}/artifacts/evil.html`,
+    })
+    expect(res.statusCode).toBe(200)
+    expect(String(res.headers['content-disposition'])).toContain('attachment')
   })
 
   test('项目并发运行 409;运行中取消 -> cancelled;重复取消 409', async () => {

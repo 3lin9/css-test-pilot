@@ -8,6 +8,7 @@ import {
 } from '../services/project-service'
 import { getSyncStatus } from '../services/metadata-sync-service'
 import { pickFolderNative } from '../services/fs-browse'
+import { createProjectSchema, openProjectSchema, parseBody } from '../schemas'
 
 export function registerProjectRoutes(app: FastifyInstance, ctx: ServerContext): void {
   app.get('/api/projects', async () => {
@@ -21,21 +22,16 @@ export function registerProjectRoutes(app: FastifyInstance, ctx: ServerContext):
 
   /** 打开本地目录并登记为可写项目(幂等) */
   app.post('/api/projects/open', async (request, reply) => {
-    const body = (request.body ?? {}) as { rootPath?: string }
-    const project = await openLocalProject(ctx.db, body.rootPath ?? '')
+    const body = parseBody(openProjectSchema, request.body)
+    const project = await openLocalProject(ctx.db, body.rootPath)
     return reply.code(200).send(project)
   })
 
   /** 注册项目(init / API 创建);可只登记 Git 信息而不提供本地根目录 */
   app.post('/api/projects', async (request, reply) => {
-    const body = (request.body ?? {}) as {
-      name?: string
-      rootPath?: string
-      repositoryUrl?: string
-      defaultBranch?: string
-    }
+    const body = parseBody(createProjectSchema, request.body)
     const project = await createProject(ctx.db, {
-      name: body.name ?? '',
+      name: body.name,
       rootPath: body.rootPath,
       repositoryUrl: body.repositoryUrl,
       defaultBranch: body.defaultBranch,

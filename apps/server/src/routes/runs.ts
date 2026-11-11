@@ -6,12 +6,12 @@ import {
   createRun,
   getRunViewOrThrow,
   listRunViews,
-  type CreateRunInput,
 } from '../services/run-service'
+import { createRunSchema, parseBody } from '../schemas'
 
 export function registerRunRoutes(app: FastifyInstance, ctx: ServerContext): void {
   app.post('/api/runs', async (request, reply) => {
-    const body = (request.body ?? {}) as CreateRunInput
+    const body = parseBody(createRunSchema, request.body)
     const run = await createRun(ctx.db, ctx.orchestrator, body, ctx.defaultProject)
     return reply.code(202).send(run)
   })

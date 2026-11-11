@@ -42,6 +42,14 @@ export function makeRunCommand(): Command {
         controller.abort()
       }
       process.once('SIGINT', onInterrupt)
+      // miniprogram-automator 存在晚期 rejection 竞态:调用方已按自身超时放弃后,
+      // SDK 才对无人等待的 promise reject(实测 "timeout waiting for automator response")。
+      // 仅在 run 期间容忍(记录不致命);其他命令冒出的 unhandledRejection 仍是 bug,按 Node 默认退出。
+      const onLateRejection = (reason: unknown) => {
+        const text = reason instanceof Error ? (reason.stack ?? reason.message) : String(reason)
+        console.error(`⚠ 运行期间未接住的 Promise 拒绝(已忽略,不影响本次结果):${text}`)
+      }
+      process.on('unhandledRejection', onLateRejection)
       try {
         const result = await runNativeCases({ paths: requested, ingest: true, signal: controller.signal })
         spinner.stop()
@@ -74,6 +82,7 @@ export function makeRunCommand(): Command {
         process.exitCode = 1
       } finally {
         process.removeListener('SIGINT', onInterrupt)
+        process.removeListener('unhandledRejection', onLateRejection)
       }
     })
 }

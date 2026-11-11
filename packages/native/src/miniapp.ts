@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import * as net from 'node:net'
 import { dirname, join } from 'node:path'
 import { NATIVE_CODE_PREFIX } from '@testpilot/core'
@@ -82,7 +82,16 @@ export async function launchMiniApp(options: LaunchMiniAppOptions = {}): Promise
   if (mode !== 'launch') {
     const wsEndpoint = options.wsEndpoint ?? `ws://127.0.0.1:${port}`
     if (mode === 'connect' || (await isPortOpen(port))) {
-      return automator.connect({ wsEndpoint })
+      try {
+        return await automator.connect({ wsEndpoint })
+      } catch (err) {
+        // auto 模式下端口被非自动化进程占用 / 工具未开自动化时回退完整启动;
+        // 显式 connect 是调用者的明确意图,失败直接抛
+        if (mode === 'connect') throw err
+        console.error(
+          `connect ${wsEndpoint} 失败(${err instanceof Error ? err.message : String(err)}),回退 launch`,
+        )
+      }
     }
   }
 
@@ -146,11 +155,14 @@ async function cacheTicket(mini: MiniProgramLike, root?: string): Promise<void> 
     if (!ticket) return
     const file = join(root ?? process.cwd(), TICKET_CACHE)
     await mkdir(dirname(file), { recursive: true })
+    // 先写临时文件再 rename:进程中断不会留下半截 JSON,读取端按 JSON.parse 失败静默回源扫码
+    const tmp = `${file}.${process.pid}.tmp`
     await writeFile(
-      file,
+      tmp,
       JSON.stringify({ ticket, savedAt: new Date().toISOString() }, null, 2),
       'utf8',
     )
+    await rename(tmp, file)
   } catch {
     // 忽略:票据缓存失败不影响测试执行
   }

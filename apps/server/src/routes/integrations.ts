@@ -1,10 +1,8 @@
 import type { FastifyInstance } from 'fastify'
 import type { ServerContext } from '../server'
 import { getProjectOrThrow } from '../services/project-service'
-import {
-  syncProjectCases,
-  type CaseSyncPayload,
-} from '../services/metadata-sync-service'
+import { syncProjectCases } from '../services/metadata-sync-service'
+import { caseSyncSchema, parseBody } from '../schemas'
 
 /**
  * Git / CI 同步入口。
@@ -15,7 +13,7 @@ export function registerIntegrationRoutes(app: FastifyInstance, ctx: ServerConte
   app.post('/api/projects/:projectId/cases/sync', async (request, reply) => {
     const { projectId } = request.params as { projectId: string }
     await getProjectOrThrow(ctx.db, Number(projectId))
-    const payload = (request.body ?? {}) as CaseSyncPayload
+    const payload = parseBody(caseSyncSchema, request.body)
     const result = await syncProjectCases(ctx.db, Number(projectId), payload)
     return reply.code(200).send(result)
   })
