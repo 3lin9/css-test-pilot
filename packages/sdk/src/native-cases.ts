@@ -244,7 +244,7 @@ export async function runNativeCases(
       options.signal,
     )
     if (runDir && command.target !== 'web') {
-      nodeTestTaps.push({ text: captured.stdout, target: command.target, file: command.files[0]! })
+      nodeTestTaps.push({ text: captured.stdout, target: command.target, file: command.files[0] ?? '' })
     }
     if (captured.timedOut) {
       console.error(`命令超时被终止(${Math.round(NATIVE_COMMAND_TIMEOUT_MS / 1000)}s):${command.target} ${command.files.join(', ')}`)

@@ -42,7 +42,11 @@ export async function registerProject(db: Db, root: string): Promise<ProjectRow>
   }
   if (existing) {
     await updateProject(db, existing.id, patch)
-    return (await getProjectRow(db, existing.id))!
+    const updated = await getProjectRow(db, existing.id)
+    if (!updated) {
+      throw Object.assign(new Error(`项目不存在:${existing.id}`), { statusCode: 404 })
+    }
+    return updated
   }
   return insertProject(db, {
     ...patch,

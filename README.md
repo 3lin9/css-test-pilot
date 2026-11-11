@@ -24,9 +24,10 @@ AI → 测试点清单 → Playwright MCP / wechatide MCP 观察真实界面 →
 │   ├── server/              # Control Plane API(Fastify + SQLite + Drizzle)
 │   └── web/                 # 测试控制台(Vue 3:项目 / Case Index / Run)
 ├── packages/                # 内部共享包,统一 scope @testpilot
-│   ├── core/                # 通用类型、错误、常量、配置模型(testpilot.yaml)
+│   ├── core/                # 通用类型、三态判定、常量、配置模型(testpilot.yaml)
+│   ├── native/              # 原生脚本 helper:三态标记 / 小程序会话 / 截图钩子
 │   ├── reporter/            # 报告(report/summary,JSON + HTML)+ 原生结果 ingest 归一
-│   └── sdk/                 # 统一编程接口:CLI/Server 都经由 SDK(project/collect/run/report)
+│   └── sdk/                 # 统一编程接口:CLI/Server 都经由 SDK(project/native-cases/runs/reports)
 ├── skills/
 │   └── testpilot/           # AI Skill:manifest.yaml + SKILL.md + rules/ + workflows/
 ├── examples/                # 演示项目(mock-backend、miniapp-demo)
@@ -57,12 +58,13 @@ AI → 测试点清单 → Playwright MCP / wechatide MCP 观察真实界面 →
 
 ```bash
 pnpm install
-pnpm lint                              # ESLint(eslint.config.js)
+pnpm lint                              # ESLint(eslint.config.js;含 vue 与 server/sdk 的 no-floating-promises)
+pnpm typecheck                         # Turbo 并行类型检查(7 个包/应用)
 pnpm test                              # Vitest(vitest.config.ts)
-pnpm e2e                               # Playwright(playwright.config.ts)
+pnpm e2e                               # Playwright(golden 全链路 + web 控制台集成)
 
-pnpm --filter testpilot dev --help      # 本地运行 CLI(源码)
-pnpm build                             # 打包 CLI(esbuild -> apps/cli/dist)
+pnpm --filter csspilot dev --help      # 本地运行 CLI(源码)
+pnpm build                             # 打包(esbuild -> apps/{cli,server}/dist + apps/web/dist)
 node apps/cli/dist/bin.js --help       # 运行打包产物
 ```
 
@@ -78,11 +80,11 @@ Phase 6  WeChatIDE Adapter(✓ 基于 miniprogram-automator,已真机验证)
 Phase 7  跨端黄金 Case(✓ 已实测通过:小程序下单 → extract → Web 后台 assert,变量跨端传递)
 Phase 8  csspilot Skill 完善(✓ rules/workflows 与实现对齐,随真实使用持续迭代)
 
-增量(Web / Backend / Agent,见 csspilot-V0.1-Web-Backend-Agent-增量设计-v4.md):
+增量(Web / Backend / Agent,设计记录见 docs/superpowers/specs/):
 Phase 9  SDK @testpilot/sdk(✓ client/project/cases/runs/reports;CLI 已改为统一走 SDK;引擎支持取消)
 Phase 10 Backend Control Plane + Git Metadata Sync(✓ Fastify + SQLite + Drizzle;快照式 Case 同步 + Run 编排)
 Phase 11 Web 测试控制台(✓ Vue 3 + Vite:项目概览 / Case Index / Run 详情(Step 级结果 + 截图/日志/Trace)/ 同步状态;Server 静态托管)
-Phase 12 Agent(✓ Web→Server→AgentOrchestrator→apps/agent;在 rootPath 写 YAML;push+sync-metadata 后进 Case Index)
+Phase 12 Agent(✓ 后随 Phase 18 退役:apps/agent 已删除,不再走 YAML 链路)
 
 增量 2(测试方法论,spec 见 `docs/superpowers/specs/`):
 Phase 13 测试需求评审 workflow + 工具链(✓ 评审工作流、`csspilot update`、`.env.testing` 自动加载、跨 run 汇总报告)
@@ -90,7 +92,7 @@ Phase 14 数据驱动测试(✓ 数据集展开执行 / setup·teardown / 依赖
 Phase 15 三态判定 + charter 视角矩阵(✓ 失败三桶 product / infra / unverified → run 退出码 0/1/2;`charter:*` 视角 tags 与三分判定)
 Phase 16 自主观察与一次成功执行(✓ Web aria observe/probe/actionability/稳定等待/彩排/证书;✓ 小程序运行时节点+WXML+截图融合观察、定位缓存失效重观察)
 
-原生脚本改造(见 `csspilot-原生脚本改造设计.md`):
+原生脚本改造(Phase 17/18,见 docs/architecture.md「退役说明」):
 Phase 17 各端原生脚本 + ingest 归一(✓ 用例即各端框架原生脚本;`csspilot run` 按目录交给 Playwright / node --test,ingest 归一进 run 目录;三态退出码)
 Phase 18 DSL 链路退役(✓ dsl/execution-engine/adapters/observation-core/evidence/discovery-engine 九包与 apps/agent 删除;discover/rehearse/list 命令退役;Server run 改为 spawn 原生链路)
 ```
@@ -135,7 +137,7 @@ GET  /api/runs/:id/artifacts[/*]
 - **分支即测试环境**:同一 Case 可同时存在于多个分支(main→TEST、release→STAGING...);快照同步按分支作用域执行,互不影响;环境可绑定分支,Case Index 按环境(分支)筛选。
 - **Workspace**:一次运行所需的多系统环境组合;绑定的是 Project Environment(不是 Project 本身)。Server 触发运行时指定 Workspace,不硬编码各系统 URL/账号。
 - **Run 可追溯**:每次 Run 记录 branch / commit / workspace 运行时快照——Workspace 后续可改,历史 Run 仍能还原当时的环境组合。
-- **数据边界**:SQLite 只存元数据(projects / cases index / runs / reports);截图、视频、trace 留在业务项目 `.testpilot/artifacts/`;`testpilot.yaml` 仍是测试配置的 Source of Truth。
+- **数据边界**:SQLite 只存元数据(projects / cases index / runs / reports / 环境凭据),库文件固定在 `~/.testpilot/server.db`(不落业务项目目录,避免连同凭据被提交;可用 `TESTPILOT_DB_PATH` 覆盖);截图、视频、trace 留在业务项目 `.testpilot/artifacts/`;`testpilot.yaml` 仍是测试配置的 Source of Truth。
 
 ## V0.1 明确不做
 
@@ -153,7 +155,7 @@ CLI 以 npm 包名 `csspilot` 发布:esbuild 单文件打包,内部 `@testpilot/
 #    与 skills/testpilot/manifest.yaml 的 version(三处保持一致)
 # 2) 提交后打标签推送,CI 自动完成发布
 # 3) 已安装的业务项目:升级 csspilot 依赖后 npx csspilot update 同步接入物
-git tag v0.4.0 && git push origin v0.4.0
+git tag v0.9.6 && git push origin v0.9.6
 ```
 
 **手动发布(备用)**:
@@ -170,4 +172,4 @@ cd apps/cli && pnpm publish --no-git-checks --access public --registry https://r
 - **workspace 成员**:`apps/*` 与 `packages/*`;CLI 即 npm 包 `csspilot`(`bin` 已配置,`pnpm build` 打包,内部包以源码形式打入产物)。
 - **包间引用**:源码直引 —— 各包 `main`/`types` 指向 `src/index.ts`,配合 `tsconfig.base.json` 的 `paths` 别名,无需先构建。
 - **SDK 边界**:CLI / Server 一律经由 `@testpilot/sdk` 访问 project / collect / run / report 能力,不直接操作 run 目录结构。
-- **质量工具**:Vitest 与 ESLint 集中在根配置;CI(GitHub Actions / Jenkins)跑 lint + build + test。
+- **质量工具**:Vitest 与 ESLint 集中在根配置;CI(GitHub Actions / Jenkins)跑 lint + typecheck + build + test,e2e 单独作业。

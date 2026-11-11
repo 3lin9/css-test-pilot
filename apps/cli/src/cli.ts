@@ -8,7 +8,8 @@ import { makeSyncMetadataCommand } from './commands/sync-metadata'
 import { makeUpdateCommand } from './commands/update'
 import { makeValidateCommand } from './commands/validate'
 
-export const CLI_VERSION = '0.9.5'
+// CLI 版本(发布时与 apps/cli/package.json、skills/testpilot/manifest.yaml 三处同步更新)
+export const CLI_VERSION = '0.9.6'
 
 export async function createCli(): Promise<Command> {
   const program = new Command()

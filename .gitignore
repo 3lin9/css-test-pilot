@@ -14,9 +14,8 @@ reports/
 /artifacts/
 test-results/
 playwright-report/
-.testpilot/artifacts/
-.testpilot/cache/
-.testpilot/ready/
+# csspilot 运行数据(含 legacy server.db.migrated 等历史库,绝不入库)
+.testpilot/
 
 # 本地数据(SQLite)
 *.db

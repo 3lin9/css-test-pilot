@@ -159,5 +159,9 @@ export async function cancelRun(
       message: 'server 重启后清理的僵尸运行',
     })
   }
-  return (await getRunRow(db, id))!
+  const finalRow = await getRunRow(db, id)
+  if (!finalRow) {
+    throw Object.assign(new Error(`运行不存在:${id}`), { statusCode: 404 })
+  }
+  return finalRow
 }

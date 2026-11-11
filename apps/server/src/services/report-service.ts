@@ -19,7 +19,10 @@ export async function getOrGenerateReport(db: Db, runId: string): Promise<Report
   const existing = await findReportByRun(db, runId)
   if (existing) return existing
 
-  const runRow = (await getRunRow(db, runId))!
+  const runRow = await getRunRow(db, runId)
+  if (!runRow) {
+    throw Object.assign(new Error(`运行不存在:${runId}`), { statusCode: 404 })
+  }
   const project = await getProjectOrThrow(db, runRow.projectId)
   if (!project.rootPath) {
     throw Object.assign(new Error(`项目 ${project.name} 未配置本地根目录,无法生成报告`), {

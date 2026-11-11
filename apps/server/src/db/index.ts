@@ -19,8 +19,10 @@ export interface DbOptions {
 /** 当前 schema 版本;结构变更时递增。版本不匹配时把旧库整体备份后重建,绝不静默清数据 */
 const SCHEMA_VERSION = 5
 
-/** Control Plane 数据库默认位置:用户主目录 ~/.testpilot/server.db(可用 dbPath 覆盖) */
+/** Control Plane 数据库默认位置:用户主目录 ~/.testpilot/server.db(可用 TESTPILOT_DB_PATH 或 dbPath 覆盖) */
 export function defaultDbPath(): string {
+  const override = process.env.TESTPILOT_DB_PATH
+  if (override) return override
   return join(homedir(), '.testpilot', 'server.db')
 }
 

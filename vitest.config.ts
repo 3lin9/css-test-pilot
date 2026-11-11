@@ -10,6 +10,12 @@ export default defineConfig({
       'apps/**/src/**/*.test.ts',
     ],
     passWithNoTests: false,
+    coverage: {
+      provider: 'v8',
+      include: ['packages/*/src/**/*.ts', 'apps/*/src/**/*.ts'],
+      // 打包脚本与测试辅助不参与覆盖率
+      exclude: ['**/*.test.ts', '**/build.mjs', '**/dist/**'],
+    },
     // 内部包以源码形式发布(main 指向 src/index.ts),交给 Vite 转换而不是外部化;
     // miniprogram-automator 需要 inline 才能被 vi.mock 拦截
     server: {

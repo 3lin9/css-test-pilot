@@ -1,6 +1,6 @@
 {
   "name": "csspilot",
-  "version": "0.9.5",
+  "version": "0.9.6",
   "description": "csspilot — AI-native cross-platform E2E testing CLI (Web / WeChat Mini Program / API)",
   "keywords": [
     "testing",
