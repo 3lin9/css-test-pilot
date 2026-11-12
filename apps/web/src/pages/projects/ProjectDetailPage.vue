@@ -2,7 +2,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { api } from '../../api/client'
-import type { Environment, Project, Run, SyncStatus } from '../../api/types'
+import type { Environment, Project, Run, SyncStatus, WorkspaceWithBindings } from '../../api/types'
 import RunBars from '../../components/RunBars.vue'
 import StatCard from '../../components/StatCard.vue'
 import StatusBadge from '../../components/StatusBadge.vue'
@@ -28,6 +28,7 @@ async function load(): Promise<void> {
     sync.value = await api.syncStatus(id.value).catch(() => undefined)
     environments.value = await api.environments(id.value).catch(() => [])
     runs.value = (await api.runs({ projectId: id.value })).slice(0, 10)
+    workspaces.value = await api.workspaces().catch(() => [])
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err)
   }
@@ -62,10 +63,26 @@ async function createEnvironment(): Promise<void> {
   }
 }
 
+/** 运行参数化:paths/grep/workspace 全部可留空 = 全量运行 */
+const workspaces = ref<WorkspaceWithBindings[]>([])
+const runPanelOpen = ref(false)
+const runForm = reactive({ paths: '', grep: '', workspaceId: null as number | null })
+
+function parsePaths(): string[] | undefined {
+  const list = runForm.paths.split(/[\s,]+/).filter(Boolean)
+  return list.length ? list : undefined
+}
+
 async function newRun(): Promise<void> {
   creatingRun.value = true
   try {
-    await api.createRun({ projectId: id.value })
+    await api.createRun({
+      projectId: id.value,
+      paths: parsePaths(),
+      grep: runForm.grep.trim() || undefined,
+      workspaceId: runForm.workspaceId ?? undefined,
+    })
+    runPanelOpen.value = false
     await load()
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err)
@@ -92,6 +109,9 @@ const envByBranch = computed(() => {
         <p class="page-sub mono">{{ project?.repositoryUrl ?? '' }}</p>
       </div>
       <div class="form-row">
+        <button :disabled="creatingRun" @click="runPanelOpen = !runPanelOpen">
+          {{ runPanelOpen ? '收起参数' : '运行参数' }}
+        </button>
         <button class="primary" :disabled="creatingRun" @click="newRun">
           {{ creatingRun ? '启动中…' : '+ NEW RUN' }}
         </button>
@@ -100,6 +120,26 @@ const envByBranch = computed(() => {
   </div>
 
   <div v-if="error" class="error-banner">{{ error }}</div>
+
+  <div v-if="runPanelOpen" class="panel">
+    <h3>运行参数(全部可留空 = 全量运行)</h3>
+    <p class="panel-desc">paths 过滤用例文件;grep 过滤用例名;Workspace 决定多系统环境组合(不选则按项目默认环境解析,secret 注入见 Workspace 凭据)。</p>
+    <form style="margin-top: 12px" @submit.prevent="newRun">
+      <div class="form-row">
+        <input v-model="runForm.paths" placeholder="用例文件过滤,逗号/空格分隔,如: checkout/refund.spec.yaml" style="flex: 1" />
+      </div>
+      <div class="form-row" style="margin-top: 8px">
+        <input v-model="runForm.grep" placeholder="用例名过滤(grep 子串匹配),如: 登录" style="width: 320px" />
+        <select v-model.number="runForm.workspaceId" style="width: 240px">
+          <option :value="null">不使用 Workspace</option>
+          <option v-for="ws in workspaces" :key="ws.id" :value="ws.id">{{ ws.name }}({{ ws.bindings.length }} 绑定)</option>
+        </select>
+        <button class="primary" type="submit" :disabled="creatingRun">
+          {{ creatingRun ? '启动中…' : '发起运行' }}
+        </button>
+      </div>
+    </form>
+  </div>
 
   <div class="cards">
     <StatCard :value="sync?.caseCount ?? '-'" label="Case(active)" tone="indigo" icon="cases" />

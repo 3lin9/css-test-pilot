@@ -100,6 +100,20 @@ export interface StepResult {
   }>
 }
 
+/** UI 观测:用例执行期间采集的浏览器控制台消息(敏感值已脱敏) */
+export interface ConsoleEntry {
+  level: string
+  text: string
+}
+
+/** UI 观测:已完成的网络请求(条数与 URL 长度有上限) */
+export interface NetworkEntry {
+  method: string
+  url: string
+  status: number
+  durationMs?: number
+}
+
 export interface CaseResult {
   caseId: string
   caseName: string
@@ -115,10 +129,15 @@ export interface CaseResult {
   durationMs: number
   error?: string
   video?: string
+  /** 失败用例的 Playwright trace 包(相对 run 目录;报告页可一键回放) */
   trace?: string
   skipReason?: 'dependency-not-ready'
   missingDependencies?: string[]
   warnings?: string[]
+  /** UI 观测:控制台消息(testpilot-console 附件经 ingest 归一) */
+  consoleLog?: ConsoleEntry[]
+  /** UI 观测:网络请求(testpilot-network 附件经 ingest 归一) */
+  networkLog?: NetworkEntry[]
 }
 
 export interface RunSummary {
@@ -182,4 +201,10 @@ export interface Environment {
   branch: string | null
   baseUrl: string | null
   createdAt: string
+}
+
+/** 环境凭据列表项(值只写不回显,仅返回 key) */
+export interface SecretKeyEntry {
+  secretKey: string
+  updatedAt: string
 }

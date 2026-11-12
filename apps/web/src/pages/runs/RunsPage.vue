@@ -1,16 +1,19 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { api } from '../../api/client'
 import type { Run } from '../../api/types'
 import RunBars from '../../components/RunBars.vue'
 import StatusBadge from '../../components/StatusBadge.vue'
 import { formatDuration, formatTime, shortCommit } from '../../lib/format'
+import { usePolling } from '../../lib/usePolling'
 import { useProjectsStore } from '../../stores/projects'
 
 const store = useProjectsStore()
 const runs = ref<Run[]>([])
 const filter = ref('')
 const error = ref('')
+
+const hasRunning = computed(() => runs.value.some((run) => run.status === 'running'))
 
 function workspaceName(run: Run): string {
   if (!run.workspaceSnapshotJson) return '-'
@@ -33,6 +36,8 @@ async function load(): Promise<void> {
 
 onMounted(load)
 watch(filter, load)
+// 列表里有运行中的记录时自动刷新;全部结束后停止
+usePolling(hasRunning, load)
 </script>
 
 <template>

@@ -6,6 +6,7 @@ import type {
   ProjectWithCount,
   Run,
   RunSummary,
+  SecretKeyEntry,
   SyncStatus,
   WorkspaceDetail,
   WorkspaceWithBindings,
@@ -53,6 +54,21 @@ export const api = {
       body: JSON.stringify(body),
     }),
 
+  // ---- environment secrets(值只写不回显;列表只回 key) ----
+  environmentSecrets: (projectId: number, environmentId: number) =>
+    request<{ secrets: SecretKeyEntry[] }>(
+      `/api/projects/${projectId}/environments/${environmentId}/secrets`,
+    ).then((r) => r.secrets),
+  upsertEnvironmentSecret: (projectId: number, environmentId: number, body: { key: string; value: string }) =>
+    request<{ secretKey: string; updatedAt: string }>(
+      `/api/projects/${projectId}/environments/${environmentId}/secrets`,
+      { method: 'POST', body: JSON.stringify(body) },
+    ),
+  deleteEnvironmentSecret: (projectId: number, environmentId: number, key: string) =>
+    request<void>(`/api/projects/${projectId}/environments/${environmentId}/secrets/${encodeURIComponent(key)}`, {
+      method: 'DELETE',
+    }),
+
   // ---- cases ----
   cases: (projectId: number, status?: 'active' | 'deleted') =>
     request<{ cases: CaseView[] }>(
@@ -79,7 +95,7 @@ export const api = {
   runArtifacts: (id: string) =>
     request<{ files: ArtifactFile[] }>(`/api/runs/${id}/artifacts`).then((r) => r.files),
   cancelRun: (id: string) => request<Run>(`/api/runs/${id}/cancel`, { method: 'POST' }),
-  createRun: (body: { projectId?: number; paths?: string[]; workspaceId?: number }) =>
+  createRun: (body: { projectId?: number; paths?: string[]; grep?: string; workspaceId?: number }) =>
     request<Run>('/api/runs', { method: 'POST', body: JSON.stringify(body) }),
   report: (id: string) =>
     request<{ runId: string; jsonPath: string; htmlPath: string }>(`/api/runs/${id}/report`),
