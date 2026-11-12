@@ -16,6 +16,12 @@
 
 回归只执行这些脚本。`csspilot run` 不调用 MCP,也不重放编写时的会话。
 
+## 重试、过滤与并发
+
+- **重试**:Web 用例默认重试 1 次,重试后通过会被 Playwright 标记 flaky,报告里以警告呈现(不隐藏"第一次就失败"的事实)。设 `TESTPILOT_RETRIES=0` 关闭。小程序 / API 脚本没有用例级重试(node:test 无此机制)。
+- **按名过滤**:`npx csspilot run --grep "<pattern>"`(正则)。web 走 Playwright `--grep`;miniapp / api 走 node `--test --test-name-pattern`(文件内的 `before`/`after` 钩子仍会执行)。
+- **并发**:api 脚本默认并发 4(`TESTPILOT_API_CONCURRENCY` 可调);小程序脚本串行(开发者工具单实例会话);web 整组交给一个 Playwright 进程,并发度由业务项目 `playwright.config` 的 `workers` 决定。写 api 脚本时不要假设脚本间共享进程状态(并发下各文件独立进程)。
+
 ## 文件头
 
 ```ts
@@ -56,8 +62,34 @@ import { test, expect } from './fixtures'
 
 ## API
 
-用 `fetch` 访问 `API_BASE_URL`。断言状态码和响应体写在脚本里。
+用 `fetch` 访问 `API_BASE_URL`(Server 触发且绑定了环境时,注入的 `TESTPILOT_BASE_URL` 优先)。断言状态码和响应体写在脚本里。响应结构断言给一个最小骨架,避免只断言 200:
+
+```ts
+// 结构校验:关键字段存在且类型正确;字段清单写全(多余字段不报错,缺字段必报)
+function assertShape(body: unknown): asserts body is { id: number; status: string } {
+  assert(typeof body === 'object' && body !== null, '响应体应为对象')
+  const b = body as Record<string, unknown>
+  assert(typeof b.id === 'number', `id 应为 number,实际 ${JSON.stringify(b.id)}`)
+  assert(typeof b.status === 'string', `status 应为 string,实际 ${JSON.stringify(b.status)}`)
+}
+```
+
+要点:断言失败信息带实际值,报告里才能直接归因;只断言业务真正关心的字段,不要对整个响应做快照(接口加字段就腐烂)。
 
 ## 数据与凭据
 
 账号、密码、token 不写进脚本。地址和凭据放 `.env.testing` 或 CI secret。可重复使用的输入放 `tests/e2e/data/` 的 JSON 或 YAML,由脚本读取。
+
+数据复位的标准写法:共享前置在 `before()` 造数,`after()` 复位;不复位的脏数据会污染后续 run 与其他环境。优先用 API 造数与清理,不要用 UI 操作造数(脆弱且慢):
+
+```ts
+before(async () => {
+  // 造数:API 建立本用例的前置数据,失败要显式 fail(不是 blocked——造不出来测不了)
+  const res = await fetch(`${process.env.API_BASE_URL}/test-support/orders`, { method: 'POST', ... })
+  assert(res.ok, `造数失败:POST /test-support/orders → ${res.status}`)
+})
+after(async () => {
+  // 复位:清理失败只警告,不改变用例结果
+  await fetch(`${process.env.API_BASE_URL}/test-support/orders/${orderId}`, { method: 'DELETE' }).catch(() => undefined)
+})
+```

@@ -142,7 +142,7 @@ flowchart LR
 | QA Case | 对应 TP | 覆盖状态 | 差异 / 冲突 | 行动 |
 | --- | --- | --- | --- | --- |
 | QA-101 | TP-001 | covered | — | 无 |
-| QA-102 | TP-004 | partial | 缺少上边界 | 补 dataset 行 |
+| QA-102 | TP-004 | partial | 缺少上边界 | 补参数化数据行 |
 | QA-103 | — | missing | csspilot 无对应 TP | 新增 TP 和 Case |
 
 ## Missing coverage checklist

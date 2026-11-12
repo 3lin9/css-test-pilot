@@ -1,6 +1,7 @@
 # 自动化测试项目中的配置、凭据、测试数据与产物布局
 
 > 调研日期：2026-10-26  
+> **历史注记(2026-11-12)**:Phase 18 转原生脚本链路后,本文讨论的 `accountRef`、`testpilot.yaml systems/variables`、datasets/fixtures DSL 已退役;各项目的布局规律与六类资产判定法仍然有效,TestPilot 现状相关结论请以 `skills/testpilot/rules/native.md` 数据与凭据一节为准。  
 > 范围：Playwright、Cypress、Maestro、Robot Framework、Keploy，以及 TestPilot 当前实现。  
 > 方法：通过 `gh` CLI 只读查询公开 GitHub 仓库的官方文档、示例和源码；下文链接均指向项目维护者控制的一手来源。  
 > 结论先行：TestPilot 的 `tests/e2e/data`、`testpilot.yaml systems/variables`、`.env.testing` 和 `accountRef` **在设计意图上不必冲突，但当前存在命名过宽、入口重复、物理存储混杂三类冲突风险**。应保留“版本化声明 + 外部注入值 + 引用式身份 + 可版本化业务数据 + 被忽略运行产物”的总体方向，并收紧每一层的准入规则。
