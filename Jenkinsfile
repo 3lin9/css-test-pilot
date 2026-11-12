@@ -42,5 +42,12 @@ pipeline {
     //     sh 'pnpm exec playwright install --with-deps chromium && pnpm e2e'
     //   }
     // }
+    // 业务项目接入 csspilot 后,在业务仓库的 Jenkinsfile 里发布 JUnit 结果:
+    // stage('TestPilot') {
+    //   steps {
+    //     sh 'npx -y csspilot@latest run && npx -y csspilot@latest report --junit'
+    //     junit testResults: '.testpilot/runs/*/junit.xml', allowEmptyResults: true
+    //   }
+    // }
   }
 }

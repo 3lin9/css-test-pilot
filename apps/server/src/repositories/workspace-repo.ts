@@ -92,6 +92,21 @@ export async function findEnvironmentSecretValue(
   return rows[0]?.secretValue
 }
 
+/**
+ * Orchestrator 注入执行环境用:读取某环境的全部凭据值(key → value)。
+ * 仅执行链消费;不得写入日志、报告或 API 响应。
+ */
+export async function listEnvironmentSecretValues(
+  db: Db,
+  environmentId: number,
+): Promise<Record<string, string>> {
+  const rows = await db
+    .select({ secretKey: environmentSecrets.secretKey, secretValue: environmentSecrets.secretValue })
+    .from(environmentSecrets)
+    .where(eq(environmentSecrets.environmentId, environmentId))
+  return Object.fromEntries(rows.map((row) => [row.secretKey, row.secretValue]))
+}
+
 export async function deleteEnvironmentSecret(
   db: Db,
   environmentId: number,

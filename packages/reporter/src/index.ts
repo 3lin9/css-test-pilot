@@ -21,6 +21,7 @@ export {
   type NativeIngestInput,
 } from './native-ingest'
 export { escapeHtml } from './escape-html'
+export { buildJunitXml, escapeXml } from './junit'
 export { collectHistory } from './history'
 export type { HistoryPoint } from './history'
 export { diffLines, extractAssertionDiff, renderAssertionDiffHtml } from './diff'

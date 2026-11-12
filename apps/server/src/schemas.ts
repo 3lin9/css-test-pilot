@@ -24,6 +24,7 @@ export function parseBody<S extends z.ZodType>(schema: S, body: unknown): z.outp
 export const createRunSchema = z.object({
   projectId: z.number().int().positive().optional(),
   paths: z.array(z.string()).optional(),
+  grep: z.string().min(1).optional(),
   tag: z.string().optional(),
   branch: z.string().optional(),
   commit: z.string().optional(),

@@ -69,7 +69,8 @@ test('收集约定目录中的脚本并按端执行', async () => {
       return { code: command.target === 'api' ? 0 : 1, stdout: '' }
     },
   })
-  expect(seen.map((item) => item.target)).toEqual(['api', 'web'])
+  // api 进并发池,串行段(web/miniapp)先行
+  expect(seen.map((item) => item.target)).toEqual(['web', 'api'])
   expect(result.status).toBe('failed')
   expect(result.exitCode).toBe(1)
 })

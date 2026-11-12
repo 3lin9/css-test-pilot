@@ -1,8 +1,10 @@
 import { exec, spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { join } from 'node:path'
+import { mkdir, writeFile } from 'node:fs/promises'
+import { dirname, join, resolve } from 'node:path'
 import { Command } from 'commander'
 import { RUNS_DIR, type RunSummary } from '@testpilot/core'
+import { buildJunitXml } from '@testpilot/reporter'
 import { generateReport, generateSummaryReport, getRun, latestRunId, resolvePlaywrightCliFor, resolveRoot } from '@testpilot/sdk'
 import { infoMark, okMark, paint } from '../lib/ui'
 
@@ -13,8 +15,9 @@ export function makeReportCommand(): Command {
     .option('--open', '生成后在浏览器打开', false)
     .option('--summary', '生成跨 run 汇总报告(summary.html + summary.json)', false)
     .option('--last <n>', '汇总统计窗口:最近 N 次运行', '30')
+    .option('--junit [path]', '同时生成 JUnit XML(供 Jenkins/GitLab 测试插件解析);缺省写入 run 目录 junit.xml')
     .option('--trace [caseId]', '用 Playwright trace viewer 回放失败用例(时间线 + DOM 快照逐帧 + 网络 + 控制台);缺省取最近一次失败')
-    .action(async (options: { run?: string; open?: boolean; summary?: boolean; last?: string; trace?: boolean | string }) => {
+    .action(async (options: { run?: string; open?: boolean; summary?: boolean; last?: string; junit?: boolean | string; trace?: boolean | string }) => {
       try {
         if (options.trace !== undefined) {
           await replayTrace(options.run, typeof options.trace === 'string' ? options.trace : undefined)
@@ -35,6 +38,16 @@ export function makeReportCommand(): Command {
         const report = await generateReport(options.run)
         console.log(`${okMark()} report.json  ${report.json}`)
         console.log(`${okMark()} report.html  ${report.html}`)
+        if (options.junit !== undefined) {
+          const summary = await getRun(report.runId)
+          const junitPath =
+            typeof options.junit === 'string' && options.junit.length > 0
+              ? resolve(options.junit)
+              : join(resolveRoot(), RUNS_DIR, report.runId, 'junit.xml')
+          await mkdir(dirname(junitPath), { recursive: true })
+          await writeFile(junitPath, buildJunitXml(summary), 'utf8')
+          console.log(`${okMark()} junit.xml    ${junitPath}`)
+        }
         if (options.open) await openInBrowser(report.html)
       } catch (err) {
         console.error(err instanceof Error ? err.message : err)

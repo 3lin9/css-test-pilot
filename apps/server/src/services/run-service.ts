@@ -21,6 +21,8 @@ export interface CreateRunInput {
   projectId?: number
   /** 用例文件/目录(相对项目根) */
   paths?: string[]
+  /** 按测试名过滤(web=playwright --grep;miniapp/api=node --test --test-name-pattern) */
+  grep?: string
   tag?: string
   /** Git 上下文(CI 触发时显式传入;缺省从本地项目 git 读取) */
   branch?: string
@@ -101,7 +103,12 @@ export async function createRun(
     workspaceSnapshotJson: snapshotJson,
     startedAt: new Date().toISOString(),
   })
-  orchestrator.start(runId, project, { paths: input.paths })
+  orchestrator.start(runId, project, {
+    paths: input.paths,
+    grep: input.grep,
+    workspaceId,
+    branch,
+  })
   return row
 }
 

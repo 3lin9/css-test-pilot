@@ -9,6 +9,8 @@ export interface HistoryPoint {
   passed: number
   failed: number
   durationMs?: number
+  /** 该 run 失败/未验证的用例 ID(供"上次失败本次通过"的 flaky 嫌疑标记) */
+  failedCaseIds?: string[]
 }
 
 /**
@@ -33,7 +35,12 @@ export async function collectHistory(
         status?: HistoryPoint['status']
         durationMs?: number
         totals?: { passed?: number; failed?: number }
+        cases?: Array<{ caseId?: string; status?: string }>
       }
+      const failedCaseIds = (summary.cases ?? [])
+        .filter((item) => item.status === 'failed' || item.status === 'inconclusive')
+        .map((item) => item.caseId ?? '')
+        .filter(Boolean)
       points.push({
         runId,
         startedAt: summary.startedAt,
@@ -41,6 +48,7 @@ export async function collectHistory(
         passed: summary.totals?.passed ?? 0,
         failed: summary.totals?.failed ?? 0,
         durationMs: summary.durationMs,
+        ...(failedCaseIds.length > 0 ? { failedCaseIds } : {}),
       })
     } catch {
       // 无法解析的 run(运行中 / 损坏)不计入趋势

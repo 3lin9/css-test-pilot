@@ -63,6 +63,17 @@ jobs:
       # - name: Run cases
       #   run: npx -y csspilot@latest run
 
+      # JUnit XML 供 GitHub Actions 的测试结果视图/PR 注解解析;始终上传(失败 run 也要看结果)
+      # - name: Run cases
+      #   run: npx -y csspilot@latest run
+      # - name: Publish test results
+      #   if: \${{ always() }}
+      #   uses: actions/upload-artifact@v4
+      #   with:
+      #     name: junit-results
+      #     path: .testpilot/runs/*/junit.xml
+      #     if-no-files-found: ignore
+
       # 自托管 runner 的产物会累积(trace/视频占大头);托管 runner 每次检出是干净的可跳过
       # - name: Clean artifacts
       #   if: \${{ always() }}

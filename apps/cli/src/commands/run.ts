@@ -16,7 +16,8 @@ export function makeRunCommand(): Command {
   return new Command('run')
     .description('执行各端原生测试脚本(web=playwright test;miniapp/api=node --test)')
     .argument('[paths...]', '脚本文件或目录,默认收集 tests/e2e/{web,miniapp,api}')
-    .action(async (paths: string[] | undefined) => {
+    .option('--grep <pattern>', '按测试名过滤(web=playwright --grep;miniapp/api=node --test --test-name-pattern)')
+    .action(async (paths: string[] | undefined, options: { grep?: string }) => {
       const requested = paths ?? []
       const yamlRequested = requested.filter((file) => isYamlCasePath(file))
       if (yamlRequested.length > 0) {
@@ -45,7 +46,7 @@ export function makeRunCommand(): Command {
       }
       process.on('unhandledRejection', onLateRejection)
       try {
-        const result = await runNativeCases({ paths: requested, ingest: true, signal: controller.signal })
+        const result = await runNativeCases({ paths: requested, grep: options.grep, ingest: true, signal: controller.signal })
         spinner.stop()
         if (result.files.length === 0) {
           console.error('未找到原生用例。请写入 tests/e2e/web/*.spec.ts、tests/e2e/miniapp/*.test.ts 或 tests/e2e/api/*.test.ts。')

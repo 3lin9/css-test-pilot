@@ -55,6 +55,8 @@ export async function writeReports(
     options.history ?? (await collectHistory(dirname(dir), summary.runId, options.historyLimit ?? HISTORY_LIMIT))
 
   const failures: ReportFailureEntry[] = []
+  // "上次失败、本次通过"= flaky 嫌疑:取历史窗口最近一次 run 的失败集对比
+  const previousFailed = new Set(history[history.length - 1]?.failedCaseIds ?? [])
   const cases: ReportCase[] = summary.cases.map((item) => {
     const categories = new Set<FailureCategory>()
     const steps = item.steps.map((step) => {
@@ -74,6 +76,10 @@ export async function writeReports(
       }
       return { ...step, category }
     })
+    if (item.status === 'passed' && previousFailed.has(item.caseId)) {
+      const flakyNote = '上次运行失败,本次通过(flaky 嫌疑)'
+      return { ...item, steps, categories: [...categories], warnings: [...(item.warnings ?? []), flakyNote] }
+    }
     return { ...item, steps, categories: [...categories] }
   })
 

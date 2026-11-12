@@ -59,6 +59,8 @@ export interface NativeSpawnOutput {
   captureStdout?: boolean
   /** 小程序钩子把截图写到这个目录 */
   shotsDir?: string
+  /** 额外环境变量(Server orchestrator 注入凭据等);与 process.env 合并后传给框架命令 */
+  env?: Record<string, string>
 }
 
 export type NativeSpawn = (
@@ -142,20 +144,6 @@ export function resolvePlaywrightCliFor(cwd: string): string {
 /** Windows 上 node --import 只接受 file URL,不接受盘符路径(路径由 @testpilot/native 按自身位置解析) */
 const SHOT_HOOK = shotHookPath()
 
-/** ingest 时:Web 开 JSON reporter、每条用例截图与失败 trace;小程序注入截图钩子。node:test 的 tap 仍是默认 reporter。 */
-function withReporterArgs(command: NativeCommand, ingest: boolean): NativeCommand {
-  if (!ingest) return command
-  if (command.target === 'web') {
-    // --trace=retain-on-failure:失败用例自动带 trace.zip(时间线/DOM 快照回放/网络/控制台),
-    // ingest 复制进 run 目录 traces/,report --trace 一键回放。
-    return { ...command, args: [...command.args, '--reporter=json', '--screenshot=on', '--trace=retain-on-failure'] }
-  }
-  if (command.target === 'miniapp') {
-    return { ...command, args: ['--import', SHOT_HOOK, ...command.args] }
-  }
-  return command
-}
-
 /** 收集原生脚本。paths 为空时扫描三个约定目录;目录会递归展开。 */
 export async function collectNativeCases(paths: readonly string[] = [], options: ProjectOptions = {}): Promise<string[]> {
   const root = resolveRoot(options.root)
@@ -202,6 +190,12 @@ export async function runNativeCases(
     runId?: string
     /** 取消信号:abort 后当前框架命令被终止,后续命令不再启动 */
     signal?: AbortSignal
+    /** 按测试名过滤:web 透传 playwright --grep;miniapp/api 透传 node --test --test-name-pattern */
+    grep?: string
+    /** 注入框架命令的额外环境变量(Server orchestrator 注入凭据/环境地址) */
+    extraEnv?: Record<string, string>
+    /** Web 端用例重试次数(缺省取 TESTPILOT_RETRIES,再缺省 1) */
+    retries?: number
   } = {},
 ): Promise<NativeRunResult> {
   const root = resolveRoot(options.root)
@@ -227,11 +221,16 @@ export async function runNativeCases(
     ? () => '<playwright-cli>'
     : () => resolvePlaywrightCliFor(root)
   const playwrightJsonPath = runDir ? join(runDir, 'playwright.json') : undefined
-  const nodeTestTaps: Array<{ text: string; target: 'miniapp' | 'api'; file: string }> = []
+  const retries = Math.max(0, options.retries ?? DEFAULT_RETRIES)
+  // node:test 的 TAP 原文按原计划顺序回收:api 并发池完成序会乱,seq 用于还原报告顺序
+  const tapRecords: Array<{ seq: number; text: string; target: 'miniapp' | 'api'; file: string }> = []
   let exitCode = 0
-  for (const base of planNativeCommands(files, process.execPath, playwrightCli)) {
-    if (options.signal?.aborted) break
-    const command = withReporterArgs(base, runDir !== undefined)
+  let seq = 0
+
+  const runCommand = async (base: NativeCommand): Promise<void> => {
+    const currentSeq = seq++
+    if (options.signal?.aborted) return
+    const command = withReporterArgs(base, runDir !== undefined, options.grep, retries)
     // Web 仍把 JSON reporter 的 stdout 落到 playwright.json。小程序和 API 的 TAP 只留在内存里。
     const captured = await spawnImpl(
       command,
@@ -240,17 +239,37 @@ export async function runNativeCases(
         stdoutPath: runDir && command.target === 'web' ? playwrightJsonPath : undefined,
         captureStdout: Boolean(runDir) && command.target !== 'web',
         shotsDir: command.target === 'miniapp' ? shotsDir : undefined,
+        env: options.extraEnv,
       },
       options.signal,
     )
     if (runDir && command.target !== 'web') {
-      nodeTestTaps.push({ text: captured.stdout, target: command.target, file: command.files[0] ?? '' })
+      tapRecords.push({ seq: currentSeq, text: captured.stdout, target: command.target, file: command.files[0] ?? '' })
     }
     if (captured.timedOut) {
       console.error(`命令超时被终止(${Math.round(NATIVE_COMMAND_TIMEOUT_MS / 1000)}s):${command.target} ${command.files.join(', ')}`)
     }
     if (captured.code !== 0) exitCode = captured.code
   }
+
+  const commands = planNativeCommands(files, process.execPath, playwrightCli)
+  // API 是无状态 node 进程,有限并发池安全;小程序 automator 依赖开发者工具单实例会话,保持串行
+  const apiCommands = commands.filter((command) => command.target === 'api')
+  for (const base of commands) {
+    if (base.target !== 'api') await runCommand(base)
+  }
+  const apiLimit = Math.max(1, Number(process.env.TESTPILOT_API_CONCURRENCY ?? 4))
+  let cursor = 0
+  await Promise.all(
+    Array.from({ length: Math.min(apiLimit, apiCommands.length) }, async () => {
+      while (cursor < apiCommands.length && !options.signal?.aborted) {
+        await runCommand(apiCommands[cursor++])
+      }
+    }),
+  )
+  const nodeTestTaps = tapRecords
+    .sort((a, b) => a.seq - b.seq)
+    .map(({ text, target, file }) => ({ text, target, file }))
 
   if (!runDir || !runId) {
     return { files, status: exitCode === 0 ? 'passed' : 'failed', exitCode }
@@ -276,6 +295,35 @@ export async function runNativeCases(
 
 /** 单个框架命令的时限(挂死的浏览器/runner 不应拖住整个 run 与 server 退出);可用环境变量覆盖 */
 const NATIVE_COMMAND_TIMEOUT_MS = Number(process.env.TESTPILOT_NATIVE_TIMEOUT_MS ?? 10 * 60_000)
+
+/**
+ * Web 用例默认重试次数(重试后通过 → Playwright 报 flaky,ingest 转为 warning):
+ * 环境抖动造成的假失败不应直接污染主干结果。0 关闭;可用环境变量覆盖。
+ */
+const DEFAULT_RETRIES = Math.max(0, Number(process.env.TESTPILOT_RETRIES ?? 1))
+
+/** ingest 时:Web 开 JSON reporter、每条用例截图与失败 trace;小程序注入截图钩子。node:test 的 tap 仍是默认 reporter。 */
+function withReporterArgs(command: NativeCommand, ingest: boolean, grep?: string, retries = 0): NativeCommand {
+  if (command.target === 'web') {
+    const args = [...command.args]
+    if (ingest) {
+      // --trace=retain-on-failure:失败用例自动带 trace.zip(时间线/DOM 快照回放/网络/控制台),
+      // ingest 复制进 run 目录 traces/,report --trace 一键回放。
+      args.push('--reporter=json', '--screenshot=on', '--trace=retain-on-failure')
+    }
+    if (retries > 0) args.push(`--retries=${retries}`)
+    if (grep) args.push('--grep', grep)
+    return { ...command, args }
+  }
+  if (command.target === 'miniapp') {
+    const grepArgs = grep ? ['--test-name-pattern', grep] : []
+    return { ...command, args: ['--import', SHOT_HOOK, ...grepArgs, ...command.args] }
+  }
+  // api:--test-name-pattern 需落在用例文件之前
+  const grepArgs = grep ? ['--test-name-pattern', grep] : []
+  const splitAt = command.args.length - 1
+  return { ...command, args: [...command.args.slice(0, splitAt), ...grepArgs, command.args[splitAt]] }
+}
 
 /** 杀掉整棵进程树:abort/超时时只 SIGTERM 直接子进程会留下孤儿浏览器(cmd 包装下更是整树存活) */
 function killProcessTree(pid: number): void {
@@ -315,9 +363,11 @@ function defaultSpawn(
       signal,
       // POSIX 独立进程组:abort/超时可整组击杀;Windows 用 taskkill /T 杀树
       detached: process.platform !== 'win32',
-      env: output?.shotsDir
-        ? { ...process.env, TESTPILOT_SHOTS_DIR: output.shotsDir }
-        : process.env,
+      env: {
+        ...process.env,
+        ...(output?.env ?? {}),
+        ...(output?.shotsDir ? { TESTPILOT_SHOTS_DIR: output.shotsDir } : {}),
+      },
     })
 
     let timedOut = false

@@ -1,6 +1,8 @@
 import { runNativeCases, type NativeSpawn } from '@testpilot/sdk'
 import type { Db } from '../db'
 import { updateRun } from '../repositories/run-repo'
+import { findBinding, getEnvironmentRow, listEnvironmentSecretValues } from '../repositories/workspace-repo'
+import { notifyRunFinished } from '../services/notify-service'
 import type { ProjectRow } from '../services/project-service'
 
 interface ActiveRun {
@@ -37,11 +39,29 @@ export class RunOrchestrator {
     return this.active.has(runId)
   }
 
+  /**
+   * 解析 run 的执行环境注入:绑定环境的凭据(原样 key=value,约定形如 TESTPILOT_ACCOUNT_<REF>)
+   * 与环境地址(TESTPILOT_BASE_URL)。绑定缺失或未配置时返回空,不阻塞执行。
+   */
+  private async resolveExtraEnv(projectId: number, workspaceId?: number | null): Promise<Record<string, string>> {
+    if (!workspaceId) return {}
+    const binding = await findBinding(this.db, workspaceId, projectId)
+    if (!binding) return {}
+    const [secrets, environment] = await Promise.all([
+      listEnvironmentSecretValues(this.db, binding.environmentId),
+      getEnvironmentRow(this.db, binding.environmentId),
+    ])
+    return {
+      ...secrets,
+      ...(environment?.baseUrl ? { TESTPILOT_BASE_URL: environment.baseUrl } : {}),
+    }
+  }
+
   /** 启动一次运行(后台执行);调用方负责先把 run 行写入 running 状态并分配 runId */
   start(
     runId: string,
     project: ProjectRow,
-    options: { paths?: string[]; signal?: AbortSignal },
+    options: { paths?: string[]; grep?: string; workspaceId?: number | null; branch?: string | null; signal?: AbortSignal },
   ): void {
     const controller = new AbortController()
     // 外部取消信号(如进程退出)联动到本次运行
@@ -49,10 +69,13 @@ export class RunOrchestrator {
 
     const promise = (async () => {
       try {
+        const extraEnv = await this.resolveExtraEnv(project.id, options.workspaceId)
         const result = await runNativeCases({
           root: project.rootPath ?? undefined,
           runId,
           paths: options.paths,
+          grep: options.grep,
+          extraEnv,
           ingest: true,
           signal: controller.signal,
           spawnImpl: this.options.spawnImpl,
@@ -66,12 +89,21 @@ export class RunOrchestrator {
           })
           return
         }
+        const status = result.summary?.status ?? (result.exitCode === 0 ? 'passed' : 'failed')
         await updateRun(this.db, runId, {
-          status: result.summary?.status ?? (result.exitCode === 0 ? 'passed' : 'failed'),
+          status,
           finishedAt: new Date().toISOString(),
           durationMs: result.summary?.durationMs,
           totalsJson: result.summary ? JSON.stringify(result.summary.totals) : null,
           message: null,
+        })
+        await notifyRunFinished({
+          runId,
+          projectName: project.name,
+          status,
+          branch: options.branch ?? null,
+          durationMs: result.summary?.durationMs,
+          totals: result.summary?.totals,
         })
       } catch (err) {
         await updateRun(this.db, runId, {
