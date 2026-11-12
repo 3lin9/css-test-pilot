@@ -40,7 +40,7 @@ jobs:
       - name: Test
         run: pnpm test
 
-      - name: E2E(Web 链路)
+      - name: E2E(原生链路)
         run: |
           pnpm exec playwright install --with-deps chromium
           pnpm e2e
