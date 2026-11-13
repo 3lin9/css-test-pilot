@@ -33,6 +33,16 @@ export async function insertEnvironment(
   return rows[0]
 }
 
+/** 编辑环境(name/branch/baseUrl 按传入字段更新;不传不动) */
+export async function updateEnvironment(
+  db: Db,
+  id: number,
+  patch: { name?: string; branch?: string | null; baseUrl?: string | null },
+): Promise<EnvironmentRow | undefined> {
+  const rows = await db.update(environments).set(patch).where(eq(environments.id, id)).returning()
+  return rows[0]
+}
+
 // ---- environment secrets(accountRef 凭据;值只写不读) ----
 
 export interface EnvironmentSecretRow {
@@ -203,4 +213,19 @@ export async function insertBinding(
 ): Promise<WorkspaceBindingRow> {
   const rows = await db.insert(workspaceBindings).values(values).returning()
   return rows[0]
+}
+
+export async function deleteBinding(
+  db: Db,
+  workspaceId: number,
+  projectId: number,
+): Promise<void> {
+  await db
+    .delete(workspaceBindings)
+    .where(
+      and(
+        eq(workspaceBindings.workspaceId, workspaceId),
+        eq(workspaceBindings.projectId, projectId),
+      ),
+    )
 }

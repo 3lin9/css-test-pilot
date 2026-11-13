@@ -3,6 +3,7 @@ import type {
   CaseView,
   Environment,
   Project,
+  ProjectOverview,
   ProjectWithCount,
   Run,
   RunSummary,
@@ -46,6 +47,13 @@ export const api = {
   pickFolder: () =>
     request<{ path: string | null; cancelled: boolean }>('/api/fs/pick-folder', { method: 'POST' }),
   syncStatus: (id: number) => request<SyncStatus>(`/api/projects/${id}/sync-status`),
+  /** 跨 run 汇总:用例级历史 / Top Failures / 清淤清单(远端项目 422,调用方 catch) */
+  projectOverview: (id: number) => request<ProjectOverview>(`/api/projects/${id}/overview`),
+  updateEnvironment: (projectId: number, environmentId: number, body: { name?: string; branch?: string | null; baseUrl?: string | null }) =>
+    request<Environment>(`/api/projects/${projectId}/environments/${environmentId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }),
   environments: (id: number) =>
     request<{ environments: Environment[] }>(`/api/projects/${id}/environments`).then((r) => r.environments),
   createEnvironment: (projectId: number, body: { name: string; branch?: string; baseUrl?: string }) =>
@@ -119,4 +127,6 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(body),
     }),
+  deleteBinding: (workspaceId: number, projectId: number) =>
+    request<void>(`/api/workspaces/${workspaceId}/bindings/${projectId}`, { method: 'DELETE' }),
 }

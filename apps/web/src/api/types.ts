@@ -208,3 +208,44 @@ export interface SecretKeyEntry {
   secretKey: string
   updatedAt: string
 }
+
+// ---- 项目跨 run 汇总(GET /api/projects/:id/overview) ----
+
+/** 用例级历史迷你条的一个点(一次 run 里该用例的结果) */
+export interface OverviewCasePoint {
+  runId: string
+  startedAt: string
+  status: string
+}
+
+/** 用例级跨 run 聚合:历史序列 + 最近状态 + 失败次数 */
+export interface OverviewCase {
+  caseId: string
+  caseName: string
+  file: string
+  /** 时间正序(最新在右) */
+  history: OverviewCasePoint[]
+  lastStatus?: string
+  lastRunId?: string
+  lastRunAt?: string
+  failCount: number
+}
+
+export interface OverviewRun {
+  runId: string
+  startedAt?: string
+  status: string
+  passed: number
+  failed: number
+  durationMs?: number
+}
+
+export interface ProjectOverview {
+  generatedAt: string
+  runs: OverviewRun[]
+  cases: OverviewCase[]
+  /** 失败次数最多的用例(回归热点) */
+  topFailures: Array<{ caseId: string; caseName: string; file: string; failCount: number }>
+  /** 清淤清单:最近 14 天没跑过的 active 用例(lastRunAt 缺失 = 从未跑过) */
+  staleCases: Array<{ caseId: string; caseName: string; file: string; lastRunAt?: string }>
+}

@@ -549,4 +549,152 @@ describe('server:control-plane', () => {
     })
     await expect(readCaseSource(server.ctx.db, row.id)).rejects.toMatchObject({ statusCode: 422 })
   })
+
+  test('GET /api/runs/:id/junit:从 result.json 生成 JUnit XML 附件', async () => {
+    const createRes = await server.app.inject({ method: 'POST', url: '/api/runs', payload: {} })
+    const runId = createRes.json().id as string
+    await server.ctx.orchestrator.wait(runId)
+
+    const res = await server.app.inject({ method: 'GET', url: `/api/runs/${runId}/junit` })
+    expect(res.statusCode).toBe(200)
+    expect(String(res.headers['content-type'])).toContain('xml')
+    expect(String(res.headers['content-disposition'])).toContain('attachment')
+    expect(res.body).toContain('<testsuites')
+    expect(res.body).toContain('<testsuite name=')
+
+    const missing = await server.app.inject({ method: 'GET', url: '/api/runs/no-such-run/junit' })
+    expect(missing.statusCode).toBe(404)
+  })
+
+  test('GET /api/projects/:id/overview:用例级历史 / Top Failures / 清淤清单', async () => {
+    const projectId = server.ctx.defaultProject.id
+    // 手工放两个假 run 的 result.json(序号取当日大号,保证排在真实 run 之后、时间正序在右)
+    const nowDate = new Date()
+    const prefix = `${nowDate.getFullYear()}${String(nowDate.getMonth() + 1).padStart(2, '0')}${String(nowDate.getDate()).padStart(2, '0')}`
+    const rid1 = `${prefix}-901`
+    const rid2 = `${prefix}-902`
+    const now = new Date().toISOString()
+    const runsDir = join(root, '.testpilot', 'artifacts', 'runs')
+    const summaryOf = (runId: string, status: string, cases: unknown[], failed: number) =>
+      JSON.stringify({
+        runId,
+        startedAt: now,
+        finishedAt: now,
+        durationMs: 1200,
+        status,
+        totals: {
+          cases: cases.length,
+          passed: cases.length - failed,
+          failed,
+          steps: cases.length,
+          stepsPassed: cases.length - failed,
+          stepsFailed: failed,
+          stepsSkipped: 0,
+        },
+        cases,
+      })
+    await mkdir(join(runsDir, rid1), { recursive: true })
+    await writeFile(
+      join(runsDir, rid1, 'result.json'),
+      summaryOf(
+        rid1,
+        'failed',
+        [
+          { caseId: 'TP-001', caseName: '下单', file: 'tests/e2e/web/order.spec.ts', status: 'failed', steps: [], startedAt: now, finishedAt: now, durationMs: 600 },
+          { caseId: 'TP-003', caseName: '购物车', file: 'tests/e2e/miniapp/cart.test.ts', status: 'passed', steps: [], startedAt: now, finishedAt: now, durationMs: 600 },
+        ],
+        1,
+      ),
+      'utf8',
+    )
+    await mkdir(join(runsDir, rid2), { recursive: true })
+    await writeFile(
+      join(runsDir, rid2, 'result.json'),
+      summaryOf(
+        rid2,
+        'passed',
+        [
+          { caseId: 'TP-001', caseName: '下单', file: 'tests/e2e/web/order.spec.ts', status: 'passed', steps: [], startedAt: now, finishedAt: now, durationMs: 900 },
+        ],
+        0,
+      ),
+      'utf8',
+    )
+
+    const res = await server.app.inject({ method: 'GET', url: `/api/projects/${projectId}/overview` })
+    expect(res.statusCode).toBe(200)
+    const body = res.json()
+    // run 趋势时间正序(最新在右),手工 run 排最后
+    expect(body.runs.slice(-2).map((item: { runId: string }) => item.runId)).toEqual([rid1, rid2])
+
+    // 用例级历史:TP-001 两进一败一过,flaky 形态
+    const tp001 = body.cases.find((item: { caseId: string }) => item.caseId === 'TP-001')
+    expect(tp001.history).toHaveLength(2)
+    expect(tp001.history.map((point: { status: string }) => point.status)).toEqual(['failed', 'passed'])
+    expect(tp001.failCount).toBe(1)
+    expect(tp001.lastStatus).toBe('passed')
+    expect(tp001.lastRunId).toBe(rid2)
+
+    // Top Failures:只含有失败记录的用例
+    const top = body.topFailures.find((item: { caseId: string }) => item.caseId === 'TP-001')
+    expect(top?.failCount).toBe(1)
+    expect(body.topFailures.find((item: { caseId: string }) => item.caseId === 'TP-003')).toBeUndefined()
+
+    // 清淤:TP-001/TP-003 刚跑过不在列;TP-002(release 分支 active)从未跑过 -> 在列
+    const staleIds = body.staleCases.map((item: { caseId: string }) => item.caseId)
+    expect(staleIds).toContain('TP-002')
+    expect(staleIds).not.toContain('TP-001')
+    expect(staleIds).not.toContain('TP-003')
+  })
+
+  test('PATCH 环境与 DELETE 绑定:编辑生效 / 空 body 400 / 解绑后列表为空', async () => {
+    const projectId = server.ctx.defaultProject.id
+    const envRes = await server.app.inject({
+      method: 'POST',
+      url: `/api/projects/${projectId}/environments`,
+      payload: { name: 'UAT', baseUrl: 'http://old.local' },
+    })
+    expect(envRes.statusCode).toBe(201)
+    const envId = envRes.json().id
+
+    const patch = await server.app.inject({
+      method: 'PATCH',
+      url: `/api/projects/${projectId}/environments/${envId}`,
+      payload: { baseUrl: 'http://new.local' },
+    })
+    expect(patch.statusCode).toBe(200)
+    expect(patch.json().baseUrl).toBe('http://new.local')
+    expect(patch.json().name).toBe('UAT') // 未传字段不动
+
+    const badPatch = await server.app.inject({
+      method: 'PATCH',
+      url: `/api/projects/${projectId}/environments/${envId}`,
+      payload: {},
+    })
+    expect(badPatch.statusCode).toBe(400)
+
+    const wsRes = await server.app.inject({ method: 'POST', url: '/api/workspaces', payload: { name: 'unbind-ws' } })
+    const workspaceId = wsRes.json().id
+    const bindRes = await server.app.inject({
+      method: 'POST',
+      url: `/api/workspaces/${workspaceId}/bindings`,
+      payload: { projectId, environmentId: envId },
+    })
+    expect(bindRes.statusCode).toBe(201)
+
+    const del = await server.app.inject({
+      method: 'DELETE',
+      url: `/api/workspaces/${workspaceId}/bindings/${projectId}`,
+    })
+    expect(del.statusCode).toBe(204)
+
+    const detail = await server.app.inject({ method: 'GET', url: `/api/workspaces/${workspaceId}` })
+    expect(detail.json().bindings).toHaveLength(0)
+
+    const again = await server.app.inject({
+      method: 'DELETE',
+      url: `/api/workspaces/${workspaceId}/bindings/${projectId}`,
+    })
+    expect(again.statusCode).toBe(404)
+  })
 })

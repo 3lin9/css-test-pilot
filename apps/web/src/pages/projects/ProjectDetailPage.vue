@@ -2,7 +2,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { api } from '../../api/client'
-import type { Environment, Project, Run, SyncStatus, WorkspaceWithBindings } from '../../api/types'
+import type { Environment, Project, ProjectOverview, Run, SyncStatus, WorkspaceWithBindings } from '../../api/types'
 import RunBars from '../../components/RunBars.vue'
 import StatCard from '../../components/StatCard.vue'
 import StatusBadge from '../../components/StatusBadge.vue'
@@ -15,6 +15,8 @@ const project = ref<Project>()
 const sync = ref<SyncStatus>()
 const environments = ref<Environment[]>([])
 const runs = ref<Run[]>([])
+/** 跨 run 汇总(远端项目 422 时为空,健康 panel 隐藏) */
+const overview = ref<ProjectOverview>()
 const error = ref('')
 const creatingRun = ref(false)
 
@@ -29,6 +31,7 @@ async function load(): Promise<void> {
     environments.value = await api.environments(id.value).catch(() => [])
     runs.value = (await api.runs({ projectId: id.value })).slice(0, 10)
     workspaces.value = await api.workspaces().catch(() => [])
+    overview.value = await api.projectOverview(id.value).catch(() => undefined)
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err)
   }
@@ -60,6 +63,40 @@ async function createEnvironment(): Promise<void> {
     error.value = err instanceof Error ? err.message : String(err)
   } finally {
     creatingEnv.value = false
+  }
+}
+
+/** 行内编辑环境(分支 / Base URL 后续可能要改) */
+const editingEnvId = ref<number | null>(null)
+const envEditForm = reactive({ name: '', branch: '', baseUrl: '' })
+const savingEnv = ref(false)
+
+function startEditEnv(env: Environment): void {
+  editingEnvId.value = env.id
+  envEditForm.name = env.name
+  envEditForm.branch = env.branch ?? ''
+  envEditForm.baseUrl = env.baseUrl ?? ''
+}
+
+function cancelEditEnv(): void {
+  editingEnvId.value = null
+}
+
+async function saveEnv(): Promise<void> {
+  if (editingEnvId.value === null || !envEditForm.name.trim() || savingEnv.value) return
+  savingEnv.value = true
+  try {
+    await api.updateEnvironment(id.value, editingEnvId.value, {
+      name: envEditForm.name.trim(),
+      branch: envEditForm.branch.trim() || null,
+      baseUrl: envEditForm.baseUrl.trim() || null,
+    })
+    editingEnvId.value = null
+    environments.value = await api.environments(id.value).catch(() => [])
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : String(err)
+  } finally {
+    savingEnv.value = false
   }
 }
 
@@ -193,16 +230,32 @@ const envByBranch = computed(() => {
       </button>
     </form>
     <table v-if="environments.length" style="margin-top: 8px">
-      <thead><tr><th>环境</th><th>分支</th><th>Base URL</th></tr></thead>
+      <thead><tr><th>环境</th><th>分支</th><th>Base URL</th><th>操作</th></tr></thead>
       <tbody>
         <tr v-for="env in environments" :key="env.id">
           <td>{{ env.name }}</td>
           <td class="mono">{{ env.branch ?? '-' }}</td>
           <td class="mono">{{ env.baseUrl ?? '-' }}</td>
+          <td>
+            <button v-if="editingEnvId !== env.id" @click="startEditEnv(env)">编辑</button>
+            <span v-else class="muted">编辑中…</span>
+          </td>
         </tr>
       </tbody>
     </table>
     <div v-else class="empty">未配置环境</div>
+
+    <form v-if="editingEnvId !== null" style="margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(128, 128, 128, 0.25)" @submit.prevent="saveEnv">
+      <div class="form-row">
+        <input v-model="envEditForm.name" placeholder="环境名" style="width: 160px" />
+        <input v-model="envEditForm.branch" placeholder="分支" style="width: 150px" />
+        <input v-model="envEditForm.baseUrl" placeholder="Base URL" style="width: 320px" />
+        <button class="primary" type="submit" :disabled="savingEnv || !envEditForm.name.trim()">
+          {{ savingEnv ? '保存中…' : '保存' }}
+        </button>
+        <button type="button" :disabled="savingEnv" @click="cancelEditEnv">取消</button>
+      </div>
+    </form>
   </div>
 
   <div class="panel">
@@ -229,5 +282,31 @@ const envByBranch = computed(() => {
       </tbody>
     </table>
     <div v-else class="empty">暂无运行记录</div>
+  </div>
+
+  <div v-if="overview" class="panel">
+    <div class="panel-head">
+      <div>
+        <h3>用例健康(最近 {{ overview.runs.length }} 次运行)</h3>
+        <p class="panel-desc">回归热点与清淤线索;用例级历史迷你条见 <RouterLink :to="`/projects/${id}/cases`">Case Index</RouterLink>。</p>
+      </div>
+    </div>
+    <template v-if="overview.topFailures.length || overview.staleCases.length">
+      <table v-if="overview.topFailures.length">
+        <thead><tr><th>Case</th><th>文件</th><th class="num">近期失败次数</th></tr></thead>
+        <tbody>
+          <tr v-for="item in overview.topFailures" :key="item.caseId">
+            <td class="mono">{{ item.caseId }} · {{ item.caseName }}</td>
+            <td class="mono">{{ item.file }}</td>
+            <td class="num error-text">{{ item.failCount }}</td>
+          </tr>
+        </tbody>
+      </table>
+      <p v-if="overview.staleCases.length" class="muted" style="margin: 12px 0 0">
+        ⚠ {{ overview.staleCases.length }} 个 active 用例最近 14 天没跑过(含从未跑过)——
+        去 <RouterLink :to="`/projects/${id}/cases`">Case Index</RouterLink> 用「最近 14 天没跑」筛选清淤。
+      </p>
+    </template>
+    <div v-else class="empty">暂无失败热点与失常用例</div>
   </div>
 </template>

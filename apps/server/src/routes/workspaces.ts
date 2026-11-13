@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify'
 import type { ServerContext } from '../server'
 import { getProjectOrThrow } from '../services/project-service'
 import {
+  deleteBinding,
   deleteEnvironmentSecret,
   findBinding,
   getEnvironmentRow,
@@ -13,10 +14,12 @@ import {
   listEnvironments,
   listEnvironmentSecretKeys,
   listWorkspaces,
+  updateEnvironment,
   upsertEnvironmentSecret,
 } from '../repositories/workspace-repo'
 import {
   bindingSchema,
+  environmentPatchSchema,
   environmentSchema,
   parseBody,
   secretUpsertSchema,
@@ -84,6 +87,20 @@ export function registerWorkspaceRoutes(app: FastifyInstance, ctx: ServerContext
     return reply.code(201).send(environment)
   })
 
+  /** 编辑环境(name/branch/baseUrl 至少一项;分支与 Base URL 后续可能要改) */
+  app.patch('/api/projects/:projectId/environments/:environmentId', async (request) => {
+    const { projectId, environmentId } = request.params as Record<string, string>
+    await getProjectOrThrow(ctx.db, Number(projectId))
+    await requireEnvironment(ctx, Number(projectId), Number(environmentId))
+    const body = parseBody(environmentPatchSchema, request.body)
+    const updated = await updateEnvironment(ctx.db, Number(environmentId), {
+      ...(body.name !== undefined ? { name: body.name } : {}),
+      ...(body.branch !== undefined ? { branch: body.branch } : {}),
+      ...(body.baseUrl !== undefined ? { baseUrl: body.baseUrl } : {}),
+    })
+    return updated
+  })
+
   // ---- workspaces ----
 
   app.get('/api/workspaces', async () => {
@@ -137,6 +154,17 @@ export function registerWorkspaceRoutes(app: FastifyInstance, ctx: ServerContext
       createdAt: new Date().toISOString(),
     })
     return reply.code(201).send(binding)
+  })
+
+  /** 解绑:项目从 Workspace 移除(不影响环境本身;绑定改错时先解绑再重绑) */
+  app.delete('/api/workspaces/:id/bindings/:projectId', async (request, reply) => {
+    const { id, projectId } = request.params as Record<string, string>
+    const workspace = await requireWorkspace(ctx, Number(id))
+    if (!(await findBinding(ctx.db, workspace.id, Number(projectId)))) {
+      return reply.code(404).send({ error: '该绑定不存在' })
+    }
+    await deleteBinding(ctx.db, workspace.id, Number(projectId))
+    return reply.code(204).send()
   })
 }
 

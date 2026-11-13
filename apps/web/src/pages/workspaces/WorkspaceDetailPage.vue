@@ -127,6 +127,24 @@ async function removeSecret(key: string): Promise<void> {
     error.value = err instanceof Error ? err.message : String(err)
   }
 }
+
+/** 解绑:项目从 Workspace 移除(不影响环境本身;绑定改错时先解绑再重绑) */
+const unbinding = ref<number | null>(null)
+
+async function unbind(projectId: number): Promise<void> {
+  if (unbinding.value !== null) return
+  unbinding.value = projectId
+  try {
+    await api.deleteBinding(id.value, projectId)
+    secretEnv.value = null
+    secrets.value = []
+    await load()
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : String(err)
+  } finally {
+    unbinding.value = null
+  }
+}
 </script>
 
 <template>
@@ -143,7 +161,7 @@ async function removeSecret(key: string): Promise<void> {
     <p class="panel-desc">每个项目绑定一个环境;Case 声明本 Workspace 后,运行即用这套组合,并把快照写进 Run。</p>
     <table v-if="workspace?.bindings?.length">
       <thead>
-        <tr><th>项目</th><th>环境</th><th>分支</th><th>Base URL</th><th>凭据</th></tr>
+        <tr><th>项目</th><th>环境</th><th>分支</th><th>Base URL</th><th>操作</th></tr>
       </thead>
       <tbody>
         <tr v-for="b in workspace.bindings" :key="b.projectId">
@@ -153,7 +171,14 @@ async function removeSecret(key: string): Promise<void> {
           <td class="mono">{{ b.baseUrl ?? '-' }}</td>
           <td>
             <button @click="toggleSecrets(b)">
-              {{ secretEnv?.projectId === b.projectId ? '收起' : '管理' }}
+              {{ secretEnv?.projectId === b.projectId ? '收起凭据' : '凭据' }}
+            </button>
+            <button
+              style="margin-left: 6px"
+              :disabled="unbinding !== null"
+              @click="unbind(b.projectId)"
+            >
+              {{ unbinding === b.projectId ? '解绑中…' : '解绑' }}
             </button>
           </td>
         </tr>

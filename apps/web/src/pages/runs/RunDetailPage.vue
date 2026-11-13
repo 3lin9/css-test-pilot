@@ -158,7 +158,14 @@ function stripAnsi(text: string): string {
         <td>操作</td>
         <td>
           <button v-if="isRunning" @click="cancel">取消运行</button>
-          <button v-else class="primary" @click="openReport">查看报告</button>
+          <template v-else>
+            <button class="primary" @click="openReport">查看报告</button>
+            <a
+              :href="`/api/runs/${runId}/junit`"
+              style="margin-left: 10px"
+              title="JUnit XML(Jenkins/GitLab 测试插件可直接消费);blocked 不标红,failed/inconclusive 标 failure"
+            >JUnit XML</a>
+          </template>
         </td>
       </tr>
     </table>

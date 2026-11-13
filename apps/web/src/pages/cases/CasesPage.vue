@@ -2,7 +2,8 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { api } from '../../api/client'
-import type { CaseView, Environment, SyncStatus } from '../../api/types'
+import type { CaseView, Environment, ProjectOverview, SyncStatus } from '../../api/types'
+import RunBars from '../../components/RunBars.vue'
 import StatusBadge from '../../components/StatusBadge.vue'
 import { formatTime, shortCommit } from '../../lib/format'
 
@@ -10,6 +11,9 @@ const route = useRoute()
 const cases = ref<CaseView[]>([])
 const sync = ref<SyncStatus>()
 const environments = ref<Environment[]>([])
+/** 跨 run 汇总(远端项目 422 时为空,迷你条/清淤视图随之隐藏) */
+const overview = ref<ProjectOverview>()
+const staleOnly = ref(false)
 const branchFilter = ref('')
 const filter = ref<'all' | 'active' | 'deleted'>('all')
 const error = ref('')
@@ -27,6 +31,15 @@ const envByBranch = computed(() => {
   return map
 })
 
+/** caseId -> 用例级历史(迷你条数据源) */
+const trendByCase = computed(() => {
+  const map = new Map<string, ProjectOverview['cases'][number]>()
+  for (const item of overview.value?.cases ?? []) map.set(item.caseId, item)
+  return map
+})
+
+const staleIds = computed(() => new Set((overview.value?.staleCases ?? []).map((item) => item.caseId)))
+
 const branchOptions = computed(() => {
   const names = new Set<string>()
   for (const item of cases.value) {
@@ -37,8 +50,10 @@ const branchOptions = computed(() => {
 })
 
 const visibleCases = computed(() => {
-  if (!branchFilter.value) return cases.value
-  return cases.value.filter((item) => item.branches.includes(branchFilter.value))
+  let list = cases.value
+  if (branchFilter.value) list = list.filter((item) => item.branches.includes(branchFilter.value))
+  if (staleOnly.value) list = list.filter((item) => staleIds.value.has(item.caseId))
+  return list
 })
 
 async function load(): Promise<void> {
@@ -48,6 +63,7 @@ async function load(): Promise<void> {
     cases.value = await api.cases(projectId.value, filter.value === 'all' ? undefined : filter.value)
     sync.value = await api.syncStatus(projectId.value).catch(() => undefined)
     environments.value = await api.environments(projectId.value).catch(() => [])
+    overview.value = await api.projectOverview(projectId.value).catch(() => undefined)
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err)
   }
@@ -89,6 +105,14 @@ watch([projectId, filter], load)
       <button :class="{ on: filter === 'all' }" @click="filter = 'all'">全部</button>
       <button :class="{ on: filter === 'active' }" @click="filter = 'active'">Active</button>
       <button :class="{ on: filter === 'deleted' }" @click="filter = 'deleted'">Deleted</button>
+      <button
+        v-if="staleIds.size > 0"
+        :class="{ on: staleOnly }"
+        title="最近 14 天没在任何 run 里跑过的 active 用例(含从未跑过)——清淤时优先处理"
+        @click="staleOnly = !staleOnly"
+      >
+        最近 14 天没跑({{ staleIds.size }})
+      </button>
     </div>
     <select v-model="branchFilter">
       <option value="">全部分支({{ branchOptions.length }})</option>
@@ -103,7 +127,7 @@ watch([projectId, filter], load)
     <table v-if="visibleCases.length">
       <thead>
         <tr>
-          <th>Case ID</th><th>名称</th><th>文件</th><th>标签</th><th>测试环境(分支)</th><th>状态</th><th>同步时间</th>
+          <th>Case ID</th><th>名称</th><th>文件</th><th>历史</th><th>标签</th><th>测试环境(分支)</th><th>状态</th><th>同步时间</th>
         </tr>
       </thead>
       <tbody>
@@ -111,6 +135,14 @@ watch([projectId, filter], load)
           <td class="mono">{{ item.caseId }}</td>
           <td>{{ item.name ?? '-' }}</td>
           <td class="mono">{{ item.filePath }}</td>
+          <td>
+            <RunBars
+              v-if="trendByCase.get(item.caseId)?.history.length"
+              :statuses="trendByCase.get(item.caseId)!.history.map((point) => point.status)"
+              :titles="trendByCase.get(item.caseId)!.history.map((point) => `${point.runId} · ${point.status}`)"
+            />
+            <span v-else class="muted" title="最近 20 次 run 中未出现">未跑</span>
+          </td>
           <td><span v-for="tag in item.tags" :key="tag" class="badge active" style="margin-right: 4px">{{ tag }}</span></td>
           <td>
             <span

@@ -75,6 +75,11 @@ export const environmentSchema = z.object({
   baseUrl: z.string().nullish(),
 })
 
+/** 环境编辑(PATCH):任一字段可选,但至少传一个 */
+export const environmentPatchSchema = environmentSchema
+  .partial()
+  .refine((body) => Object.keys(body).length > 0, { message: '至少提供一个待更新字段' })
+
 export const workspaceSchema = z.object({
   name: z.string().min(1),
   description: z.string().nullish(),

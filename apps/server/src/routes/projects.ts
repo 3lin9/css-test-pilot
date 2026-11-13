@@ -7,6 +7,7 @@ import {
   openLocalProject,
 } from '../services/project-service'
 import { getSyncStatus } from '../services/metadata-sync-service'
+import { buildProjectOverview } from '../services/overview-service'
 import { pickFolderNative } from '../services/fs-browse'
 import { createProjectSchema, openProjectSchema, parseBody } from '../schemas'
 
@@ -48,5 +49,12 @@ export function registerProjectRoutes(app: FastifyInstance, ctx: ServerContext):
   app.get('/api/projects/:id/sync-status', async (request) => {
     const { id } = request.params as { id: string }
     return getSyncStatus(ctx.db, Number(id))
+  })
+
+  /** 跨 run 汇总:用例级历史 / Top Failures / 清淤清单(Web 健康视图共用一份数据) */
+  app.get('/api/projects/:id/overview', async (request) => {
+    const { id } = request.params as { id: string }
+    const project = await getProjectOrThrow(ctx.db, Number(id))
+    return buildProjectOverview(ctx.db, project)
   })
 }
