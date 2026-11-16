@@ -6,22 +6,18 @@ version: 0.9.6
 
 description: >
   AI Native cross-platform testing skill.
-  Miniapp deep-testing actions: mockWxApi / callWxApi / trigger / callMethod /
-  setData / dataPath-assert / count-assert / attribute-assert / longpress /
-  touch / scroll / swipeTo / slideTo / moveTo.
+  Cases are native scripts: Web uses Playwright, mini programs use
+  miniprogram-automator, APIs use node:test. csspilot does not translate YAML.
 
 capabilities:
   - test-requirements-review
   - create-case
   - validate
-  - discover
-  - rehearse
-  - ready-certificate
   - run
-  - list
   - report
   - sync-metadata
   - doctor
+  - update
   - ci-init
 
 runtime:

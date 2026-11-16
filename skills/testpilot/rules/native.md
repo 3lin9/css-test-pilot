@@ -62,7 +62,7 @@ import { test, expect } from './fixtures'
 
 ## API
 
-用 `fetch` 访问 `API_BASE_URL`(Server 触发且绑定了环境时,注入的 `TESTPILOT_BASE_URL` 优先)。断言状态码和响应体写在脚本里。响应结构断言给一个最小骨架,避免只断言 200:
+用 `fetch` 访问 `TESTPILOT_BASE_URL`(由 `csspilot run --env <name>` 或 Server Workspace 注入);未设置时可回退到 `API_BASE_URL`。断言状态码和响应体写在脚本里。响应结构断言给一个最小骨架,避免只断言 200:
 
 ```ts
 // 结构校验:关键字段存在且类型正确;字段清单写全(多余字段不报错,缺字段必报)

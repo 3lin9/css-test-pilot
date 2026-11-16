@@ -9,6 +9,8 @@ npx csspilot run tests/e2e/api/create-order.test.ts
 
 这次执行的是已写好的脚本。编写阶段的 Playwright MCP / wechatide MCP 会话不在这里重放。
 
+`run` 在启动框架前做与 `csspilot validate` 相同的轻量预检:文件头测试点与视角、reviews 清单出处、`process.env` 已声明。任一不过就退出,不调用 Playwright 或 `node --test`。完整输出仍用 `npx csspilot validate`。
+
 `csspilot run` 按目录把脚本交给当前端的框架:
 
 - `tests/e2e/web` → `npx playwright test`

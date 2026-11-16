@@ -8,7 +8,7 @@
 | --------------------------------------- | ---------------------------------------------- |
 | `csspilot init`                         | 把 csspilot 接入当前业务项目(项目测试基础设施初始化) |
 | `csspilot validate [paths...]`          | 原生脚本 lint(evidence 头注释 / reviews 清单出处 / env 引用) |
-| `csspilot run [paths...]`               | 原生执行:交给各端框架,ingest 归一落 result.json(blocked 退出码 2) |
+| `csspilot run [paths...] [--env <name>]` | 原生执行:交给各端框架,ingest 归一落 result.json(blocked 退出码 2) |
 | `csspilot report [--run <id>] [--open]` | 生成交互式单文件 HTML 报告(步骤树 / 失败分类 / 历史趋势)+ report.json |
 | `csspilot sync-metadata`                | 同步 Case Metadata 到 Server(CI / git push 后) |
 | `csspilot doctor`                       | 健康检查(分组报告:error / warning)          |
@@ -43,7 +43,7 @@ npx csspilot init [--server <url>]
 3. **配置初始化**:生成 `testpilot.yaml`(baseUrl 用 `${VAR}` 引用)+ `.testpilot/{project.json,artifacts/}`;project.json 含 `version / projectId / testDir`;Server 可达时注册项目,不可达时生成本地 ID
 4. **测试目录**:`tests/e2e/{web,miniapp,api,data,reviews}`(已有直接复用;检测到其他 E2E 目录只提示不迁移)
 5. **Agent Skill**:安装到 `.agents/skills/testpilot/`,并生成项目级上下文 `references/{project,test-conventions,adapters}.md`
-6. **环境配置**:生成 `.env.testing`(`TEST_BASE_URL` / `STAGING_BASE_URL` / `WEB_BASE_URL` / `MINIAPP_PROJECT_PATH` 等),确保 `.gitignore` 忽略 `.env.testing`;**直接在该文件填真实值**,CLI 运行时自动加载(刻意不读前端项目自身的 `.env`,互不影响);也可设为环境变量,配置中的 `${VAR}` 引用加载时自动注入
+6. **环境配置**:生成 `.env.testing`(`DEVELOP_BASE_URL` / `UAT_BASE_URL` / `PREPROD_BASE_URL` / `API_BASE_URL` / `MINIAPP_PROJECT_PATH` 等),确保 `.gitignore` 忽略 `.env.testing`;**直接在该文件填真实值**,CLI 运行时自动加载(刻意不读前端项目自身的 `.env`,互不影响);也可设为环境变量,配置中的 `${VAR}` 引用加载时自动注入
 7. **CI 准备**:只检测已有 CI 并提示,可用 `csspilot ci init` 生成模板
 8. **自动 Doctor**:结束时执行一次健康检查
 
@@ -85,8 +85,8 @@ npx csspilot validate tests/e2e/web/order-create.spec.ts  # 指定脚本/目录
 
 原生脚本 lint 三道卡:
 
-1. **头注释 evidence 链**:`// 测试点: <ID>` 必填,`// 视角: charter:*` 取值在 5 个枚举内(persona / edge-input / numbers-copy / state-recovery / error-path)
-2. **清单出处**:测试点 ID 必须在 `tests/e2e/reviews/` 的需求评审清单中存在——清单是唯一的用例来源,清单外 ID 直接报错(no-invention 硬卡)
+1. **头注释 evidence 链**:`// 测试点: <ID>` 必填,`// 视角: charter:*` 取值在 6 个枚举内(persona / edge-input / numbers-copy / state-recovery / error-path / inverse)
+2. **清单出处**:`tests/e2e/reviews/` 必须存在,并从清单中解析出精确的 `TP-<数字>`。测试点 ID 与解析结果全字匹配;目录不存在、清单为空或没有 ID 时直接报错。`TP-001` 不会命中 `TP-0010`
 3. **env 声明**:脚本引用的 `process.env.*` 必须在 `.env.testing`(`KEY=`)、`testpilot.yaml`(`${VAR}`)或白名单(`TESTPILOT_*` / `NODE_ENV` / `CI`)中已声明
 
 任何失败以退出码 1 结束。AI 生成脚本后的自查与 CI 卡点跑同一道卡。
@@ -97,9 +97,14 @@ npx csspilot validate tests/e2e/web/order-create.spec.ts  # 指定脚本/目录
 npx csspilot run                                      # tests/e2e/web、miniapp、api 下的原生脚本
 npx csspilot run tests/e2e/web/order-create.spec.ts   # 指定 Playwright 脚本
 npx csspilot run tests/e2e/miniapp/list.test.ts       # 指定 miniprogram-automator 脚本
+npx csspilot run --env uat                           # 选择 testpilot.yaml 中的 uat 环境
 ```
 
+`run` 启动框架前做与 `validate` 相同的轻量预检(文件头测试点与视角、reviews 清单出处、env 已声明)。不过则退出码 1,不调用 Playwright 或 `node --test`。
+
 `run` 按目录把脚本交给该端框架:`tests/e2e/web` 运行 `npx playwright test`,`tests/e2e/miniapp` 与 `tests/e2e/api` 运行 `node --test`(逐文件 spawn,单文件崩溃不拖垮其他文件)。csspilot 不翻译脚本——脚本本身就是各端框架的原生代码。run 结束后 **ingest 归一**:读取各端结构化输出(Playwright `--reporter=json` / node:test 内置 TAP),连同头注释元数据与 `[TESTPILOT:*]` 三态标记,写成 run 目录 `result.json`——`report` 与跨 run 汇总基于它直接可用。脚本抛 `blocked('环境不可达')` / `inconclusive('前置缺失')`(或零依赖手写 `[TESTPILOT:ENVIRONMENT_UNAVAILABLE]` / `[TESTPILOT:PREREQ_VARIABLE_MISSING]` 错误前缀)时按三态归类,未标记的失败一律按产品失败(宁红勿漏)。
+
+`--env` 显式选择 `testpilot.yaml` 的环境名(模板示例为 `develop`、`uat`、`preprod`);省略时使用 `environment.default`。所选环境的 `baseUrl` 注入测试进程的 `TESTPILOT_BASE_URL`,并同步设置 `TEST_BASE_URL`。未设置的 `${VAR}` 引用会在启动前报错;Server 触发的运行仍由 Workspace 绑定决定环境。
 
 退出码(三态判定,环境问题不污染产品缺陷统计):
 
@@ -138,11 +143,13 @@ test:
 
 # 环境配置:baseUrl 由环境变量注入,禁止写明文
 environment:
-  default: test
-  test:
-    baseUrl: ${TEST_BASE_URL}
-  staging:
-    baseUrl: ${STAGING_BASE_URL}
+  default: develop
+  develop:
+    baseUrl: ${DEVELOP_BASE_URL}
+  uat:
+    baseUrl: ${UAT_BASE_URL}
+  preprod:
+    baseUrl: ${PREPROD_BASE_URL}
 
 # 项目声明的执行端(可用性以 doctor 为准)
 adapters:
@@ -155,7 +162,7 @@ adapters:
 #   baseUrl: http://127.0.0.1:3000  # csspilot Server(Control Plane)
 
 web:
-  baseUrl: ${TEST_BASE_URL}   # 被测系统地址备忘;脚本直接读 process.env
+  baseUrl: ${DEVELOP_BASE_URL}   # 默认 develop 的地址备忘;运行时以 --env 注入的 TESTPILOT_BASE_URL 为准
 
 api:
   baseUrl: ${API_BASE_URL}
@@ -186,7 +193,8 @@ curl -X POST $SERVER/api/projects/1/environments/1/secrets \
 | 变量                                   | 作用                                                |
 | -------------------------------------- | --------------------------------------------------- |
 | `TESTPILOT_SERVER_URL`                 | csspilot Server 地址(init / sync-metadata)        |
-| `TEST_BASE_URL` / `STAGING_BASE_URL`  | 环境配置引用的被测系统地址;加载配置时由进程环境注入 `${VAR}` 引用,未设置的保持原样并由 doctor / inspect 标记缺失 |
+| `TESTPILOT_ENV` / `TESTPILOT_BASE_URL` | `run` 启动的测试进程中注入所选环境名与 baseUrl |
+| `DEVELOP_BASE_URL` / `UAT_BASE_URL` / `PREPROD_BASE_URL` | develop、uat、preprod 的被测系统根地址;加载配置时注入 `${VAR}`,未设置的保持原样并由 doctor 标记缺失 |
 | `WECHAT_DEVTOOLS_CLI`                  | 指定开发者工具 cli 路径(探测优先级最高)             |
 | `TESTPILOT_MINIPROGRAM_PROJECT_PATH`   | 小程序项目路径(可被 testpilot.yaml 覆盖)            |
 | `TESTPILOT_MINIPROGRAM_AUTO_PORT`      | 自动化端口,默认 9420                                |

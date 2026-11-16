@@ -28,14 +28,14 @@ export interface NativeLintReport {
 /**
  * 原生脚本 lint:no-invention 的残留硬卡。
  * 1) 头注释 evidence 链(测试点 ID + 视角枚举)
- * 2) 测试点 ID 必须在 tests/e2e/reviews/ 清单中——清单是唯一的用例来源
+ * 2) 测试点 ID 必须精确出现在 tests/e2e/reviews/ 解析出的 TP ID 中。目录不存在、没有清单文件或解析不到 ID 时不得通过
  * 3) process.env.* 引用必须在 .env.testing / testpilot.yaml 中声明
  */
 export async function lintNativeCases(paths: readonly string[], options: ProjectOptions = {}): Promise<NativeLintReport> {
   const root = resolveRoot(options.root)
   const files = paths.length > 0 ? paths : await collectNativeCases([], { root })
 
-  const reviewsText = await readReviewsText(root)
+  const reviewIds = await readReviewTestPointIds(root)
   const knownEnv = await collectKnownEnvNames(root)
   const report: NativeLintFile[] = []
   let issueCount = 0
@@ -49,7 +49,9 @@ export async function lintNativeCases(paths: readonly string[], options: Project
     const testPointId = header.testPointId
     if (!testPointId) {
       issues.push('缺少文件头 `// 测试点: <ID>`(evidence 链起点)')
-    } else if (reviewsText && !reviewsText.includes(testPointId)) {
+    } else if (reviewIds.size === 0) {
+      issues.push('tests/e2e/reviews/ 没有可解析的测试点清单——目录不存在、清单为空或未写出 TP ID 时不得生成用例')
+    } else if (!reviewIds.has(testPointId)) {
       issues.push(`测试点 ${testPointId} 不在 tests/e2e/reviews/ 清单中——清单里没有的 ID 不得生成用例`)
     }
 
@@ -72,16 +74,25 @@ export async function lintNativeCases(paths: readonly string[], options: Project
   return { files: report, issueCount }
 }
 
-async function readReviewsText(root: string): Promise<string> {
+/** 从评审清单正文提取精确 TP ID。`TP-001` 不会命中 `TP-0010`。 */
+export function parseReviewTestPointIds(text: string): Set<string> {
+  return new Set(text.match(/\bTP-\d+\b/g) ?? [])
+}
+
+async function readReviewTestPointIds(root: string): Promise<Set<string>> {
   const dir = join(root, 'tests', 'e2e', 'reviews')
-  if (!existsSync(dir)) return ''
+  if (!existsSync(dir)) return new Set()
   const entries = await readdir(dir).catch(() => [])
   const texts = await Promise.all(
     entries
       .filter((entry) => /\.(md|yaml|yml|json)$/i.test(entry))
       .map((entry) => readFile(join(dir, entry), 'utf8').catch(() => '')),
   )
-  return texts.join('\n')
+  const ids = new Set<string>()
+  for (const text of texts) {
+    for (const id of parseReviewTestPointIds(text)) ids.add(id)
+  }
+  return ids
 }
 
 async function collectKnownEnvNames(root: string): Promise<Set<string>> {

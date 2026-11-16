@@ -131,7 +131,10 @@ describe('cli:init:新项目', () => {
     expect(yaml).toContain('version: 1')
     expect(yaml).toContain('project:')
     expect(yaml).not.toContain('caseDirectory')
-    expect(yaml).toContain('baseUrl: ${TEST_BASE_URL}')
+    expect(yaml).toContain('default: develop')
+    expect(yaml).toContain('baseUrl: ${DEVELOP_BASE_URL}')
+    expect(yaml).toContain('baseUrl: ${UAT_BASE_URL}')
+    expect(yaml).toContain('baseUrl: ${PREPROD_BASE_URL}')
     expect(yaml).not.toContain('variables:')
     expect(yaml).toContain('systems: {}')
     expect(yaml).not.toMatch(/password|secret\s*:/i)
@@ -145,8 +148,9 @@ describe('cli:init:新项目', () => {
     expect(existsSync(join(root, '.env.testing'))).toBe(true)
     expect(existsSync(join(root, '.env.example'))).toBe(false)
     const envTesting = await readFile(join(root, '.env.testing'), 'utf8')
-    expect(envTesting).toContain('TEST_BASE_URL=')
-    expect(envTesting).toContain('STAGING_BASE_URL=')
+    expect(envTesting).toContain('DEVELOP_BASE_URL=')
+    expect(envTesting).toContain('UAT_BASE_URL=')
+    expect(envTesting).toContain('PREPROD_BASE_URL=')
     expect(envTesting).toContain('API_BASE_URL=')
     expect(envTesting).toContain('MINIAPP_PROJECT_PATH')
     const gitignore = await readFile(join(root, '.gitignore'), 'utf8')
@@ -226,8 +230,9 @@ describe('cli:init:安全(§18/§20)', () => {
   test('Adapter 不可用不阻塞 init,doctor 给 warning', async () => {
     const root = await makeProject({ 'index.html': '' }) // 无 playwright 依赖、无微信开发者工具
     // 隔离环境变量问题:模板引用的变量先注入,专注验证 Adapter 降级为 warning
-    process.env.TEST_BASE_URL = 'http://localhost:8080'
-    process.env.STAGING_BASE_URL = 'http://localhost:8081'
+    process.env.DEVELOP_BASE_URL = 'http://localhost:8080'
+    process.env.UAT_BASE_URL = 'https://uat.example.com'
+    process.env.PREPROD_BASE_URL = 'https://preprod.example.com'
     process.env.API_BASE_URL = 'http://localhost:8080/api'
     const summary = await runInit(root, { serverUrl: null })
     expect(summary.adapters.some((item) => !item.available)).toBe(true)

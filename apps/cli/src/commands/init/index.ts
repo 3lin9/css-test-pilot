@@ -110,7 +110,7 @@ export async function runInit(root: string, options: InitOptions = {}): Promise<
   )
 
   // 6. 环境配置(§10):模板已含 ${VAR} 引用,提示变量来源
-  console.log(`${okMark()} 环境配置          environment 段(test/staging),baseUrl 由 TEST_BASE_URL 等变量注入`)
+  console.log(`${okMark()} 环境配置          environment 段(develop/uat/preprod),baseUrl 由 DEVELOP_BASE_URL 等变量注入`)
 
   // 7. CI 准备(§13):只检测提示,不修改
   const ci = await detectCi(root)

@@ -36,6 +36,33 @@ test('lint:头注释/reviews 出处/env 引用三道卡', async () => {
   expect(report.issueCount).toBe(3)
 })
 
+test('lint:没有评审清单或清单解析不出 TP ID 时不得通过', async () => {
+  const missingDir = await makeProject({
+    'tests/e2e/web/order.spec.ts': '// 测试点: TP-001\n// 视角: charter:error-path\n',
+  })
+  const missing = await lintNativeCases([], { root: missingDir })
+  expect(missing.files[0]?.issues.some((message) => message.includes('没有可解析的测试点清单'))).toBe(true)
+
+  const emptyList = await makeProject({
+    'tests/e2e/reviews/order-coverage.md': '# 评审清单\n尚无测试点\n',
+    'tests/e2e/web/order.spec.ts': '// 测试点: TP-001\n// 视角: charter:error-path\n',
+  })
+  const empty = await lintNativeCases([], { root: emptyList })
+  expect(empty.files[0]?.issues.some((message) => message.includes('没有可解析的测试点清单'))).toBe(true)
+})
+
+test('lint:TP ID 按完整编号匹配,不把 TP-001 当成 TP-0010', async () => {
+  const root = await makeProject({
+    'tests/e2e/reviews/order-coverage.md': '| TP-0010 | 超长编号 |\n',
+    'tests/e2e/web/short.spec.ts': '// 测试点: TP-001\n// 视角: charter:error-path\n',
+    'tests/e2e/web/long.spec.ts': '// 测试点: TP-0010\n// 视角: charter:error-path\n',
+  })
+  const report = await lintNativeCases([], { root })
+  const byFile = new Map(report.files.map((item) => [item.file.replace(/\\/g, '/'), item.issues]))
+  expect(byFile.get('tests/e2e/web/short.spec.ts')?.some((message) => message.includes('TP-001 不在'))).toBe(true)
+  expect(byFile.get('tests/e2e/web/long.spec.ts')).toEqual([])
+})
+
 test('lint:缺少头注释整条 evidence 链报错', async () => {
   const root = await makeProject({
     'tests/e2e/api/health.test.ts': 'import { test } from "node:test"\n',

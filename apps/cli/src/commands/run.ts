@@ -1,8 +1,10 @@
 import { join } from 'node:path'
 import { Command } from 'commander'
 import { exitCodeForRunStatus, RUNS_DIR, SHOTS_DIR } from '@testpilot/core'
-import { isYamlCasePath, runNativeCases } from '@testpilot/sdk'
+import { collectNativeCases, isYamlCasePath, loadProjectConfig, resolveRoot, runNativeCases } from '@testpilot/sdk'
 import { failMark, infoMark, okMark, paint, startSpinner } from '../lib/ui'
+import { lintNativeCases, type NativeLintReport } from './native-lint'
+import { resolveRunEnvironment } from './run-environment'
 
 const STATUS_PAINT: Record<string, (text: string) => string> = {
   passed: (text) => paint(text, 'green'),
@@ -12,17 +14,45 @@ const STATUS_PAINT: Record<string, (text: string) => string> = {
   skipped: (text) => paint(text, 'gray'),
 }
 
+/**
+ * 启动框架前的轻量预检,与 `csspilot validate` 同一道 lint:
+ * 文件头测试点、视角枚举、reviews 清单出处、process.env 已声明。
+ * 没有可执行脚本时不报 lint 问题,交给后续 run 提示「未找到」。
+ */
+export async function preflightNativeRun(
+  paths: readonly string[] = [],
+  options: { root?: string } = {},
+): Promise<NativeLintReport> {
+  const root = resolveRoot(options.root)
+  const targets = await collectNativeCases(paths, { root }).catch(() => [])
+  if (targets.length === 0) return { files: [], issueCount: 0 }
+  return lintNativeCases(targets, { root })
+}
+
 export function makeRunCommand(): Command {
   return new Command('run')
-    .description('执行各端原生测试脚本(web=playwright test;miniapp/api=node --test)')
+    .description('执行各端原生测试脚本(启动前做与 validate 相同的轻量预检)')
     .argument('[paths...]', '脚本文件或目录,默认收集 tests/e2e/{web,miniapp,api}')
     .option('--grep <pattern>', '按测试名过滤(web=playwright --grep;miniapp/api=node --test --test-name-pattern)')
-    .action(async (paths: string[] | undefined, options: { grep?: string }) => {
+    .option('--env <name>', '选择 testpilot.yaml 中的运行环境(默认 environment.default)')
+    .action(async (paths: string[] | undefined, options: { grep?: string; env?: string }) => {
       const requested = paths ?? []
       const yamlRequested = requested.filter((file) => isYamlCasePath(file))
       if (yamlRequested.length > 0) {
         console.error(`YAML 用例链路已退役(${yamlRequested.join(', ')})。`)
         console.error('请按 skills/testpilot/rules/native.md 迁移为各端原生脚本;新用例一律写原生脚本。')
+        process.exitCode = 1
+        return
+      }
+
+      const preflight = await preflightNativeRun(requested)
+      if (preflight.issueCount > 0) {
+        for (const item of preflight.files) {
+          if (item.issues.length === 0) continue
+          console.error(`${failMark()} ${item.file}`)
+          for (const issue of item.issues) console.error(paint(`    - ${issue}`, 'dim'))
+        }
+        console.error('预检未通过,未启动测试框架。请先修正后执行 npx csspilot validate。')
         process.exitCode = 1
         return
       }
@@ -46,7 +76,15 @@ export function makeRunCommand(): Command {
       }
       process.on('unhandledRejection', onLateRejection)
       try {
-        const result = await runNativeCases({ paths: requested, grep: options.grep, ingest: true, signal: controller.signal })
+        const environment = resolveRunEnvironment(await loadProjectConfig(), options.env)
+        if (environment) console.log(`执行环境:${environment.name}`)
+        const result = await runNativeCases({
+          paths: requested,
+          grep: options.grep,
+          extraEnv: environment?.extraEnv,
+          ingest: true,
+          signal: controller.signal,
+        })
         spinner.stop()
         if (result.files.length === 0) {
           console.error('未找到原生用例。请写入 tests/e2e/web/*.spec.ts、tests/e2e/miniapp/*.test.ts 或 tests/e2e/api/*.test.ts。')

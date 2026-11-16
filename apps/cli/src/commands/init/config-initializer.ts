@@ -40,12 +40,15 @@ test:
   directory: ${TEST_DIR}
 
 # 环境配置:baseUrl 由环境变量注入,禁止写明文
+# csspilot run --env <name> 选择其中一套;省略时用 default
 environment:
-  default: test
-  test:
-    baseUrl: \${TEST_BASE_URL}
-  staging:
-    baseUrl: \${STAGING_BASE_URL}
+  default: develop
+  develop:
+    baseUrl: \${DEVELOP_BASE_URL}
+  uat:
+    baseUrl: \${UAT_BASE_URL}
+  preprod:
+    baseUrl: \${PREPROD_BASE_URL}
 
 # 项目声明的执行端(实际可用性以 csspilot doctor 检测为准)
 adapters:
@@ -63,9 +66,9 @@ systems: {}
 # server:
 #   baseUrl: http://127.0.0.1:3000
 
-# 被测系统地址(备忘;脚本从 process.env 读取,值放 .env.testing)
+# 被测系统地址备忘。运行时以 csspilot run --env 注入的 TESTPILOT_BASE_URL 为准
 web:
-  baseUrl: \${TEST_BASE_URL}
+  baseUrl: \${DEVELOP_BASE_URL}
 api:
   baseUrl: \${API_BASE_URL}
 
@@ -86,9 +89,10 @@ export function renderDotEnvTesting(): string {
 # 只放测试相关变量,与前端项目自身的 .env 互不影响;本文件含测试凭据,已加入 .gitignore
 # 优先级:真实环境变量 > 本文件;testpilot.yaml 中的 \${VAR} 引用运行时自动注入
 
-# 环境配置(environment 段)
-TEST_BASE_URL=http://127.0.0.1:8080
-STAGING_BASE_URL=https://staging.example.com
+# 环境配置(environment 段)。csspilot run --env develop|uat|preprod
+DEVELOP_BASE_URL=http://127.0.0.1:8080
+UAT_BASE_URL=https://uat.example.com
+PREPROD_BASE_URL=https://preprod.example.com
 
 # API 端相对 url 的基准
 API_BASE_URL=http://127.0.0.1:8080/api
