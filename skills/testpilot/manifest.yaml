@@ -2,7 +2,7 @@
 # `npx csspilot init` 会把整个 skills/testpilot/ 安装到业务项目 .agents/skills/testpilot/
 id: testpilot
 name: csspilot
-version: 0.9.6
+version: 0.9.7
 
 description: >
   AI Native cross-platform testing skill.
